@@ -6,6 +6,7 @@
 
 pub mod error;
 pub mod handlers;
+pub mod router;
 pub mod schema;
 pub mod service;
 pub mod state;
