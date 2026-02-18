@@ -21,7 +21,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **STORE-01**: Programs persist in SQLite with atomic writes and schema migration support
 - [x] **STORE-02**: Graph storage uses a trait abstraction (`GraphStore`) swappable to alternative backends without core changes
 - [ ] **STORE-03**: User can undo/rollback edits via edit log or graph snapshots
-- [ ] **STORE-04**: Each graph node has a deterministic content hash for identity and change detection
+- [x] **STORE-04**: Each graph node has a deterministic content hash for identity and change detection
 - [ ] **STORE-05**: Incremental recompilation via red-green dirty node tracking -- only recompile functions whose subgraphs actually changed
 
 ### AI Agent Tool Interface
@@ -116,7 +116,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | STORE-01 | Phase 2 | Complete |
 | STORE-02 | Phase 2 | Complete |
 | STORE-03 | Phase 4 | Pending |
-| STORE-04 | Phase 2 | Pending |
+| STORE-04 | Phase 2 | Complete |
 | STORE-05 | Phase 6 | Pending |
 | TOOL-01 | Phase 4 | Pending |
 | TOOL-02 | Phase 4 | Pending |
