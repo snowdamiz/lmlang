@@ -65,11 +65,11 @@ Plans:
   1. On every graph edit, edge source types are verified to match edge sink expected types, with diagnostic errors identifying the mismatched nodes and types
   2. A computational graph can be executed by the interpreter with provided inputs, producing correct output values for arithmetic, logic, control flow, memory operations, and function calls
   3. Interpreter execution of a multi-function program with conditionals and loops produces the same results as hand-computed expected outputs
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md — lmlang-check crate with static type checker: per-op type rules, coercion, diagnostics, validate_data_edge/validate_graph
+- [ ] 03-02-PLAN.md — Graph interpreter: Value enum, state machine execution, per-op evaluation, control flow, memory, function calls, traps, traces
 
 ### Phase 4: AI Agent Tool API
 **Goal**: An AI agent can build, query, verify, test, and undo changes to programs through a structured HTTP/JSON interface
@@ -177,7 +177,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 |-------|----------------|--------|-----------|
 | 1. Core Graph Data Model | 4/4 | Complete    | 2026-02-18 |
 | 2. Storage & Persistence | 1/3 | In Progress | - |
-| 3. Type Checking & Graph Interpreter | 0/? | Not started | - |
+| 3. Type Checking & Graph Interpreter | 0/2 | Not started | - |
 | 4. AI Agent Tool API | 0/? | Not started | - |
 | 5. LLVM Compilation Pipeline | 0/? | Not started | - |
 | 6. Full Contract System & Incremental Compilation | 0/? | Not started | - |
