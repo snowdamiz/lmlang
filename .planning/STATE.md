@@ -10,27 +10,27 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 1 of 9 (Core Graph Data Model)
-Plan: 3 of 4 in current phase
-Status: Executing
-Last activity: 2026-02-18 — Completed 01-03-PLAN.md
+Plan: 4 of 4 in current phase
+Status: Phase Complete
+Last activity: 2026-02-18 — Completed 01-04-PLAN.md
 
-Progress: [███░░░░░░░] 8%
+Progress: [██░░░░░░░░] 11%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 4min
-- Total execution time: 0.18 hours
+- Total execution time: 0.25 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 3/4 | 11min | 4min |
+| 01 | 4/4 | 15min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (4min), 01-02 (4min), 01-03 (3min)
+- Last 5 plans: 01-01 (4min), 01-02 (4min), 01-03 (3min), 01-04 (4min)
 - Trend: stable
 
 *Updated after each plan completion*
@@ -56,6 +56,9 @@ Recent decisions affecting current work:
 - [Phase 01]: Closures are FunctionDefs with is_closure=true and non-empty captures -- no separate closure type
 - [Phase 01]: ModuleDef gains id field (ModuleId) in canonical definition vs the Plan 02 stub
 - [Phase 01]: ModuleTree serde roundtrip uses structural comparison due to HashMap non-deterministic key ordering
+- [Phase 01]: Compute and semantic graphs are private -- all mutations go through ProgramGraph methods for consistency
+- [Phase 01]: Module and function semantic node indices tracked in HashMaps for O(1) Contains edge creation
+- [Phase 01]: Debug-only assert_consistency verifies FunctionId-to-SemanticNode mapping integrity
 
 ### Pending Todos
 
@@ -70,5 +73,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 01-03-PLAN.md
-Resume file: .planning/phases/01-core-graph-data-model/01-03-SUMMARY.md
+Stopped at: Completed 01-04-PLAN.md (Phase 01 complete)
+Resume file: .planning/phases/01-core-graph-data-model/01-04-SUMMARY.md

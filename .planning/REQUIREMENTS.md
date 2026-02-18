@@ -51,8 +51,8 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Dual-Layer Architecture
 
 - [ ] **DUAL-01**: Semantic Knowledge Graph layer stores modules, functions, types, specs, tests, docs with embeddings and summaries
-- [ ] **DUAL-02**: Executable Computational Graph layer stores typed ops DAG with data + control flow edges
-- [ ] **DUAL-03**: Two layers implemented as separate StableGraph instances with explicit cross-references (not one heterogeneous graph)
+- [x] **DUAL-02**: Executable Computational Graph layer stores typed ops DAG with data + control flow edges
+- [x] **DUAL-03**: Two layers implemented as separate StableGraph instances with explicit cross-references (not one heterogeneous graph)
 - [ ] **DUAL-04**: Bidirectional propagation syncs layers via queue-based event model with explicit flush (not immediate sync)
 - [ ] **DUAL-05**: Downward propagation: semantic changes (new function, signature change, contract addition) expand into computational subgraph modifications
 - [ ] **DUAL-06**: Upward propagation: computational changes update semantic summaries, embeddings, relationship edges, and complexity metrics
@@ -134,8 +134,8 @@ Deferred to future release. Tracked but not in current roadmap.
 | EXEC-03 | Phase 5 | Pending |
 | EXEC-04 | Phase 5 | Pending |
 | DUAL-01 | Phase 8 | Pending |
-| DUAL-02 | Phase 1 | Pending |
-| DUAL-03 | Phase 1 | Pending |
+| DUAL-02 | Phase 1 | Complete |
+| DUAL-03 | Phase 1 | Complete |
 | DUAL-04 | Phase 8 | Pending |
 | DUAL-05 | Phase 8 | Pending |
 | DUAL-06 | Phase 8 | Pending |
