@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 4 of 9 (AI Agent Tool API)
-Plan: 2 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: Executing Phase 4
-Last activity: 2026-02-18 — Completed 04-02-PLAN.md
+Last activity: 2026-02-18 — Completed 04-03-PLAN.md
 
-Progress: [████░░░░░░] 42%
+Progress: [█████░░░░░] 46%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
+- Total plans completed: 13
 - Average duration: 7min
-- Total execution time: 1.46 hours
+- Total execution time: 1.51 hours
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [████░░░░░░] 42%
 | 01 | 4/4 | 15min | 4min |
 | 02 | 3/3 | 18min | 6min |
 | 03 | 3/3 | 35min | 12min |
-| 04 | 2/4 | 20min | 10min |
+| 04 | 3/4 | 23min | 8min |
 
 **Recent Trend:**
-- Last 5 plans: 03-01 (9min), 03-02 (15min), 03-03 (11min), 04-01 (5min), 04-02 (15min)
-- Trend: service layer plan took longer as expected; schema+service combination
+- Last 5 plans: 03-02 (15min), 03-03 (11min), 04-01 (5min), 04-02 (15min), 04-03 (3min)
+- Trend: handler+router plan fast due to thin-wrapper pattern -- all logic in ProgramService
 
 *Updated after each plan completion*
 
@@ -96,6 +96,10 @@ Recent decisions affecting current work:
 - [Phase 04]: EditCommand inverse() computes inverse for each variant (LIFO for batches)
 - [Phase 04]: Checkpoint stores full ProgramGraph JSON with edit_log position reference
 - [Phase 04]: New mutations clear redo stack (invalidate undone entries)
+- [Phase 04]: Thin handler pattern: extract -> lock -> call -> respond, no business logic in handlers
+- [Phase 04]: Active program guard in every handler: 400 if path program_id != active program
+- [Phase 04]: Combined GET+POST routes for /programs and /programs/{id}/checkpoints via axum method chaining
+- [Phase 04]: Path param types: i64 for program_id (matching ProgramId(i64)), u32 for node_id/func_id
 
 ### Pending Todos
 
@@ -110,5 +114,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 04-02-PLAN.md
-Resume file: .planning/phases/04-ai-agent-tool-api/04-02-SUMMARY.md
+Stopped at: Completed 04-03-PLAN.md
+Resume file: .planning/phases/04-ai-agent-tool-api/04-03-SUMMARY.md
