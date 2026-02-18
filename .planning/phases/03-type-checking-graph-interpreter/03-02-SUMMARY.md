@@ -50,7 +50,7 @@ patterns-established:
   - "EvalResult enum: Value | NoValue | Return | Call for clean separation of node evaluation outcomes"
   - "try_schedule_node: unified scheduling that checks both data-readiness and control-readiness"
 
-requirements-completed: []
+requirements-completed: [EXEC-01]
 
 # Metrics
 duration: 15min

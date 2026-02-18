@@ -43,7 +43,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Execution & Compilation
 
-- [ ] **EXEC-01**: Graph interpreter walks the computational graph and executes op nodes for development-time feedback without LLVM
+- [x] **EXEC-01**: Graph interpreter walks the computational graph and executes op nodes for development-time feedback without LLVM
 - [ ] **EXEC-02**: LLVM compilation pipeline maps each op node to LLVM IR instructions via inkwell, handles SSA form, function boundaries, type mapping
 - [ ] **EXEC-03**: Compilation produces native binaries (x86_64/ARM) through LLVM optimization passes and system linker
 - [ ] **EXEC-04**: LLVM codegen uses function-scoped Context pattern (create, compile, serialize, drop) to avoid lifetime contamination
@@ -129,7 +129,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | CNTR-03 | Phase 6 | Pending |
 | CNTR-04 | Phase 6 | Pending |
 | CNTR-05 | Phase 6 | Pending |
-| EXEC-01 | Phase 3 | Pending |
+| EXEC-01 | Phase 3 | Complete |
 | EXEC-02 | Phase 5 | Pending |
 | EXEC-03 | Phase 5 | Pending |
 | EXEC-04 | Phase 5 | Pending |
