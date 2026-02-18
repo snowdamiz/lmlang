@@ -5,6 +5,7 @@
 //! API schema types, error handling, and route definitions.
 
 pub mod error;
+pub mod handlers;
 pub mod schema;
 pub mod service;
 pub mod state;
