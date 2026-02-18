@@ -82,12 +82,13 @@ Plans:
   3. An AI agent can trigger verification that type-checks the affected subgraph, runs contract checks, marks dirty nodes, and returns pass/fail with structured diagnostics including node IDs and edge paths
   4. An AI agent can simulate a subgraph with provided inputs via the interpreter and receive output values and execution trace
   5. An AI agent can undo/rollback edits to restore a previous graph state
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
-- [ ] 04-03: TBD
+- [ ] 04-01-PLAN.md — Crate setup, serde derives on lmlang-check types, API schema types, error response system
+- [ ] 04-02-PLAN.md — ProgramService application layer, undo system (EditLog + Checkpoints in SQLite), AppState
+- [ ] 04-03-PLAN.md — HTTP handlers (mutations, queries, verify, simulate, history), axum router, server binary
+- [ ] 04-04-PLAN.md — End-to-end integration tests proving all 7 requirements
 
 ### Phase 5: LLVM Compilation Pipeline
 **Goal**: Programs represented as computational graphs compile to native binaries through LLVM with correct output matching the interpreter
@@ -179,7 +180,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 1. Core Graph Data Model | 4/4 | Complete    | 2026-02-18 |
 | 2. Storage & Persistence | 3/3 | Complete   | 2026-02-18 |
 | 3. Type Checking & Graph Interpreter | 2/3 | Complete    | 2026-02-18 |
-| 4. AI Agent Tool API | 0/? | Not started | - |
+| 4. AI Agent Tool API | 0/4 | Not started | - |
 | 5. LLVM Compilation Pipeline | 0/? | Not started | - |
 | 6. Full Contract System & Incremental Compilation | 0/? | Not started | - |
 | 7. Multi-Agent Concurrency | 0/? | Not started | - |
