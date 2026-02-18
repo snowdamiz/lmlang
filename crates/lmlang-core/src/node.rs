@@ -9,6 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::id::{FunctionId, ModuleId};
+use crate::module::ModuleDef;
 use crate::ops::{ComputeNodeOp, ComputeOp, StructuredOp};
 use crate::type_id::TypeId;
 use crate::types::Visibility;
@@ -101,23 +102,6 @@ pub enum SemanticNode {
 // ---------------------------------------------------------------------------
 // Supporting types for SemanticNode
 // ---------------------------------------------------------------------------
-
-/// Temporary forward definition of ModuleDef.
-///
-/// Contains the minimum fields needed for the semantic graph skeleton.
-// TODO(plan-03): Move ModuleDef to module.rs when it exists. This stub
-// provides the basics so the code compiles and the semantic graph can
-// represent module nodes. Plan 03 will add the full definition with
-// child tracking and module-level metadata.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModuleDef {
-    /// Module name.
-    pub name: String,
-    /// Parent module, if any. `None` for the root module.
-    pub parent: Option<ModuleId>,
-    /// Visibility of this module.
-    pub visibility: Visibility,
-}
 
 /// Lightweight function summary for the semantic graph.
 ///
@@ -259,6 +243,7 @@ mod tests {
     #[test]
     fn serde_roundtrip_semantic_node_module() {
         let node = SemanticNode::Module(ModuleDef {
+            id: ModuleId(1),
             name: "math".into(),
             parent: Some(ModuleId(0)),
             visibility: Visibility::Public,
@@ -307,6 +292,7 @@ mod tests {
     #[test]
     fn module_def_root_has_no_parent() {
         let root = ModuleDef {
+            id: ModuleId(0),
             name: "root".into(),
             parent: None,
             visibility: Visibility::Public,
