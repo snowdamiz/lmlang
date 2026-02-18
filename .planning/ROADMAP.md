@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Core Graph Data Model** - Type system, op nodes, data/control flow edges, function boundaries, and dual-graph structure (completed 2026-02-18)
 - [x] **Phase 2: Storage & Persistence** - SQLite backend, trait abstraction, content hashing so programs survive restarts (completed 2026-02-18)
 - [x] **Phase 3: Type Checking & Graph Interpreter** - Static type verification and development-time execution without LLVM (completed 2026-02-18)
-- [ ] **Phase 4: AI Agent Tool API** - HTTP endpoints for structured graph manipulation, retrieval, verification, simulation, and undo
+- [x] **Phase 4: AI Agent Tool API** - HTTP endpoints for structured graph manipulation, retrieval, verification, simulation, and undo (completed 2026-02-18)
 - [ ] **Phase 5: LLVM Compilation Pipeline** - Graph to LLVM IR to native binary with function-scoped codegen
 - [ ] **Phase 6: Full Contract System & Incremental Compilation** - Pre/post-conditions, invariants, property-based testing, and red-green dirty tracking
 - [ ] **Phase 7: Multi-Agent Concurrency** - Concurrent graph editing with region locking and optimistic concurrency control
@@ -180,7 +180,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 1. Core Graph Data Model | 4/4 | Complete    | 2026-02-18 |
 | 2. Storage & Persistence | 3/3 | Complete   | 2026-02-18 |
 | 3. Type Checking & Graph Interpreter | 2/3 | Complete    | 2026-02-18 |
-| 4. AI Agent Tool API | 3/4 | In Progress|  |
+| 4. AI Agent Tool API | 3/4 | Complete    | 2026-02-18 |
 | 5. LLVM Compilation Pipeline | 0/? | Not started | - |
 | 6. Full Contract System & Incremental Compilation | 0/? | Not started | - |
 | 7. Multi-Agent Concurrency | 0/? | Not started | - |
