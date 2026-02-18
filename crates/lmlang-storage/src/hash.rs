@@ -21,6 +21,10 @@
 
 use std::collections::HashMap;
 
+use petgraph::graph::NodeIndex;
+use petgraph::visit::EdgeRef;
+use petgraph::Direction;
+
 use lmlang_core::edge::FlowEdge;
 use lmlang_core::graph::ProgramGraph;
 use lmlang_core::id::{FunctionId, NodeId};
@@ -30,40 +34,147 @@ use lmlang_core::node::ComputeNode;
 ///
 /// Deterministic: same node content always produces the same hash.
 /// Different: changing any field (op variant, owner) produces a different hash.
-pub fn hash_node_content(_node: &ComputeNode) -> blake3::Hash {
-    // RED: stub -- returns a fixed hash so tests fail
-    blake3::hash(b"stub")
+/// Uses `serde_json::to_vec` for canonical serialization of the op, since
+/// `ComputeNodeOp` uses no HashMap (only Vec/IndexMap), guaranteeing
+/// deterministic JSON output.
+pub fn hash_node_content(node: &ComputeNode) -> blake3::Hash {
+    let mut hasher = blake3::Hasher::new();
+    // Serialize the op -- deterministic because ComputeNodeOp uses no HashMap
+    let op_bytes = serde_json::to_vec(&node.op)
+        .expect("ComputeNodeOp serialization should never fail");
+    hasher.update(&op_bytes);
+    // Hash the owner function ID
+    hasher.update(&node.owner.0.to_le_bytes());
+    hasher.finalize()
+}
+
+/// Returns a deterministic sort key for a flow edge.
+///
+/// Data edges sort by (0, target_port, target_node_id).
+/// Control edges sort by (1, branch_index or u16::MAX, target_node_id).
+/// The leading discriminant separates Data from Control in sort order.
+fn edge_sort_key(target_id: NodeId, edge: &FlowEdge) -> (u8, u16, u32) {
+    match edge {
+        FlowEdge::Data { target_port, .. } => (0, *target_port, target_id.0),
+        FlowEdge::Control { branch_index } => {
+            (1, branch_index.unwrap_or(u16::MAX), target_id.0)
+        }
+    }
 }
 
 /// Computes a composite hash of a node including its outgoing edges and
 /// target node hashes (Merkle-tree composition).
 ///
 /// `outgoing` is a slice of `(target_node_id, edge, target_node_hash)` tuples.
-/// Edges are sorted by deterministic keys before hashing.
+/// Edges are sorted by deterministic keys before hashing to ensure the same
+/// set of edges always produces the same composite hash regardless of
+/// iteration order.
 pub fn hash_node_with_edges(
-    _node: &ComputeNode,
-    _outgoing: &[(NodeId, FlowEdge, blake3::Hash)],
+    node: &ComputeNode,
+    outgoing: &[(NodeId, FlowEdge, blake3::Hash)],
 ) -> blake3::Hash {
-    // RED: stub -- returns a fixed hash so tests fail
-    blake3::hash(b"stub")
+    let mut hasher = blake3::Hasher::new();
+
+    // Start with the node's content hash
+    let content_hash = hash_node_content(node);
+    hasher.update(content_hash.as_bytes());
+
+    // Sort edges by deterministic key
+    let mut sorted: Vec<&(NodeId, FlowEdge, blake3::Hash)> = outgoing.iter().collect();
+    sorted.sort_by_key(|(target_id, edge, _)| edge_sort_key(*target_id, edge));
+
+    // Hash each edge: serialized edge data + target node's hash
+    for (_, edge, target_hash) in sorted {
+        let edge_bytes = serde_json::to_vec(edge)
+            .expect("FlowEdge serialization should never fail");
+        hasher.update(&edge_bytes);
+        hasher.update(target_hash.as_bytes());
+    }
+
+    hasher.finalize()
 }
 
 /// Computes the root hash for a function within a program graph.
 ///
 /// Includes all nodes owned by the function, composed in sorted NodeId order.
-/// Changing any node or edge within the function changes the function root hash.
-pub fn hash_function(_graph: &ProgramGraph, _func_id: FunctionId) -> blake3::Hash {
-    // RED: stub -- returns a fixed hash so tests fail
-    blake3::hash(b"stub")
+/// Uses a two-pass approach:
+/// 1. Compute content hashes for all nodes in the function
+/// 2. Compute composite hashes (content + edges) for each node
+///
+/// For cycles (control flow back-edges), if a target node is outside this
+/// function, its content hash alone is used as the target hash.
+///
+/// The final function hash combines all composite node hashes in sorted
+/// NodeId order.
+pub fn hash_function(graph: &ProgramGraph, func_id: FunctionId) -> blake3::Hash {
+    // Get all nodes owned by this function, sorted by NodeId for determinism
+    let mut func_nodes = graph.function_nodes(func_id);
+    func_nodes.sort_by_key(|n| n.0);
+
+    // Build a set of node IDs in this function for membership checks
+    let func_node_set: std::collections::HashSet<NodeId> =
+        func_nodes.iter().copied().collect();
+
+    // Pass 1: compute content hashes for all nodes
+    let mut content_hashes: HashMap<NodeId, blake3::Hash> = HashMap::new();
+    for &node_id in &func_nodes {
+        let node = graph.get_compute_node(node_id).unwrap();
+        content_hashes.insert(node_id, hash_node_content(node));
+    }
+
+    // Pass 2: compute composite hashes (with edges) for each node
+    let mut composite_hashes: HashMap<NodeId, blake3::Hash> = HashMap::new();
+    for &node_id in &func_nodes {
+        let node = graph.get_compute_node(node_id).unwrap();
+        let node_idx: NodeIndex<u32> = node_id.into();
+
+        // Collect outgoing edges from this node
+        let mut outgoing: Vec<(NodeId, FlowEdge, blake3::Hash)> = Vec::new();
+        for edge_ref in graph.compute().edges_directed(node_idx, Direction::Outgoing) {
+            let target_id = NodeId::from(edge_ref.target());
+            let edge = edge_ref.weight().clone();
+
+            // Use the target's content hash. For nodes within the function,
+            // this is from our content_hashes map. For cross-function edges,
+            // compute on the fly (these are rare).
+            let target_hash = if func_node_set.contains(&target_id) {
+                content_hashes[&target_id]
+            } else {
+                // Cross-function edge: compute target's content hash
+                let target_node = graph.get_compute_node(target_id).unwrap();
+                hash_node_content(target_node)
+            };
+
+            outgoing.push((target_id, edge, target_hash));
+        }
+
+        let composite = hash_node_with_edges(node, &outgoing);
+        composite_hashes.insert(node_id, composite);
+    }
+
+    // Combine all composite hashes into a single function root hash
+    let mut final_hasher = blake3::Hasher::new();
+    for &node_id in &func_nodes {
+        final_hasher.update(&node_id.0.to_le_bytes());
+        final_hasher.update(composite_hashes[&node_id].as_bytes());
+    }
+    final_hasher.finalize()
 }
 
 /// Computes root hashes for all functions in a program graph.
 ///
 /// Returns a map from FunctionId to the function's root hash.
-/// Iterates functions in sorted FunctionId order.
-pub fn hash_all_functions(_graph: &ProgramGraph) -> HashMap<FunctionId, blake3::Hash> {
-    // RED: stub -- returns empty map
-    HashMap::new()
+/// Iterates functions in sorted FunctionId order (never iterates HashMap
+/// directly for hash-affecting operations).
+pub fn hash_all_functions(graph: &ProgramGraph) -> HashMap<FunctionId, blake3::Hash> {
+    let mut func_ids: Vec<FunctionId> = graph.functions().keys().copied().collect();
+    func_ids.sort_by_key(|f| f.0);
+
+    let mut result = HashMap::new();
+    for func_id in func_ids {
+        result.insert(func_id, hash_function(graph, func_id));
+    }
+    result
 }
 
 #[cfg(test)]
