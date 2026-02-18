@@ -91,6 +91,34 @@ impl ProgramGraph {
         }
     }
 
+    /// Constructs a `ProgramGraph` from all its component parts.
+    ///
+    /// This enables the storage layer to reconstruct a ProgramGraph from
+    /// loaded data without going through the builder methods (which enforce
+    /// invariants that are already satisfied by stored data).
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts(
+        compute: StableGraph<ComputeNode, FlowEdge, Directed, u32>,
+        semantic: StableGraph<SemanticNode, SemanticEdge, Directed, u32>,
+        types: TypeRegistry,
+        modules: ModuleTree,
+        functions: HashMap<FunctionId, FunctionDef>,
+        module_semantic_nodes: HashMap<ModuleId, NodeIndex<u32>>,
+        function_semantic_nodes: HashMap<FunctionId, NodeIndex<u32>>,
+        next_function_id: u32,
+    ) -> Self {
+        ProgramGraph {
+            compute,
+            semantic,
+            types,
+            modules,
+            functions,
+            module_semantic_nodes,
+            function_semantic_nodes,
+            next_function_id,
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Read-only accessors
     // -----------------------------------------------------------------------
@@ -103,6 +131,26 @@ impl ProgramGraph {
     /// Returns a read-only reference to the semantic graph.
     pub fn semantic(&self) -> &StableGraph<SemanticNode, SemanticEdge, Directed, u32> {
         &self.semantic
+    }
+
+    /// Returns a read-only reference to the functions map.
+    pub fn functions(&self) -> &HashMap<FunctionId, FunctionDef> {
+        &self.functions
+    }
+
+    /// Returns the module-to-semantic-node-index mapping.
+    pub fn module_semantic_indices(&self) -> &HashMap<ModuleId, NodeIndex<u32>> {
+        &self.module_semantic_nodes
+    }
+
+    /// Returns the function-to-semantic-node-index mapping.
+    pub fn function_semantic_indices(&self) -> &HashMap<FunctionId, NodeIndex<u32>> {
+        &self.function_semantic_nodes
+    }
+
+    /// Returns the next function ID counter value.
+    pub fn next_function_id(&self) -> u32 {
+        self.next_function_id
     }
 
     // -----------------------------------------------------------------------

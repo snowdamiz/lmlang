@@ -174,6 +174,11 @@ impl ModuleTree {
             .unwrap_or(&[])
     }
 
+    /// Returns an iterator over all modules in the tree.
+    pub fn all_modules(&self) -> impl Iterator<Item = (&ModuleId, &ModuleDef)> {
+        self.modules.iter()
+    }
+
     /// Returns the full path from root to the given module.
     ///
     /// For example, `["root", "math", "trig"]` for a module `trig` inside

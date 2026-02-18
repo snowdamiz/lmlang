@@ -215,6 +215,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lmlang-storage"
+version = "0.1.0"
+dependencies = [
+ "lmlang-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"

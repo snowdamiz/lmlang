@@ -155,6 +155,36 @@ impl TypeRegistry {
     pub fn never_type_id(&self) -> TypeId {
         TypeId::NEVER
     }
+
+    /// Returns all types as (TypeId, &LmType) pairs.
+    ///
+    /// Iterates over all registered types including built-ins.
+    pub fn iter(&self) -> impl Iterator<Item = (TypeId, &LmType)> {
+        self.types
+            .iter()
+            .enumerate()
+            .map(|(i, ty)| (TypeId(i as u32), ty))
+    }
+
+    /// Returns the named type lookup table.
+    pub fn names(&self) -> &HashMap<String, TypeId> {
+        &self.names
+    }
+
+    /// Returns the next available TypeId value.
+    pub fn next_id(&self) -> u32 {
+        self.next_id
+    }
+
+    /// Returns the total number of registered types (including built-ins).
+    pub fn len(&self) -> usize {
+        self.types.len()
+    }
+
+    /// Returns true if only built-in types are registered.
+    pub fn is_empty(&self) -> bool {
+        self.types.is_empty()
+    }
 }
 
 impl Default for TypeRegistry {
