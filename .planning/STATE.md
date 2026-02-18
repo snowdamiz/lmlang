@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 4 of 9 (AI Agent Tool API)
-Plan: 3 of 4 in current phase
-Status: Executing Phase 4
-Last activity: 2026-02-18 — Completed 04-03-PLAN.md
+Plan: 4 of 4 in current phase (COMPLETE)
+Status: Phase 4 Complete
+Last activity: 2026-02-18 — Completed 04-04-PLAN.md
 
-Progress: [█████░░░░░] 46%
+Progress: [██████░░░░] 52%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 13
+- Total plans completed: 14
 - Average duration: 7min
-- Total execution time: 1.51 hours
+- Total execution time: 1.52 hours
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [█████░░░░░] 46%
 | 01 | 4/4 | 15min | 4min |
 | 02 | 3/3 | 18min | 6min |
 | 03 | 3/3 | 35min | 12min |
-| 04 | 3/4 | 23min | 8min |
+| 04 | 4/4 | 24min | 6min |
 
 **Recent Trend:**
-- Last 5 plans: 03-02 (15min), 03-03 (11min), 04-01 (5min), 04-02 (15min), 04-03 (3min)
-- Trend: handler+router plan fast due to thin-wrapper pattern -- all logic in ProgramService
+- Last 5 plans: 03-03 (11min), 04-01 (5min), 04-02 (15min), 04-03 (3min), 04-04 (1min)
+- Trend: integration tests fast due to prior context establishing patterns; handler+router plans fast due to thin-wrapper pattern
 
 *Updated after each plan completion*
 
@@ -100,6 +100,9 @@ Recent decisions affecting current work:
 - [Phase 04]: Active program guard in every handler: 400 if path program_id != active program
 - [Phase 04]: Combined GET+POST routes for /programs and /programs/{id}/checkpoints via axum method chaining
 - [Phase 04]: Path param types: i64 for program_id (matching ProgramId(i64)), u32 for node_id/func_id
+- [Phase 04]: tower::ServiceExt::oneshot for integration testing without network server
+- [Phase 04]: ProgramService::in_memory() uses shared temp file (not separate in-memory DBs) for FK constraint satisfaction
+- [Phase 04]: Batch mutations required for nodes needing inputs (BinaryArith + edges added atomically)
 
 ### Pending Todos
 
@@ -114,5 +117,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 04-03-PLAN.md
-Resume file: .planning/phases/04-ai-agent-tool-api/04-03-SUMMARY.md
+Stopped at: Completed 04-04-PLAN.md (Phase 4 complete)
+Resume file: .planning/phases/04-ai-agent-tool-api/04-04-SUMMARY.md
