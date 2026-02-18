@@ -5,33 +5,34 @@
 See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core value:** AI agents can build, modify, and verify programs of arbitrary size with perfect local and global awareness
-**Current focus:** Phase 1: Core Graph Data Model
+**Current focus:** Phase 2: Storage & Persistence
 
 ## Current Position
 
-Phase: 1 of 9 (Core Graph Data Model)
-Plan: 4 of 4 in current phase
-Status: Phase Complete
-Last activity: 2026-02-18 — Completed 01-04-PLAN.md
+Phase: 2 of 9 (Storage & Persistence)
+Plan: 1 of 3 in current phase
+Status: In Progress
+Last activity: 2026-02-18 — Completed 02-01-PLAN.md
 
-Progress: [██░░░░░░░░] 11%
+Progress: [██░░░░░░░░] 14%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 4min
-- Total execution time: 0.25 hours
+- Total plans completed: 5
+- Average duration: 5min
+- Total execution time: 0.38 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 4/4 | 15min | 4min |
+| 02 | 1/3 | 8min | 8min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (4min), 01-02 (4min), 01-03 (3min), 01-04 (4min)
-- Trend: stable
+- Last 5 plans: 01-02 (4min), 01-03 (3min), 01-04 (4min), 02-01 (8min)
+- Trend: stable (02-01 longer due to new crate + trait design)
 
 *Updated after each plan completion*
 
@@ -59,6 +60,10 @@ Recent decisions affecting current work:
 - [Phase 01]: Compute and semantic graphs are private -- all mutations go through ProgramGraph methods for consistency
 - [Phase 01]: Module and function semantic node indices tracked in HashMaps for O(1) Contains edge creation
 - [Phase 01]: Debug-only assert_consistency verifies FunctionId-to-SemanticNode mapping integrity
+- [Phase 02]: Sync GraphStore trait (not async) matching current single-threaded design
+- [Phase 02]: from_parts constructors on ProgramGraph, TypeRegistry, ModuleTree for storage reconstruction
+- [Phase 02]: StableGraph gap-filling with dummy nodes for index preservation during recompose
+- [Phase 02]: find_nodes_by_type via edge value_type filtering (types inferred from edges, not stored on nodes)
 
 ### Pending Todos
 
@@ -73,5 +78,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-storage-persistence/02-CONTEXT.md
+Stopped at: Completed 02-01-PLAN.md
+Resume file: .planning/phases/02-storage-persistence/02-01-SUMMARY.md

@@ -53,7 +53,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — GraphStore trait, StorageError, ProgramId, decompose/recompose, InMemoryStore
+- [x] 02-01-PLAN.md — GraphStore trait, StorageError, ProgramId, decompose/recompose, InMemoryStore
 - [ ] 02-02-PLAN.md — SQLite schema, migrations, SqliteStore implementation, save/load roundtrip tests
 - [ ] 02-03-PLAN.md — blake3 content hashing, Merkle-tree composition, per-function root hashes
 
@@ -175,8 +175,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Graph Data Model | 1/4 | Complete    | 2026-02-18 |
-| 2. Storage & Persistence | 0/? | Not started | - |
+| 1. Core Graph Data Model | 4/4 | Complete    | 2026-02-18 |
+| 2. Storage & Persistence | 1/3 | In Progress | - |
 | 3. Type Checking & Graph Interpreter | 0/? | Not started | - |
 | 4. AI Agent Tool API | 0/? | Not started | - |
 | 5. LLVM Compilation Pipeline | 0/? | Not started | - |
