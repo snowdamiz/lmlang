@@ -97,6 +97,17 @@ impl TypeRegistry {
         }
     }
 
+    /// Reconstructs a TypeRegistry from stored parts.
+    ///
+    /// Used by the storage layer to rebuild the registry from loaded data.
+    pub fn from_parts(types: Vec<LmType>, names: HashMap<String, TypeId>, next_id: u32) -> Self {
+        TypeRegistry {
+            types,
+            names,
+            next_id,
+        }
+    }
+
     /// Registers a type and returns its new [`TypeId`].
     ///
     /// The type is added without a name. Use [`register_named`](Self::register_named)

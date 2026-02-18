@@ -82,6 +82,27 @@ impl ModuleTree {
         }
     }
 
+    /// Reconstructs a ModuleTree from stored parts.
+    ///
+    /// Used by the storage layer to rebuild the tree from loaded data.
+    pub fn from_parts(
+        modules: HashMap<ModuleId, ModuleDef>,
+        children: HashMap<ModuleId, Vec<ModuleId>>,
+        functions: HashMap<ModuleId, Vec<FunctionId>>,
+        type_defs: HashMap<ModuleId, Vec<TypeId>>,
+        root: ModuleId,
+        next_id: u32,
+    ) -> Self {
+        ModuleTree {
+            modules,
+            children,
+            functions,
+            type_defs,
+            root,
+            next_id,
+        }
+    }
+
     /// Returns the root module ID.
     pub fn root_id(&self) -> ModuleId {
         self.root
@@ -177,6 +198,26 @@ impl ModuleTree {
     /// Returns an iterator over all modules in the tree.
     pub fn all_modules(&self) -> impl Iterator<Item = (&ModuleId, &ModuleDef)> {
         self.modules.iter()
+    }
+
+    /// Returns the parent-to-children mapping.
+    pub fn children_map(&self) -> &HashMap<ModuleId, Vec<ModuleId>> {
+        &self.children
+    }
+
+    /// Returns the module-to-functions mapping.
+    pub fn functions_map(&self) -> &HashMap<ModuleId, Vec<FunctionId>> {
+        &self.functions
+    }
+
+    /// Returns the module-to-type-definitions mapping.
+    pub fn type_defs_map(&self) -> &HashMap<ModuleId, Vec<TypeId>> {
+        &self.type_defs
+    }
+
+    /// Returns the next module ID counter value.
+    pub fn next_id(&self) -> u32 {
+        self.next_id
     }
 
     /// Returns the full path from root to the given module.

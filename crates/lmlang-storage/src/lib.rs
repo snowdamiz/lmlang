@@ -30,3 +30,4 @@ pub mod memory;
 pub use error::StorageError;
 pub use types::{ProgramId, ProgramSummary};
 pub use traits::GraphStore;
+pub use memory::InMemoryStore;
