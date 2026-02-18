@@ -13,7 +13,7 @@ use crate::error::StorageError;
 fn migrations() -> Migrations<'static> {
     Migrations::new(vec![
         M::up(include_str!("migrations/001_initial_schema.sql")),
-        // Future migrations added here as new M::up(...) entries.
+        M::up(include_str!("migrations/002_edit_history.sql")),
     ])
 }
 
