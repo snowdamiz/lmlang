@@ -1076,21 +1076,127 @@ impl<'g> Interpreter<'g> {
             })
             .collect();
 
+        // Collect the activated successors for this branch
+        let mut activated_successors = Vec::new();
+
         // Activate only the taken control branch
-        for (succ_id, edge_branch) in control_successors {
-            let should_activate = match (taken_branch, edge_branch) {
+        for (succ_id, edge_branch) in &control_successors {
+            let should_activate = match (taken_branch, *edge_branch) {
                 (Some(taken), Some(edge)) => taken == edge,
                 (Some(_), None) => true,
                 (None, _) => true,
             };
 
             if should_activate {
+                activated_successors.push(*succ_id);
                 // Mark as control-ready and try to schedule
                 if let Some(frame) = self.call_stack.last_mut() {
-                    frame.control_ready.insert(succ_id);
+                    frame.control_ready.insert(*succ_id);
                 }
-                self.try_schedule_node(succ_id);
             }
+        }
+
+        // Loop back-edge re-evaluation: when Loop takes branch 0 (continue),
+        // clear the evaluated/value/readiness state of all loop body nodes so
+        // they can be re-scheduled and re-evaluated on the next iteration.
+        let is_loop_continue = matches!(op, ComputeNodeOp::Core(ComputeOp::Loop))
+            && taken_branch == Some(0);
+
+        if is_loop_continue {
+            // BFS from activated branch-0 successors through control edges to
+            // find all loop body nodes. Stop when hitting the Loop node itself
+            // or nodes outside the function.
+            let mut body_nodes: Vec<NodeId> = Vec::new();
+            let mut visited: HashSet<NodeId> = HashSet::new();
+            let mut queue: VecDeque<NodeId> = VecDeque::new();
+
+            for &succ in &activated_successors {
+                if !visited.contains(&succ) {
+                    visited.insert(succ);
+                    queue.push_back(succ);
+                    body_nodes.push(succ);
+                }
+            }
+
+            while let Some(current) = queue.pop_front() {
+                let cur_idx: petgraph::graph::NodeIndex<u32> = current.into();
+                // Follow outgoing control AND data edges to discover the full loop body
+                for edge_ref in self.graph.compute().edges_directed(cur_idx, Direction::Outgoing) {
+                    let target = NodeId::from(edge_ref.target());
+                    // Don't include the Loop node itself in the body reset set
+                    if target == node_id {
+                        continue;
+                    }
+                    if !visited.contains(&target) {
+                        visited.insert(target);
+                        queue.push_back(target);
+                        body_nodes.push(target);
+                    }
+                }
+            }
+
+            // Build a set for O(1) membership checks
+            let body_set: HashSet<NodeId> = body_nodes.iter().copied().collect();
+
+            // Pre-compute external readiness for each body node (using
+            // immutable borrows of graph and frame). Data edges from nodes
+            // OUTSIDE the body that still have values won't re-fire, so we
+            // pre-credit them in the readiness counter.
+            let frame_values: HashSet<NodeId> = self
+                .call_stack
+                .last()
+                .map(|f| f.node_values.keys().copied().collect())
+                .unwrap_or_default();
+
+            let external_ready_counts: Vec<(NodeId, usize)> = body_nodes
+                .iter()
+                .map(|&body_node| {
+                    let bn_idx: petgraph::graph::NodeIndex<u32> = body_node.into();
+                    let count = self
+                        .graph
+                        .compute()
+                        .edges_directed(bn_idx, Direction::Incoming)
+                        .filter(|e| e.weight().is_data())
+                        .filter(|e| {
+                            let src = NodeId::from(e.source());
+                            !body_set.contains(&src)
+                                && src != node_id
+                                && frame_values.contains(&src)
+                        })
+                        .count();
+                    (body_node, count)
+                })
+                .collect();
+
+            // Clear state for all body nodes so they can be re-evaluated
+            if let Some(frame) = self.call_stack.last_mut() {
+                for &body_node in &body_nodes {
+                    frame.evaluated.remove(&body_node);
+                    frame.node_values.remove(&body_node);
+                    frame.control_ready.remove(&body_node);
+                }
+                for (body_node, ext_ready) in &external_ready_counts {
+                    frame.readiness.insert(*body_node, *ext_ready);
+                }
+                // The Loop node itself must be re-evaluable when its condition
+                // input arrives from the back-edge
+                frame.evaluated.remove(&node_id);
+                frame.node_values.remove(&node_id);
+                frame.readiness.insert(node_id, 0);
+            }
+        }
+
+        // Re-apply control-ready for activated successors (may have been
+        // cleared by loop body reset above)
+        if let Some(frame) = self.call_stack.last_mut() {
+            for &succ_id in &activated_successors {
+                frame.control_ready.insert(succ_id);
+            }
+        }
+
+        // Now schedule activated successors (after state reset for loops)
+        for succ_id in &activated_successors {
+            self.try_schedule_node(*succ_id);
         }
 
         // Data successors from control flow nodes

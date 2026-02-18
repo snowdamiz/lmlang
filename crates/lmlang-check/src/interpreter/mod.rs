@@ -1151,4 +1151,169 @@ mod tests {
             _ => panic!("Expected I32(15), got {:?}", result),
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Real Loop op integration test (ComputeOp::Loop with back-edges)
+    // -----------------------------------------------------------------------
+
+    /// Builds a function that computes sum(n) = 1 + 2 + ... + n using a real
+    /// ComputeOp::Loop with memory-based loop-carried values and back-edges.
+    ///
+    /// Uses Alloc/Store/Load for loop variables (sum and i). The condition
+    /// Load and Compare nodes are part of the loop body (reachable from the
+    /// body via control edges from stores), so they get reset on each iteration
+    /// and naturally re-evaluate.
+    ///
+    /// Graph structure:
+    /// ```text
+    ///   param_n = Parameter(0)              // n: i32
+    ///
+    ///   // --- Allocate loop variables ---
+    ///   alloc_sum = Alloc, alloc_i = Alloc
+    ///   store_init: *alloc_sum = 0, *alloc_i = 1
+    ///
+    ///   // --- Loop header (re-evaluated each iteration) ---
+    ///   load_i_hdr = Load(alloc_i)          // initially control-gated by store_init_i
+    ///   cond = Compare(Le, load_i_hdr, n)   // also: control from store_i_body (back-edge)
+    ///   loop_node = Loop(cond)              // branch 0=continue, 1=exit
+    ///
+    ///   // --- Loop body (control-gated by Loop branch 0) ---
+    ///   load_sum, load_i -> new_sum = sum+i -> store_sum
+    ///   load_i + 1 -> next_i -> store_i
+    ///   store_i -> control -> load_i_hdr (back-edge: triggers re-evaluation)
+    ///
+    ///   // --- Exit path (control-gated by Loop branch 1) ---
+    ///   load_sum_exit -> Return
+    /// ```
+    fn build_loop_sum_graph() -> (ProgramGraph, lmlang_core::id::FunctionId) {
+        let mut graph = ProgramGraph::new("test");
+        let root = graph.modules.root_id();
+
+        let func_id = graph
+            .add_function(
+                "sum_loop".into(),
+                root,
+                vec![("n".into(), TypeId::I32)],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        // --- Parameter ---
+        let param_n = graph.add_core_op(ComputeOp::Parameter { index: 0 }, func_id).unwrap();
+
+        // --- Allocate loop variables ---
+        let alloc_sum = graph.add_core_op(ComputeOp::Alloc, func_id).unwrap();
+        let alloc_i = graph.add_core_op(ComputeOp::Alloc, func_id).unwrap();
+
+        // --- Initial values ---
+        let const_0 = graph.add_core_op(ComputeOp::Const { value: lmlang_core::ConstValue::I32(0) }, func_id).unwrap();
+        let const_1 = graph.add_core_op(ComputeOp::Const { value: lmlang_core::ConstValue::I32(1) }, func_id).unwrap();
+        let const_1_inc = graph.add_core_op(ComputeOp::Const { value: lmlang_core::ConstValue::I32(1) }, func_id).unwrap();
+
+        // --- Store initial values ---
+        let store_sum_init = graph.add_core_op(ComputeOp::Store, func_id).unwrap();
+        graph.add_data_edge(alloc_sum, store_sum_init, 0, 0, TypeId::I32).unwrap();
+        graph.add_data_edge(const_0, store_sum_init, 0, 1, TypeId::I32).unwrap();
+
+        let store_i_init = graph.add_core_op(ComputeOp::Store, func_id).unwrap();
+        graph.add_data_edge(alloc_i, store_i_init, 0, 0, TypeId::I32).unwrap();
+        graph.add_data_edge(const_1, store_i_init, 0, 1, TypeId::I32).unwrap();
+
+        // --- Loop header: load i, check condition ---
+        // load_i_hdr is control-gated by store_i_init (initial) and later
+        // re-triggered by store_i_body control edge (back-edge path).
+        let load_i_hdr = graph.add_core_op(ComputeOp::Load, func_id).unwrap();
+        graph.add_data_edge(alloc_i, load_i_hdr, 0, 0, TypeId::I32).unwrap();
+        graph.add_control_edge(store_i_init, load_i_hdr, None).unwrap();
+
+        // cond: i <= n (ONE data edge to Loop -- no dual-edge problem)
+        let cond = graph.add_core_op(ComputeOp::Compare { op: CmpOp::Le }, func_id).unwrap();
+        graph.add_data_edge(load_i_hdr, cond, 0, 0, TypeId::I32).unwrap();
+        graph.add_data_edge(param_n, cond, 0, 1, TypeId::I32).unwrap();
+
+        // loop_node: Loop with condition on port 0
+        let loop_node = graph.add_core_op(ComputeOp::Loop, func_id).unwrap();
+        graph.add_data_edge(cond, loop_node, 0, 0, TypeId::BOOL).unwrap();
+
+        // --- Loop body (control-gated by Loop branch 0) ---
+        let load_sum_body = graph.add_core_op(ComputeOp::Load, func_id).unwrap();
+        graph.add_data_edge(alloc_sum, load_sum_body, 0, 0, TypeId::I32).unwrap();
+        graph.add_control_edge(loop_node, load_sum_body, Some(0)).unwrap();
+
+        let load_i_body = graph.add_core_op(ComputeOp::Load, func_id).unwrap();
+        graph.add_data_edge(alloc_i, load_i_body, 0, 0, TypeId::I32).unwrap();
+        graph.add_control_edge(loop_node, load_i_body, Some(0)).unwrap();
+
+        // new_sum = sum + i
+        let new_sum = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id).unwrap();
+        graph.add_data_edge(load_sum_body, new_sum, 0, 0, TypeId::I32).unwrap();
+        graph.add_data_edge(load_i_body, new_sum, 0, 1, TypeId::I32).unwrap();
+
+        // store_sum_body: *alloc_sum = new_sum
+        let store_sum_body = graph.add_core_op(ComputeOp::Store, func_id).unwrap();
+        graph.add_data_edge(alloc_sum, store_sum_body, 0, 0, TypeId::I32).unwrap();
+        graph.add_data_edge(new_sum, store_sum_body, 0, 1, TypeId::I32).unwrap();
+
+        // next_i = i + 1
+        let next_i = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id).unwrap();
+        graph.add_data_edge(load_i_body, next_i, 0, 0, TypeId::I32).unwrap();
+        graph.add_data_edge(const_1_inc, next_i, 0, 1, TypeId::I32).unwrap();
+
+        // store_i_body: *alloc_i = next_i
+        let store_i_body = graph.add_core_op(ComputeOp::Store, func_id).unwrap();
+        graph.add_data_edge(alloc_i, store_i_body, 0, 0, TypeId::I32).unwrap();
+        graph.add_data_edge(next_i, store_i_body, 0, 1, TypeId::I32).unwrap();
+
+        // --- Back-edge: store_i_body -> load_i_hdr (control edge) ---
+        // This creates the back-edge: after the body stores, the condition
+        // load re-reads i from memory, feeds the condition, and the Loop
+        // re-evaluates. The BFS in propagate_control_flow discovers
+        // load_i_hdr and cond as body nodes (reachable from store_i_body),
+        // so they get reset on each iteration.
+        graph.add_control_edge(store_i_body, load_i_hdr, None).unwrap();
+
+        // --- Exit path (control-gated by Loop branch 1) ---
+        let load_sum_exit = graph.add_core_op(ComputeOp::Load, func_id).unwrap();
+        graph.add_data_edge(alloc_sum, load_sum_exit, 0, 0, TypeId::I32).unwrap();
+        graph.add_control_edge(loop_node, load_sum_exit, Some(1)).unwrap();
+
+        let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+        graph.add_data_edge(load_sum_exit, ret, 0, 0, TypeId::I32).unwrap();
+
+        (graph, func_id)
+    }
+
+    #[test]
+    fn integration_loop_with_real_loop_op() {
+        // sum_loop(5) = 1 + 2 + 3 + 4 + 5 = 15
+        let (graph, func_id) = build_loop_sum_graph();
+        let result = run_function(&graph, func_id, vec![Value::I32(5)]).unwrap();
+        match result {
+            Value::I32(v) => assert_eq!(v, 15, "sum_loop(5) should be 15"),
+            _ => panic!("Expected I32(15), got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn integration_loop_with_real_loop_op_n1() {
+        // sum_loop(1) = 1
+        let (graph, func_id) = build_loop_sum_graph();
+        let result = run_function(&graph, func_id, vec![Value::I32(1)]).unwrap();
+        match result {
+            Value::I32(v) => assert_eq!(v, 1, "sum_loop(1) should be 1"),
+            _ => panic!("Expected I32(1), got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn integration_loop_with_real_loop_op_n0() {
+        // sum_loop(0) = 0 (loop body never executes, sum stays at initial 0)
+        let (graph, func_id) = build_loop_sum_graph();
+        let result = run_function(&graph, func_id, vec![Value::I32(0)]).unwrap();
+        match result {
+            Value::I32(v) => assert_eq!(v, 0, "sum_loop(0) should be 0"),
+            _ => panic!("Expected I32(0), got {:?}", result),
+        }
+    }
 }
