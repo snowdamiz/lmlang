@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 4 of 9 (AI Agent Tool API)
-Plan: 1 of 4 in current phase
+Plan: 2 of 4 in current phase
 Status: Executing Phase 4
-Last activity: 2026-02-18 — Completed 04-01-PLAN.md
+Last activity: 2026-02-18 — Completed 04-02-PLAN.md
 
-Progress: [████░░░░░░] 38%
+Progress: [████░░░░░░] 42%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
+- Total plans completed: 12
 - Average duration: 7min
-- Total execution time: 1.21 hours
+- Total execution time: 1.46 hours
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [████░░░░░░] 38%
 | 01 | 4/4 | 15min | 4min |
 | 02 | 3/3 | 18min | 6min |
 | 03 | 3/3 | 35min | 12min |
-| 04 | 1/4 | 5min | 5min |
+| 04 | 2/4 | 20min | 10min |
 
 **Recent Trend:**
-- Last 5 plans: 03-01 (9min), 03-02 (15min), 03-03 (11min), 04-01 (5min)
-- Trend: schema-only plan fast; service layer plans expected to take longer
+- Last 5 plans: 03-01 (9min), 03-02 (15min), 03-03 (11min), 04-01 (5min), 04-02 (15min)
+- Trend: service layer plan took longer as expected; schema+service combination
 
 *Updated after each plan completion*
 
@@ -90,6 +90,12 @@ Recent decisions affecting current work:
 - [Phase 04]: SimulateRequest inputs use serde_json::Value -- agents send plain JSON, service converts to interpreter Value
 - [Phase 04]: DiagnosticError omits FixSuggestion per CONTEXT.md: errors describe problem only, agent determines fix
 - [Phase 04]: ApiError maps NotFound->404, BadRequest->400, ValidationFailed->422, InternalError->500, Conflict->409
+- [Phase 04]: ProgramService owns graph, store, connection, and program_id as single coordinator
+- [Phase 04]: Batch mutations use clone-and-swap: clone graph, apply all, validate, swap on success
+- [Phase 04]: Single mutations apply to real graph with inverse-revert on validation failure
+- [Phase 04]: EditCommand inverse() computes inverse for each variant (LIFO for batches)
+- [Phase 04]: Checkpoint stores full ProgramGraph JSON with edit_log position reference
+- [Phase 04]: New mutations clear redo stack (invalidate undone entries)
 
 ### Pending Todos
 
@@ -104,5 +110,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 04-01-PLAN.md
-Resume file: .planning/phases/04-ai-agent-tool-api/04-01-SUMMARY.md
+Stopped at: Completed 04-02-PLAN.md
+Resume file: .planning/phases/04-ai-agent-tool-api/04-02-SUMMARY.md

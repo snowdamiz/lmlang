@@ -20,16 +20,16 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **STORE-01**: Programs persist in SQLite with atomic writes and schema migration support
 - [x] **STORE-02**: Graph storage uses a trait abstraction (`GraphStore`) swappable to alternative backends without core changes
-- [ ] **STORE-03**: User can undo/rollback edits via edit log or graph snapshots
+- [x] **STORE-03**: User can undo/rollback edits via edit log or graph snapshots
 - [x] **STORE-04**: Each graph node has a deterministic content hash for identity and change detection
 - [ ] **STORE-05**: Incremental recompilation via red-green dirty node tracking -- only recompile functions whose subgraphs actually changed
 
 ### AI Agent Tool Interface
 
-- [ ] **TOOL-01**: `propose_structured_edit` accepts structured graph mutations (node insert, edge add/remove, node modify, subgraph replace) with validation before commit
-- [ ] **TOOL-02**: `retrieve_subgraph` returns focused graph context by node ID, function boundary, N-hop neighborhood, or type/relationship filter as structured JSON
-- [ ] **TOOL-03**: `verify_and_propagate` type-checks affected subgraph, runs contract checks, marks dirty nodes, propagates changes between layers, returns pass/fail with diagnostics
-- [ ] **TOOL-04**: `simulate` executes a subgraph with provided inputs in the interpreter, returns output values and execution trace
+- [x] **TOOL-01**: `propose_structured_edit` accepts structured graph mutations (node insert, edge add/remove, node modify, subgraph replace) with validation before commit
+- [x] **TOOL-02**: `retrieve_subgraph` returns focused graph context by node ID, function boundary, N-hop neighborhood, or type/relationship filter as structured JSON
+- [x] **TOOL-03**: `verify_and_propagate` type-checks affected subgraph, runs contract checks, marks dirty nodes, propagates changes between layers, returns pass/fail with diagnostics
+- [x] **TOOL-04**: `simulate` executes a subgraph with provided inputs in the interpreter, returns output values and execution trace
 - [x] **TOOL-05**: Tool API exposed as HTTP/JSON endpoints via axum, callable by any LLM with structured output support
 - [x] **TOOL-06**: Error responses include structured diagnostics with graph location context (node IDs, edge paths, failing contract, expected vs actual types)
 
@@ -115,13 +115,13 @@ Deferred to future release. Tracked but not in current roadmap.
 | GRAPH-06 | Phase 1 | Complete |
 | STORE-01 | Phase 2 | Complete |
 | STORE-02 | Phase 2 | Complete |
-| STORE-03 | Phase 4 | Pending |
+| STORE-03 | Phase 4 | Complete |
 | STORE-04 | Phase 2 | Complete |
 | STORE-05 | Phase 6 | Pending |
-| TOOL-01 | Phase 4 | Pending |
-| TOOL-02 | Phase 4 | Pending |
-| TOOL-03 | Phase 4 | Pending |
-| TOOL-04 | Phase 4 | Pending |
+| TOOL-01 | Phase 4 | Complete |
+| TOOL-02 | Phase 4 | Complete |
+| TOOL-03 | Phase 4 | Complete |
+| TOOL-04 | Phase 4 | Complete |
 | TOOL-05 | Phase 4 | Complete |
 | TOOL-06 | Phase 4 | Complete |
 | CNTR-01 | Phase 3 | Complete |
