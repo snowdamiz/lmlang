@@ -34,12 +34,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Control flow for conditionals, loops, and side-effect ordering is represented by separate control edges with branch/merge and back-edge semantics
   4. Programs decompose into function subgraphs with typed parameter/return interfaces and module boundaries
   5. The type system supports scalars (i8-i64, f32/f64, bool), aggregates (arrays, structs), pointers/references, and function signatures
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
-- [ ] 01-03: TBD
+- [ ] 01-01-PLAN.md — Cargo workspace setup + type system, type registry, IDs, error types
+- [ ] 01-02-PLAN.md — Op node enums (Tier 1 + Tier 2), edge types, node wrappers
+- [ ] 01-03-PLAN.md — Function definitions with closures, hierarchical module tree
+- [ ] 01-04-PLAN.md — Dual ProgramGraph container, builder API, integration test
 
 ### Phase 2: Storage & Persistence
 **Goal**: Programs persist across process restarts in SQLite with a swappable backend and content-addressable identity
@@ -173,7 +174,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Graph Data Model | 0/? | Not started | - |
+| 1. Core Graph Data Model | 0/4 | Planned | - |
 | 2. Storage & Persistence | 0/? | Not started | - |
 | 3. Type Checking & Graph Interpreter | 0/? | Not started | - |
 | 4. AI Agent Tool API | 0/? | Not started | - |
