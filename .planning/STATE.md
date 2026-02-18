@@ -85,5 +85,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 02-03-PLAN.md (Phase 02 complete)
-Resume file: .planning/phases/02-storage-persistence/02-03-SUMMARY.md
+Stopped at: Phase 3 context gathered
+Resume file: .planning/phases/03-type-checking-graph-interpreter/03-CONTEXT.md
