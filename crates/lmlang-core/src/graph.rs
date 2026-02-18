@@ -717,4 +717,239 @@ mod tests {
         assert_eq!(graph.compute().node_count(), 0);
         assert_eq!(graph.semantic().node_count(), 1); // root module
     }
+
+    /// Comprehensive integration test constructing a multi-function program
+    /// with a closure. Proves the entire Phase 1 data model works end-to-end.
+    ///
+    /// Program represented:
+    /// ```text
+    /// module main {
+    ///     fn add(a: i32, b: i32) -> i32 {
+    ///         return a + b;
+    ///     }
+    ///
+    ///     fn make_adder(offset: i32) -> fn(i32) -> i32 {
+    ///         let adder = |x: i32| -> i32 { add(x, offset) };
+    ///         return adder;
+    ///     }
+    /// }
+    /// ```
+    #[test]
+    fn test_multi_function_program_with_closure() {
+        let mut graph = ProgramGraph::new("main");
+        let root = graph.modules.root_id();
+        let i32_id = TypeId::I32;
+
+        // ---------------------------------------------------------------
+        // 1. Add function "add" to root module
+        // ---------------------------------------------------------------
+        let add_fn_id = graph
+            .add_function(
+                "add".into(),
+                root,
+                vec![("a".into(), i32_id), ("b".into(), i32_id)],
+                i32_id,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        // Build body of "add":
+        //   param_a -> sum (port 0->0)
+        //   param_b -> sum (port 0->1)
+        //   sum -> ret (port 0->0)
+        let param_a = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, add_fn_id)
+            .unwrap();
+        let param_b = graph
+            .add_core_op(ComputeOp::Parameter { index: 1 }, add_fn_id)
+            .unwrap();
+        let sum = graph
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, add_fn_id)
+            .unwrap();
+        let add_ret = graph.add_core_op(ComputeOp::Return, add_fn_id).unwrap();
+
+        graph
+            .add_data_edge(param_a, sum, 0, 0, i32_id)
+            .unwrap();
+        graph
+            .add_data_edge(param_b, sum, 0, 1, i32_id)
+            .unwrap();
+        graph
+            .add_data_edge(sum, add_ret, 0, 0, i32_id)
+            .unwrap();
+
+        // Set entry node on "add".
+        graph.get_function_mut(add_fn_id).unwrap().entry_node = Some(param_a);
+
+        // ---------------------------------------------------------------
+        // 2. Register function type for make_adder's return type
+        // ---------------------------------------------------------------
+        let fn_i32_to_i32 = graph.types.register(crate::types::LmType::Function {
+            params: vec![i32_id],
+            return_type: i32_id,
+        });
+
+        // ---------------------------------------------------------------
+        // 3. Add function "make_adder"
+        // ---------------------------------------------------------------
+        let make_adder_id = graph
+            .add_function(
+                "make_adder".into(),
+                root,
+                vec![("offset".into(), i32_id)],
+                fn_i32_to_i32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        // ---------------------------------------------------------------
+        // 4. Add closure "adder" with parent make_adder
+        // ---------------------------------------------------------------
+        let adder_fn_id = graph
+            .add_closure(
+                "adder".into(),
+                root,
+                make_adder_id,
+                vec![("x".into(), i32_id)],
+                i32_id,
+                vec![Capture {
+                    name: "offset".into(),
+                    captured_type: i32_id,
+                    mode: crate::function::CaptureMode::ByValue,
+                }],
+            )
+            .unwrap();
+
+        // ---------------------------------------------------------------
+        // 5. Build closure "adder" body:
+        //   param_x -> call_add (port 0->0)
+        //   cap_offset -> call_add (port 0->1)
+        //   call_add -> adder_ret (port 0->0)
+        // ---------------------------------------------------------------
+        let param_x = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, adder_fn_id)
+            .unwrap();
+        let cap_offset = graph
+            .add_core_op(ComputeOp::CaptureAccess { index: 0 }, adder_fn_id)
+            .unwrap();
+        let call_add = graph
+            .add_core_op(ComputeOp::Call { target: add_fn_id }, adder_fn_id)
+            .unwrap();
+        let adder_ret = graph
+            .add_core_op(ComputeOp::Return, adder_fn_id)
+            .unwrap();
+
+        graph
+            .add_data_edge(param_x, call_add, 0, 0, i32_id)
+            .unwrap();
+        graph
+            .add_data_edge(cap_offset, call_add, 0, 1, i32_id)
+            .unwrap();
+        graph
+            .add_data_edge(call_add, adder_ret, 0, 0, i32_id)
+            .unwrap();
+
+        graph.get_function_mut(adder_fn_id).unwrap().entry_node = Some(param_x);
+
+        // ---------------------------------------------------------------
+        // 6. Build make_adder body:
+        //   param_offset -> make_closure (port 0->0, i32 -- captured value)
+        //   make_closure -> ma_ret (port 0->0, fn type)
+        // ---------------------------------------------------------------
+        let ma_param_offset = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, make_adder_id)
+            .unwrap();
+        let make_closure = graph
+            .add_core_op(
+                ComputeOp::MakeClosure {
+                    function: adder_fn_id,
+                },
+                make_adder_id,
+            )
+            .unwrap();
+        let ma_ret = graph
+            .add_core_op(ComputeOp::Return, make_adder_id)
+            .unwrap();
+
+        graph
+            .add_data_edge(ma_param_offset, make_closure, 0, 0, i32_id)
+            .unwrap();
+        graph
+            .add_data_edge(make_closure, ma_ret, 0, 0, fn_i32_to_i32)
+            .unwrap();
+
+        graph.get_function_mut(make_adder_id).unwrap().entry_node =
+            Some(ma_param_offset);
+
+        // ===============================================================
+        // ASSERTIONS
+        // ===============================================================
+
+        // Function count: add, make_adder, adder (closure) = 3
+        assert_eq!(graph.function_count(), 3);
+
+        // Node count: add has 4, adder has 4, make_adder has 3 = 11
+        assert_eq!(graph.node_count(), 11);
+
+        // Edge count: add has 3, adder has 3, make_adder has 2 = 8
+        assert_eq!(graph.edge_count(), 8);
+
+        // function_nodes for "add" returns exactly 4
+        let add_nodes = graph.function_nodes(add_fn_id);
+        assert_eq!(add_nodes.len(), 4);
+
+        // Closure verification
+        let adder_def = graph.get_function(adder_fn_id).unwrap();
+        assert!(adder_def.is_closure);
+        assert_eq!(adder_def.captures.len(), 1);
+        assert_eq!(adder_def.captures[0].name, "offset");
+        assert_eq!(adder_def.parent_function, Some(make_adder_id));
+
+        // Semantic graph checks:
+        // root module + add + make_adder + adder = 4 semantic nodes
+        assert_eq!(graph.semantic_node_count(), 4);
+
+        // Contains edges: root->add, root->make_adder, root->adder = 3
+        assert_eq!(graph.semantic_edge_count(), 3);
+
+        // Verify semantic edges are Contains type from root module
+        let sem = graph.semantic();
+        for edge_idx in sem.edge_indices() {
+            let edge_weight = &sem[edge_idx];
+            assert_eq!(
+                *edge_weight,
+                SemanticEdge::Contains,
+                "All semantic edges should be Contains"
+            );
+        }
+
+        // ---------------------------------------------------------------
+        // Serde round-trip
+        // ---------------------------------------------------------------
+        let json = serde_json::to_string(&graph).unwrap();
+        let deserialized: ProgramGraph = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.node_count(), graph.node_count());
+        assert_eq!(deserialized.edge_count(), graph.edge_count());
+        assert_eq!(deserialized.function_count(), graph.function_count());
+        assert_eq!(
+            deserialized.semantic_node_count(),
+            graph.semantic_node_count()
+        );
+        assert_eq!(
+            deserialized.semantic_edge_count(),
+            graph.semantic_edge_count()
+        );
+
+        // Verify function data survives round-trip
+        let rt_adder = deserialized.get_function(adder_fn_id).unwrap();
+        assert!(rt_adder.is_closure);
+        assert_eq!(rt_adder.captures.len(), 1);
+        assert_eq!(rt_adder.parent_function, Some(make_adder_id));
+
+        let rt_add = deserialized.get_function(add_fn_id).unwrap();
+        assert_eq!(rt_add.name, "add");
+        assert_eq!(rt_add.params.len(), 2);
+        assert_eq!(rt_add.entry_node, Some(param_a));
+    }
 }
