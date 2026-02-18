@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 1 of 9 (Core Graph Data Model)
-Plan: 1 of 4 in current phase
+Plan: 2 of 4 in current phase
 Status: Executing
-Last activity: 2026-02-18 — Completed 01-01-PLAN.md
+Last activity: 2026-02-18 — Completed 01-02-PLAN.md
 
-Progress: [█░░░░░░░░░] 3%
+Progress: [██░░░░░░░░] 6%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
+- Total plans completed: 2
 - Average duration: 4min
-- Total execution time: 0.07 hours
+- Total execution time: 0.13 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 1/4 | 4min | 4min |
+| 01 | 2/4 | 8min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (4min)
-- Trend: baseline
+- Last 5 plans: 01-01 (4min), 01-02 (4min)
+- Trend: stable
 
 *Updated after each plan completion*
 
@@ -49,6 +49,10 @@ Recent decisions affecting current work:
 - [Phase 01]: No unsigned integer types -- follows LLVM approach (signedness at operation level)
 - [Phase 01]: TypeId constants (BOOL through NEVER) as associated consts for ergonomic builtin access
 - [Phase 01]: F32 ConstValue stored as f64 internally for float comparison safety in enum derives
+- [Phase 01]: Types inferred from edges, not stored on ops -- follows LLVM model, eliminates redundancy
+- [Phase 01]: Both high-level (IfElse, Loop, Match) and low-level (Branch, Jump, Phi) control flow ops included
+- [Phase 01]: ModuleDef stub in node.rs with TODO(plan-03) for later migration to module.rs
+- [Phase 01]: FunctionSummary (not full FunctionDef) in SemanticNode -- full def goes in separate lookup table
 
 ### Pending Todos
 
@@ -63,5 +67,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 01-01-PLAN.md
-Resume file: .planning/phases/01-core-graph-data-model/01-01-SUMMARY.md
+Stopped at: Completed 01-02-PLAN.md
+Resume file: .planning/phases/01-core-graph-data-model/01-02-SUMMARY.md

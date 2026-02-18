@@ -9,12 +9,12 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Core Graph Representation
 
-- [ ] **GRAPH-01**: System represents programs as typed computational graph nodes with ~30 primitive operations (arithmetic, comparison, logic, control flow, memory, function call/return, I/O)
-- [ ] **GRAPH-02**: Graph edges encode data flow with typed connections (SSA-style: each value produced once, consumed via typed edges)
-- [ ] **GRAPH-03**: Graph edges encode control flow for side-effect ordering, conditionals (branch/merge), and loop back-edges
+- [x] **GRAPH-01**: System represents programs as typed computational graph nodes with ~30 primitive operations (arithmetic, comparison, logic, control flow, memory, function call/return, I/O)
+- [x] **GRAPH-02**: Graph edges encode data flow with typed connections (SSA-style: each value produced once, consumed via typed edges)
+- [x] **GRAPH-03**: Graph edges encode control flow for side-effect ordering, conditionals (branch/merge), and loop back-edges
 - [ ] **GRAPH-04**: Programs decompose into function subgraphs with typed interfaces (parameters + return type) and module boundaries
 - [x] **GRAPH-05**: Type system supports scalars (i8-i64, f32/f64, bool), aggregates (arrays, structs), pointers/references, and function signatures
-- [ ] **GRAPH-06**: Op node set organized in tiers: Tier 1 core (~15-18 ops mapping directly to LLVM IR), Tier 2 structured (~8-10 ops for struct access, array index, cast, phi/merge)
+- [x] **GRAPH-06**: Op node set organized in tiers: Tier 1 core (~15-18 ops mapping directly to LLVM IR), Tier 2 structured (~8-10 ops for struct access, array index, cast, phi/merge)
 
 ### Storage & Persistence
 
@@ -107,12 +107,12 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GRAPH-01 | Phase 1 | Pending |
-| GRAPH-02 | Phase 1 | Pending |
-| GRAPH-03 | Phase 1 | Pending |
+| GRAPH-01 | Phase 1 | Complete |
+| GRAPH-02 | Phase 1 | Complete |
+| GRAPH-03 | Phase 1 | Complete |
 | GRAPH-04 | Phase 1 | Pending |
 | GRAPH-05 | Phase 1 | Complete |
-| GRAPH-06 | Phase 1 | Pending |
+| GRAPH-06 | Phase 1 | Complete |
 | STORE-01 | Phase 2 | Pending |
 | STORE-02 | Phase 2 | Pending |
 | STORE-03 | Phase 4 | Pending |
