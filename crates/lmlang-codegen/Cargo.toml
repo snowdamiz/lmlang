@@ -1,0 +1,16 @@
+[package]
+name = "lmlang-codegen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+inkwell = { version = "0.8.0", features = ["llvm21-1"] }
+lmlang-core = { path = "../lmlang-core" }
+lmlang-check = { path = "../lmlang-check" }
+thiserror = "2"
+tempfile = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+indexmap = "2"
