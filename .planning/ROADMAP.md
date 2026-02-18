@@ -12,7 +12,7 @@ lmlang delivers an AI-native programming system where programs are persistent du
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Core Graph Data Model** - Type system, op nodes, data/control flow edges, function boundaries, and dual-graph structure
+- [x] **Phase 1: Core Graph Data Model** - Type system, op nodes, data/control flow edges, function boundaries, and dual-graph structure (completed 2026-02-18)
 - [ ] **Phase 2: Storage & Persistence** - SQLite backend, trait abstraction, content hashing so programs survive restarts
 - [ ] **Phase 3: Type Checking & Graph Interpreter** - Static type verification and development-time execution without LLVM
 - [ ] **Phase 4: AI Agent Tool API** - HTTP endpoints for structured graph manipulation, retrieval, verification, simulation, and undo
@@ -174,7 +174,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Graph Data Model | 1/4 | In Progress | - |
+| 1. Core Graph Data Model | 1/4 | Complete    | 2026-02-18 |
 | 2. Storage & Persistence | 0/? | Not started | - |
 | 3. Type Checking & Graph Interpreter | 0/? | Not started | - |
 | 4. AI Agent Tool API | 0/? | Not started | - |
