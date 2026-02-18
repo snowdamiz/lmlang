@@ -1577,3 +1577,499 @@ impl GraphStore for SqliteStore {
         Ok(result)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lmlang_core::function::{Capture, CaptureMode};
+    use lmlang_core::ops::{ArithOp, ComputeOp, UnaryArithOp};
+    use lmlang_core::types::Visibility;
+
+    /// Builds the multi-function closure program from Phase 1 integration test.
+    /// Same program as InMemoryStore tests: add, make_adder, adder(closure).
+    fn build_full_program() -> ProgramGraph {
+        let mut graph = ProgramGraph::new("main");
+        let root = graph.modules.root_id();
+        let i32_id = TypeId::I32;
+
+        // Function "add"
+        let add_fn_id = graph
+            .add_function(
+                "add".into(),
+                root,
+                vec![("a".into(), i32_id), ("b".into(), i32_id)],
+                i32_id,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        let param_a = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, add_fn_id)
+            .unwrap();
+        let param_b = graph
+            .add_core_op(ComputeOp::Parameter { index: 1 }, add_fn_id)
+            .unwrap();
+        let sum = graph
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, add_fn_id)
+            .unwrap();
+        let add_ret = graph
+            .add_core_op(ComputeOp::Return, add_fn_id)
+            .unwrap();
+
+        graph
+            .add_data_edge(param_a, sum, 0, 0, i32_id)
+            .unwrap();
+        graph
+            .add_data_edge(param_b, sum, 0, 1, i32_id)
+            .unwrap();
+        graph
+            .add_data_edge(sum, add_ret, 0, 0, i32_id)
+            .unwrap();
+
+        graph.get_function_mut(add_fn_id).unwrap().entry_node = Some(param_a);
+
+        // Register function type
+        let fn_i32_to_i32 = graph.types.register(LmType::Function {
+            params: vec![i32_id],
+            return_type: i32_id,
+        });
+
+        // Function "make_adder"
+        let make_adder_id = graph
+            .add_function(
+                "make_adder".into(),
+                root,
+                vec![("offset".into(), i32_id)],
+                fn_i32_to_i32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        // Closure "adder"
+        let adder_fn_id = graph
+            .add_closure(
+                "adder".into(),
+                root,
+                make_adder_id,
+                vec![("x".into(), i32_id)],
+                i32_id,
+                vec![Capture {
+                    name: "offset".into(),
+                    captured_type: i32_id,
+                    mode: CaptureMode::ByValue,
+                }],
+            )
+            .unwrap();
+
+        // Closure body
+        let param_x = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, adder_fn_id)
+            .unwrap();
+        let cap_offset = graph
+            .add_core_op(ComputeOp::CaptureAccess { index: 0 }, adder_fn_id)
+            .unwrap();
+        let call_add = graph
+            .add_core_op(ComputeOp::Call { target: add_fn_id }, adder_fn_id)
+            .unwrap();
+        let adder_ret = graph
+            .add_core_op(ComputeOp::Return, adder_fn_id)
+            .unwrap();
+
+        graph
+            .add_data_edge(param_x, call_add, 0, 0, i32_id)
+            .unwrap();
+        graph
+            .add_data_edge(cap_offset, call_add, 0, 1, i32_id)
+            .unwrap();
+        graph
+            .add_data_edge(call_add, adder_ret, 0, 0, i32_id)
+            .unwrap();
+
+        graph.get_function_mut(adder_fn_id).unwrap().entry_node = Some(param_x);
+
+        // make_adder body
+        let ma_param_offset = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, make_adder_id)
+            .unwrap();
+        let make_closure = graph
+            .add_core_op(
+                ComputeOp::MakeClosure {
+                    function: adder_fn_id,
+                },
+                make_adder_id,
+            )
+            .unwrap();
+        let ma_ret = graph
+            .add_core_op(ComputeOp::Return, make_adder_id)
+            .unwrap();
+
+        graph
+            .add_data_edge(ma_param_offset, make_closure, 0, 0, i32_id)
+            .unwrap();
+        graph
+            .add_data_edge(make_closure, ma_ret, 0, 0, fn_i32_to_i32)
+            .unwrap();
+
+        graph.get_function_mut(make_adder_id).unwrap().entry_node = Some(ma_param_offset);
+
+        graph
+    }
+
+    #[test]
+    fn test_create_and_list_programs() {
+        let mut store = SqliteStore::in_memory().unwrap();
+
+        let id1 = store.create_program("alpha").unwrap();
+        let id2 = store.create_program("beta").unwrap();
+
+        let list = store.list_programs().unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].name, "alpha");
+        assert_eq!(list[0].id, id1);
+        assert_eq!(list[1].name, "beta");
+        assert_eq!(list[1].id, id2);
+
+        // Duplicate name should fail (UNIQUE constraint)
+        let dup = store.create_program("alpha");
+        assert!(dup.is_err());
+    }
+
+    #[test]
+    fn test_save_load_empty_program() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        let graph = ProgramGraph::new("main");
+
+        let id = store.create_program("empty").unwrap();
+        store.save_program(id, &graph).unwrap();
+
+        let loaded = store.load_program(id).unwrap();
+
+        // Empty program has: 0 compute nodes, 0 edges, 0 functions
+        assert_eq!(loaded.node_count(), 0);
+        assert_eq!(loaded.edge_count(), 0);
+        assert_eq!(loaded.function_count(), 0);
+        // But has 1 semantic node (root module) and 0 semantic edges
+        assert_eq!(loaded.semantic_node_count(), 1);
+        assert_eq!(loaded.semantic_edge_count(), 0);
+    }
+
+    #[test]
+    fn test_save_load_full_program_roundtrip() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        let graph = build_full_program();
+
+        let id = store.create_program("full_test").unwrap();
+        store.save_program(id, &graph).unwrap();
+
+        let loaded = store.load_program(id).unwrap();
+
+        // Verify counts match exactly
+        assert_eq!(loaded.node_count(), 11); // add: 4, adder: 4, make_adder: 3
+        assert_eq!(loaded.edge_count(), 8); // add: 3, adder: 3, make_adder: 2
+        assert_eq!(loaded.function_count(), 3); // add, make_adder, adder
+
+        // Verify semantic graph
+        assert_eq!(loaded.semantic_node_count(), 4); // root + 3 functions
+        assert_eq!(loaded.semantic_edge_count(), 3); // Contains edges
+
+        // Verify function "add"
+        let add_def = loaded.get_function(FunctionId(0)).unwrap();
+        assert_eq!(add_def.name, "add");
+        assert_eq!(add_def.params.len(), 2);
+        assert_eq!(add_def.return_type, TypeId::I32);
+        assert!(add_def.entry_node.is_some());
+        assert!(!add_def.is_closure);
+
+        // Verify function "make_adder"
+        let make_adder_def = loaded.get_function(FunctionId(1)).unwrap();
+        assert_eq!(make_adder_def.name, "make_adder");
+        assert_eq!(make_adder_def.params.len(), 1);
+        assert!(make_adder_def.entry_node.is_some());
+
+        // Verify closure "adder"
+        let adder_def = loaded.get_function(FunctionId(2)).unwrap();
+        assert!(adder_def.is_closure);
+        assert_eq!(adder_def.captures.len(), 1);
+        assert_eq!(adder_def.captures[0].name, "offset");
+        assert_eq!(adder_def.captures[0].mode, CaptureMode::ByValue);
+        assert_eq!(adder_def.parent_function, Some(FunctionId(1)));
+
+        // Verify function_nodes returns correct count for "add"
+        let add_nodes = loaded.function_nodes(FunctionId(0));
+        assert_eq!(add_nodes.len(), 4);
+
+        // Verify entry node op
+        if let Some(entry_id) = add_def.entry_node {
+            let entry_node = loaded.get_compute_node(entry_id).unwrap();
+            assert!(matches!(
+                entry_node.op,
+                lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Parameter { index: 0 })
+            ));
+        }
+    }
+
+    #[test]
+    fn test_delete_program() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        let graph = build_full_program();
+
+        let id = store.create_program("to_delete").unwrap();
+        store.save_program(id, &graph).unwrap();
+
+        // Verify it loads
+        assert!(store.load_program(id).is_ok());
+
+        // Delete
+        store.delete_program(id).unwrap();
+
+        // Load should now fail
+        let result = store.load_program(id);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            StorageError::ProgramNotFound(pid) => assert_eq!(pid, id.0),
+            other => panic!("expected ProgramNotFound, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_crud_individual_node() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        let graph = ProgramGraph::new("main");
+
+        let id = store.create_program("crud_node_test").unwrap();
+        store.save_program(id, &graph).unwrap();
+
+        // We need a function and module in the DB for FK constraints.
+        // The save_program above saved the root module. Add a function.
+        let func = FunctionDef::new(
+            FunctionId(0),
+            "test_fn".into(),
+            ModuleId(0),
+            vec![],
+            TypeId::UNIT,
+        );
+        store.insert_function(id, FunctionId(0), &func).unwrap();
+
+        // Insert a node
+        let node = ComputeNode::core(ComputeOp::Parameter { index: 0 }, FunctionId(0));
+        store.insert_node(id, NodeId(100), &node).unwrap();
+
+        // Get node
+        let retrieved = store.get_node(id, NodeId(100)).unwrap();
+        assert_eq!(retrieved.owner, FunctionId(0));
+        assert!(matches!(
+            retrieved.op,
+            lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Parameter { index: 0 })
+        ));
+
+        // Update node
+        let updated_node = ComputeNode::core(ComputeOp::Return, FunctionId(0));
+        store.update_node(id, NodeId(100), &updated_node).unwrap();
+        let retrieved2 = store.get_node(id, NodeId(100)).unwrap();
+        assert!(matches!(
+            retrieved2.op,
+            lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Return)
+        ));
+
+        // Delete node
+        store.delete_node(id, NodeId(100)).unwrap();
+        let result = store.get_node(id, NodeId(100));
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            StorageError::NodeNotFound { program, node } => {
+                assert_eq!(program, id.0);
+                assert_eq!(node, 100);
+            }
+            other => panic!("expected NodeNotFound, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_crud_individual_edge() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        let graph = ProgramGraph::new("main");
+
+        let id = store.create_program("crud_edge_test").unwrap();
+        store.save_program(id, &graph).unwrap();
+
+        // Add function and two nodes for FK constraints
+        let func = FunctionDef::new(
+            FunctionId(0),
+            "test_fn".into(),
+            ModuleId(0),
+            vec![],
+            TypeId::UNIT,
+        );
+        store.insert_function(id, FunctionId(0), &func).unwrap();
+
+        let node_a = ComputeNode::core(ComputeOp::Parameter { index: 0 }, FunctionId(0));
+        let node_b = ComputeNode::core(ComputeOp::Return, FunctionId(0));
+        store.insert_node(id, NodeId(0), &node_a).unwrap();
+        store.insert_node(id, NodeId(1), &node_b).unwrap();
+
+        // Insert edge
+        let edge = FlowEdge::Data {
+            source_port: 0,
+            target_port: 0,
+            value_type: TypeId::I32,
+        };
+        store
+            .insert_edge(id, EdgeId(0), NodeId(0), NodeId(1), &edge)
+            .unwrap();
+
+        // Get edge
+        let (src, tgt, retrieved) = store.get_edge(id, EdgeId(0)).unwrap();
+        assert_eq!(src, NodeId(0));
+        assert_eq!(tgt, NodeId(1));
+        assert!(retrieved.is_data());
+        assert_eq!(retrieved.value_type(), Some(TypeId::I32));
+
+        // Delete edge
+        store.delete_edge(id, EdgeId(0)).unwrap();
+        let result = store.get_edge(id, EdgeId(0));
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            StorageError::EdgeNotFound { program, edge } => {
+                assert_eq!(program, id.0);
+                assert_eq!(edge, 0);
+            }
+            other => panic!("expected EdgeNotFound, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_query_nodes_by_owner() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        let mut graph = ProgramGraph::new("main");
+        let root = graph.modules.root_id();
+        let i32_id = TypeId::I32;
+
+        // Create two functions
+        let fn1 = graph
+            .add_function(
+                "fn1".into(),
+                root,
+                vec![],
+                i32_id,
+                Visibility::Public,
+            )
+            .unwrap();
+        let fn2 = graph
+            .add_function(
+                "fn2".into(),
+                root,
+                vec![],
+                i32_id,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        // Add 3 nodes to fn1, 2 to fn2
+        graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, fn1)
+            .unwrap();
+        graph
+            .add_core_op(ComputeOp::Parameter { index: 1 }, fn1)
+            .unwrap();
+        graph.add_core_op(ComputeOp::Return, fn1).unwrap();
+
+        graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, fn2)
+            .unwrap();
+        graph.add_core_op(ComputeOp::Return, fn2).unwrap();
+
+        let id = store.create_program("query_test").unwrap();
+        store.save_program(id, &graph).unwrap();
+
+        // Query nodes by owner
+        let fn1_nodes = store.find_nodes_by_owner(id, fn1).unwrap();
+        assert_eq!(fn1_nodes.len(), 3);
+
+        let fn2_nodes = store.find_nodes_by_owner(id, fn2).unwrap();
+        assert_eq!(fn2_nodes.len(), 2);
+
+        // Nonexistent function returns empty
+        let fn99_nodes = store.find_nodes_by_owner(id, FunctionId(99)).unwrap();
+        assert_eq!(fn99_nodes.len(), 0);
+    }
+
+    #[test]
+    fn test_save_overwrites_previous() {
+        let mut store = SqliteStore::in_memory().unwrap();
+
+        // Build initial graph with just "add" function (4 nodes, 3 edges)
+        let mut graph = ProgramGraph::new("main");
+        let root = graph.modules.root_id();
+        let i32_id = TypeId::I32;
+
+        let add_fn = graph
+            .add_function(
+                "add".into(),
+                root,
+                vec![("a".into(), i32_id), ("b".into(), i32_id)],
+                i32_id,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        let param_a = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, add_fn)
+            .unwrap();
+        let param_b = graph
+            .add_core_op(ComputeOp::Parameter { index: 1 }, add_fn)
+            .unwrap();
+        let sum = graph
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, add_fn)
+            .unwrap();
+        let ret = graph.add_core_op(ComputeOp::Return, add_fn).unwrap();
+
+        graph.add_data_edge(param_a, sum, 0, 0, i32_id).unwrap();
+        graph.add_data_edge(param_b, sum, 0, 1, i32_id).unwrap();
+        graph.add_data_edge(sum, ret, 0, 0, i32_id).unwrap();
+
+        let id = store.create_program("overwrite_test").unwrap();
+        store.save_program(id, &graph).unwrap();
+
+        // Verify initial save
+        let loaded1 = store.load_program(id).unwrap();
+        assert_eq!(loaded1.node_count(), 4);
+        assert_eq!(loaded1.edge_count(), 3);
+        assert_eq!(loaded1.function_count(), 1);
+
+        // Now add a second function to the graph and save again
+        let neg_fn = graph
+            .add_function(
+                "negate".into(),
+                root,
+                vec![("x".into(), i32_id)],
+                i32_id,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        let param_x = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, neg_fn)
+            .unwrap();
+        let neg = graph
+            .add_core_op(
+                ComputeOp::UnaryArith {
+                    op: UnaryArithOp::Neg,
+                },
+                neg_fn,
+            )
+            .unwrap();
+        let neg_ret = graph.add_core_op(ComputeOp::Return, neg_fn).unwrap();
+
+        graph.add_data_edge(param_x, neg, 0, 0, i32_id).unwrap();
+        graph.add_data_edge(neg, neg_ret, 0, 0, i32_id).unwrap();
+
+        // Overwrite with new graph
+        store.save_program(id, &graph).unwrap();
+
+        // Load and verify the modification is present
+        let loaded2 = store.load_program(id).unwrap();
+        assert_eq!(loaded2.node_count(), 7); // 4 + 3
+        assert_eq!(loaded2.edge_count(), 5); // 3 + 2
+        assert_eq!(loaded2.function_count(), 2); // add + negate
+    }
+}
