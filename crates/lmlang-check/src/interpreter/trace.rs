@@ -5,11 +5,12 @@
 //! the node ID, operation description, input values, and output value.
 
 use lmlang_core::id::NodeId;
+use serde::{Deserialize, Serialize};
 
 use super::value::Value;
 
 /// A single entry in the execution trace, recording one node evaluation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraceEntry {
     /// The node that was evaluated.
     pub node_id: NodeId,

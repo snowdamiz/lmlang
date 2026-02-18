@@ -5,12 +5,13 @@
 //! AI agent debugging.
 
 use lmlang_core::id::{FunctionId, NodeId};
+use serde::{Deserialize, Serialize};
 
 /// Runtime errors produced by the interpreter.
 ///
 /// Each variant represents a trap condition that halts execution. All variants
 /// include the node ID where the error occurred for precise diagnostics.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
 pub enum RuntimeError {
     #[error("integer overflow at node {node}")]
     IntegerOverflow { node: NodeId },

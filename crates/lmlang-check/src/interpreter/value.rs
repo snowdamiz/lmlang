@@ -7,6 +7,7 @@
 use lmlang_core::id::FunctionId;
 use lmlang_core::type_id::TypeId;
 use lmlang_core::types::ConstValue;
+use serde::{Deserialize, Serialize};
 
 /// A runtime value produced or consumed by interpreter node evaluation.
 ///
@@ -18,7 +19,7 @@ use lmlang_core::types::ConstValue;
 /// Note: `F32` stores an actual `f32` at runtime, unlike `ConstValue::F32`
 /// which stores f64 for derive safety. The conversion happens in
 /// [`Value::from_const`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Value {
     Bool(bool),
     I8(i8),

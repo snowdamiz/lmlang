@@ -6,12 +6,13 @@
 
 use lmlang_core::id::{FunctionId, NodeId};
 use lmlang_core::type_id::TypeId;
+use serde::{Deserialize, Serialize};
 
 /// A type error detected during static type checking.
 ///
 /// Every variant includes enough context for an AI agent to understand the
 /// error and apply a fix without additional graph queries.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
 pub enum TypeError {
     /// A data edge carries a type incompatible with what the target port expects.
     #[error(
@@ -100,7 +101,7 @@ pub enum TypeError {
 /// When the type checker can determine an obvious corrective action, it
 /// attaches a `FixSuggestion` to the error. AI agents can apply these
 /// suggestions automatically.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FixSuggestion {
     /// Insert a Cast node between the source and target to convert types.
     InsertCast {
