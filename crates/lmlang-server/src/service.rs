@@ -96,12 +96,21 @@ impl ProgramService {
         })
     }
 
-    /// Creates a new ProgramService using an in-memory database (for testing).
+    /// Creates a new ProgramService using a temporary database (for testing).
+    ///
+    /// Both the service's `conn` and `store` share the same temp file so that
+    /// edit_log/checkpoint foreign keys referencing programs(id) are satisfied.
     pub fn in_memory() -> Result<Self, ApiError> {
-        let conn = lmlang_storage::schema::open_in_memory()
-            .map_err(|e| ApiError::InternalError(format!("failed to open in-memory db: {}", e)))?;
-        let mut store = SqliteStore::in_memory()
-            .map_err(|e| ApiError::InternalError(format!("failed to open in-memory store: {}", e)))?;
+        // Use a unique temp file so both conn and store share the same database.
+        let tmp_path = std::env::temp_dir()
+            .join(format!("lmlang_test_{}.db", uuid::Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string();
+
+        let conn = lmlang_storage::schema::open_database(&tmp_path)
+            .map_err(|e| ApiError::InternalError(format!("failed to open test db: {}", e)))?;
+        let mut store = SqliteStore::new(&tmp_path)
+            .map_err(|e| ApiError::InternalError(format!("failed to open test store: {}", e)))?;
 
         let id = store
             .create_program("default")
