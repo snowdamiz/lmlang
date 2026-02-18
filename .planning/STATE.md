@@ -73,5 +73,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 01-04-PLAN.md (Phase 01 complete)
-Resume file: .planning/phases/01-core-graph-data-model/01-04-SUMMARY.md
+Stopped at: Phase 2 context gathered
+Resume file: .planning/phases/02-storage-persistence/02-CONTEXT.md
