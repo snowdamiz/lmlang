@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 3 of 9 (Type Checking & Graph Interpreter)
-Plan: 1 of 3 in current phase
-Status: Plan 1 Complete
-Last activity: 2026-02-18 — Completed 03-01-PLAN.md
+Plan: 2 of 2 in current phase
+Status: Phase 3 Complete
+Last activity: 2026-02-18 — Completed 03-02-PLAN.md
 
-Progress: [███░░░░░░░] 26%
+Progress: [████░░░░░░] 30%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
-- Average duration: 5min
-- Total execution time: 0.70 hours
+- Total plans completed: 9
+- Average duration: 6min
+- Total execution time: 0.95 hours
 
 **By Phase:**
 
@@ -29,11 +29,11 @@ Progress: [███░░░░░░░] 26%
 |-------|-------|-------|----------|
 | 01 | 4/4 | 15min | 4min |
 | 02 | 3/3 | 18min | 6min |
-| 03 | 1/3 | 9min | 9min |
+| 03 | 2/2 | 24min | 12min |
 
 **Recent Trend:**
-- Last 5 plans: 02-01 (8min), 02-02 (6min), 02-03 (4min), 03-01 (9min)
-- Trend: stable (Phase 3 plan 1 slightly longer due to new crate setup)
+- Last 5 plans: 02-02 (6min), 02-03 (4min), 03-01 (9min), 03-02 (15min)
+- Trend: increasing (interpreter implementation more complex, requires integration test debugging)
 
 *Updated after each plan completion*
 
@@ -77,6 +77,10 @@ Recent decisions affecting current work:
 - [Phase 03]: Validation functions as standalone API (not wrapping ProgramGraph) for architectural independence
 - [Phase 03]: Bool-to-integer coercion resolves to I8 for arithmetic
 - [Phase 03]: InsertCast fix suggestion generated when both types are numeric but coercion fails
+- [Phase 03]: Work-list interpreter with control-gated scheduling: nodes behind control edges wait for control predecessor
+- [Phase 03]: Phi selects data port based on Branch decision (true->port 0, false->port 1)
+- [Phase 03]: Only Parameter, Const, CaptureAccess, Alloc, ReadLine are seedable in work-list
+- [Phase 03]: Bool coerced to I8 for arithmetic at runtime (matches type checker coercion)
 
 ### Pending Todos
 
@@ -91,5 +95,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 03-01-PLAN.md
-Resume file: .planning/phases/03-type-checking-graph-interpreter/03-01-SUMMARY.md
+Stopped at: Completed 03-02-PLAN.md
+Resume file: .planning/phases/03-type-checking-graph-interpreter/03-02-SUMMARY.md

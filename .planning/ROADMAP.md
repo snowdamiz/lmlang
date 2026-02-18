@@ -13,8 +13,8 @@ lmlang delivers an AI-native programming system where programs are persistent du
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Graph Data Model** - Type system, op nodes, data/control flow edges, function boundaries, and dual-graph structure (completed 2026-02-18)
-- [ ] **Phase 2: Storage & Persistence** - SQLite backend, trait abstraction, content hashing so programs survive restarts
-- [ ] **Phase 3: Type Checking & Graph Interpreter** - Static type verification and development-time execution without LLVM
+- [x] **Phase 2: Storage & Persistence** - SQLite backend, trait abstraction, content hashing so programs survive restarts (completed 2026-02-18)
+- [x] **Phase 3: Type Checking & Graph Interpreter** - Static type verification and development-time execution without LLVM (completed 2026-02-18)
 - [ ] **Phase 4: AI Agent Tool API** - HTTP endpoints for structured graph manipulation, retrieval, verification, simulation, and undo
 - [ ] **Phase 5: LLVM Compilation Pipeline** - Graph to LLVM IR to native binary with function-scoped codegen
 - [ ] **Phase 6: Full Contract System & Incremental Compilation** - Pre/post-conditions, invariants, property-based testing, and red-green dirty tracking
@@ -176,8 +176,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Graph Data Model | 4/4 | Complete    | 2026-02-18 |
-| 2. Storage & Persistence | 1/3 | In Progress | - |
-| 3. Type Checking & Graph Interpreter | 1/2 | In Progress|  |
+| 2. Storage & Persistence | 3/3 | Complete   | 2026-02-18 |
+| 3. Type Checking & Graph Interpreter | 2/2 | Complete   | 2026-02-18 |
 | 4. AI Agent Tool API | 0/? | Not started | - |
 | 5. LLVM Compilation Pipeline | 0/? | Not started | - |
 | 6. Full Contract System & Incremental Compilation | 0/? | Not started | - |
