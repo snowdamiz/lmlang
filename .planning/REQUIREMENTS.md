@@ -18,7 +18,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Storage & Persistence
 
-- [ ] **STORE-01**: Programs persist in SQLite with atomic writes and schema migration support
+- [x] **STORE-01**: Programs persist in SQLite with atomic writes and schema migration support
 - [x] **STORE-02**: Graph storage uses a trait abstraction (`GraphStore`) swappable to alternative backends without core changes
 - [ ] **STORE-03**: User can undo/rollback edits via edit log or graph snapshots
 - [ ] **STORE-04**: Each graph node has a deterministic content hash for identity and change detection
@@ -113,7 +113,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | GRAPH-04 | Phase 1 | Complete |
 | GRAPH-05 | Phase 1 | Complete |
 | GRAPH-06 | Phase 1 | Complete |
-| STORE-01 | Phase 2 | Pending |
+| STORE-01 | Phase 2 | Complete |
 | STORE-02 | Phase 2 | Complete |
 | STORE-03 | Phase 4 | Pending |
 | STORE-04 | Phase 2 | Pending |

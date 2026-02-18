@@ -10,29 +10,29 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 2 of 9 (Storage & Persistence)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In Progress
-Last activity: 2026-02-18 — Completed 02-01-PLAN.md
+Last activity: 2026-02-18 — Completed 02-02-PLAN.md
 
-Progress: [██░░░░░░░░] 14%
+Progress: [██░░░░░░░░] 17%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
+- Total plans completed: 6
 - Average duration: 5min
-- Total execution time: 0.38 hours
+- Total execution time: 0.48 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 4/4 | 15min | 4min |
-| 02 | 1/3 | 8min | 8min |
+| 02 | 2/3 | 14min | 7min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (4min), 01-03 (3min), 01-04 (4min), 02-01 (8min)
-- Trend: stable (02-01 longer due to new crate + trait design)
+- Last 5 plans: 01-03 (3min), 01-04 (4min), 02-01 (8min), 02-02 (6min)
+- Trend: stable (Phase 2 plans averaging 7min due to storage complexity)
 
 *Updated after each plan completion*
 
@@ -64,6 +64,10 @@ Recent decisions affecting current work:
 - [Phase 02]: from_parts constructors on ProgramGraph, TypeRegistry, ModuleTree for storage reconstruction
 - [Phase 02]: StableGraph gap-filling with dummy nodes for index preservation during recompose
 - [Phase 02]: find_nodes_by_type via edge value_type filtering (types inferred from edges, not stored on nodes)
+- [Phase 02]: rusqlite 0.32 (not 0.38 from research) to match rusqlite_migration 1.3 compatibility
+- [Phase 02]: Explicit child-table DELETE ordering before program deletion (not relying on CASCADE alone)
+- [Phase 02]: ModuleTree rebuilt from stored modules + functions during load (not serialized as blob)
+- [Phase 02]: Semantic index maps derived from semantic node content on load (no extra table)
 
 ### Pending Todos
 
@@ -78,5 +82,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 02-01-PLAN.md
-Resume file: .planning/phases/02-storage-persistence/02-01-SUMMARY.md
+Stopped at: Completed 02-02-PLAN.md
+Resume file: .planning/phases/02-storage-persistence/02-02-SUMMARY.md

@@ -54,7 +54,7 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md — GraphStore trait, StorageError, ProgramId, decompose/recompose, InMemoryStore
-- [ ] 02-02-PLAN.md — SQLite schema, migrations, SqliteStore implementation, save/load roundtrip tests
+- [x] 02-02-PLAN.md — SQLite schema, migrations, SqliteStore implementation, save/load roundtrip tests
 - [ ] 02-03-PLAN.md — blake3 content hashing, Merkle-tree composition, per-function root hashes
 
 ### Phase 3: Type Checking & Graph Interpreter
