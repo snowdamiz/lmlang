@@ -182,7 +182,7 @@ mod tests {
     use super::*;
     use lmlang_core::id::FunctionId;
     use lmlang_core::node::ComputeNode;
-    use lmlang_core::ops::{ArithOp, ComputeNodeOp, ComputeOp};
+    use lmlang_core::ops::{ArithOp, ComputeOp};
     use lmlang_core::type_id::TypeId;
     use lmlang_core::types::Visibility;
 
