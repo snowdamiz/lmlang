@@ -1,8 +1,8 @@
 //! Storage abstraction for lmlang program graphs.
 //!
 //! Provides the [`GraphStore`] trait defining the storage contract that all
-//! backends implement, plus the [`InMemoryStore`] as a first-class backend
-//! for tests and ephemeral sessions.
+//! backends implement, plus the [`InMemoryStore`] and [`SqliteStore`] as
+//! first-class backends.
 //!
 //! # Architecture
 //!
@@ -19,15 +19,20 @@
 //! - [`traits`]: GraphStore trait definition
 //! - [`convert`]: ProgramGraph decompose/recompose functions
 //! - [`memory`]: InMemoryStore implementation
+//! - [`schema`]: SQL schema constants and migration setup
+//! - [`sqlite`]: SqliteStore implementation
 
 pub mod error;
 pub mod types;
 pub mod traits;
 pub mod convert;
 pub mod memory;
+pub mod schema;
+pub mod sqlite;
 
 // Re-export key types for ergonomic use.
 pub use error::StorageError;
 pub use types::{ProgramId, ProgramSummary};
 pub use traits::GraphStore;
 pub use memory::InMemoryStore;
+pub use sqlite::SqliteStore;

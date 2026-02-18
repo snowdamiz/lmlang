@@ -9,6 +9,14 @@ use thiserror::Error;
 /// Errors produced by storage operations.
 #[derive(Debug, Error)]
 pub enum StorageError {
+    /// SQLite operation failed.
+    #[error("sqlite error: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+
+    /// Schema migration failed.
+    #[error("migration error: {0}")]
+    Migration(String),
+
     /// JSON serialization or deserialization failed.
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
