@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core value:** AI agents can build, modify, and verify programs of arbitrary size with perfect local and global awareness
-**Current focus:** Phase 2: Storage & Persistence
+**Current focus:** Phase 3: Type Checking & Graph Interpreter
 
 ## Current Position
 
-Phase: 2 of 9 (Storage & Persistence)
-Plan: 3 of 3 in current phase
-Status: Phase Complete
-Last activity: 2026-02-18 — Completed 02-03-PLAN.md
+Phase: 3 of 9 (Type Checking & Graph Interpreter)
+Plan: 1 of 3 in current phase
+Status: Plan 1 Complete
+Last activity: 2026-02-18 — Completed 03-01-PLAN.md
 
-Progress: [██░░░░░░░░] 22%
+Progress: [███░░░░░░░] 26%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: 5min
-- Total execution time: 0.55 hours
+- Total execution time: 0.70 hours
 
 **By Phase:**
 
@@ -29,10 +29,11 @@ Progress: [██░░░░░░░░] 22%
 |-------|-------|-------|----------|
 | 01 | 4/4 | 15min | 4min |
 | 02 | 3/3 | 18min | 6min |
+| 03 | 1/3 | 9min | 9min |
 
 **Recent Trend:**
-- Last 5 plans: 01-04 (4min), 02-01 (8min), 02-02 (6min), 02-03 (4min)
-- Trend: stable (Phase 2 averaged 6min per plan)
+- Last 5 plans: 02-01 (8min), 02-02 (6min), 02-03 (4min), 03-01 (9min)
+- Trend: stable (Phase 3 plan 1 slightly longer due to new crate setup)
 
 *Updated after each plan completion*
 
@@ -71,6 +72,11 @@ Recent decisions affecting current work:
 - [Phase 02]: serde_json::to_vec for canonical op serialization in hashing (safe because ComputeNodeOp uses no HashMap)
 - [Phase 02]: Two-pass hash_function: content hashes first, then composite hashes with edges (avoids topological ordering)
 - [Phase 02]: Cross-function edge targets use content-only hash (not composite) for function boundary isolation
+- [Phase 03]: Safe implicit widening: i8->i16->i32->i64, f32->f64, bool->integer, &mut T -> &T; no cross-family (int<->float)
+- [Phase 03]: Nominal struct typing: TypeId equality only, structural similarity irrelevant
+- [Phase 03]: Validation functions as standalone API (not wrapping ProgramGraph) for architectural independence
+- [Phase 03]: Bool-to-integer coercion resolves to I8 for arithmetic
+- [Phase 03]: InsertCast fix suggestion generated when both types are numeric but coercion fails
 
 ### Pending Todos
 
@@ -85,5 +91,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-type-checking-graph-interpreter/03-CONTEXT.md
+Stopped at: Completed 03-01-PLAN.md
+Resume file: .planning/phases/03-type-checking-graph-interpreter/03-01-SUMMARY.md

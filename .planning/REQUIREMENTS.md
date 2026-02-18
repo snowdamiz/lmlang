@@ -35,7 +35,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Contract System
 
-- [ ] **CNTR-01**: Static type checking verifies that edge source types match edge sink expected types on every edit
+- [x] **CNTR-01**: Static type checking verifies that edge source types match edge sink expected types on every edit
 - [ ] **CNTR-02**: Functions support pre-conditions as contract nodes checked at function entry
 - [ ] **CNTR-03**: Functions support post-conditions as contract nodes checked at function return
 - [ ] **CNTR-04**: Data structures support invariants checked at module boundaries
@@ -124,7 +124,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | TOOL-04 | Phase 4 | Pending |
 | TOOL-05 | Phase 4 | Pending |
 | TOOL-06 | Phase 4 | Pending |
-| CNTR-01 | Phase 3 | Pending |
+| CNTR-01 | Phase 3 | Complete |
 | CNTR-02 | Phase 6 | Pending |
 | CNTR-03 | Phase 6 | Pending |
 | CNTR-04 | Phase 6 | Pending |
