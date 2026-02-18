@@ -8,7 +8,7 @@
 //! data inputs are ready. Control flow nodes (Branch, IfElse, Loop) determine
 //! which successor nodes enter the work list.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
@@ -57,10 +57,19 @@ pub struct CallFrame {
     pub return_target: Option<(NodeId, u16)>,
     /// Nodes ready to evaluate (have all inputs).
     pub work_list: VecDeque<NodeId>,
-    /// Readiness counter: node -> number of inputs that have been provided.
+    /// Readiness counter: node -> number of data inputs that have been provided.
     pub readiness: HashMap<NodeId, usize>,
     /// Closure captures available in this frame (for CaptureAccess ops).
     pub captures: Vec<Value>,
+    /// Nodes that have been control-unblocked (have at least one incoming
+    /// control edge whose source has been evaluated). Nodes with no incoming
+    /// control edges are always control-ready.
+    pub control_ready: HashSet<NodeId>,
+    /// Set of nodes that require control-gating (have at least one incoming
+    /// control edge). Nodes NOT in this set are always control-ready.
+    pub control_gated: HashSet<NodeId>,
+    /// Tracks which nodes have been evaluated (to avoid double-evaluation).
+    pub evaluated: HashSet<NodeId>,
 }
 
 /// Configuration for the interpreter.
@@ -204,9 +213,10 @@ impl<'g> Interpreter<'g> {
         // Evaluate the op
         match self.eval_node(&op, &inputs, node_id) {
             Ok(EvalResult::Value(value)) => {
-                // Store result in current frame
+                // Store result in current frame and mark evaluated
                 if let Some(frame) = self.call_stack.last_mut() {
                     frame.node_values.insert(node_id, value.clone());
+                    frame.evaluated.insert(node_id);
                 }
 
                 // Record trace
@@ -234,6 +244,10 @@ impl<'g> Interpreter<'g> {
                 }
             }
             Ok(EvalResult::NoValue) => {
+                // Mark as evaluated
+                if let Some(frame) = self.call_stack.last_mut() {
+                    frame.evaluated.insert(node_id);
+                }
                 // Ops like Store, Branch produce no value
                 if let Some(trace) = &mut self.trace {
                     trace.push(TraceEntry {
@@ -415,12 +429,28 @@ impl<'g> Interpreter<'g> {
             work_list: VecDeque::new(),
             readiness: HashMap::new(),
             captures,
+            control_ready: HashSet::new(),
+            control_gated: HashSet::new(),
+            evaluated: HashSet::new(),
         };
 
         // Find all nodes owned by this function
         let function_nodes = self.graph.function_nodes(function_id);
 
-        // Seed: find Parameter and Const nodes (they have 0 data inputs)
+        // First pass: identify control-gated nodes
+        for &node_id in &function_nodes {
+            let node_idx: petgraph::graph::NodeIndex<u32> = node_id.into();
+            let has_control_input = self
+                .graph
+                .compute()
+                .edges_directed(node_idx, Direction::Incoming)
+                .any(|e| e.weight().is_control());
+            if has_control_input {
+                frame.control_gated.insert(node_id);
+            }
+        }
+
+        // Second pass: seed the work list
         for &node_id in &function_nodes {
             if let Some(node) = self.graph.get_compute_node(node_id) {
                 match &node.op {
@@ -432,29 +462,27 @@ impl<'g> Interpreter<'g> {
                         frame.work_list.push_back(node_id);
                     }
                     ComputeNodeOp::Core(ComputeOp::Const { .. }) => {
-                        // Const nodes are always ready (no inputs)
-                        frame.work_list.push_back(node_id);
-                    }
-                    ComputeNodeOp::Core(ComputeOp::CaptureAccess { .. }) => {
-                        // CaptureAccess nodes are always ready (no data inputs)
-                        frame.work_list.push_back(node_id);
-                    }
-                    _ => {
-                        // Count expected data inputs for this node
-                        let node_idx: petgraph::graph::NodeIndex<u32> = node_id.into();
-                        let input_count = self
-                            .graph
-                            .compute()
-                            .edges_directed(node_idx, Direction::Incoming)
-                            .filter(|e| e.weight().is_data())
-                            .count();
-
-                        if input_count == 0 {
-                            // Nodes with no data inputs are immediately ready
-                            // (e.g., Alloc, ReadLine)
+                        // Const nodes are always ready -- but if control-gated,
+                        // they wait for control
+                        if !frame.control_gated.contains(&node_id) {
                             frame.work_list.push_back(node_id);
                         }
-                        // readiness starts at 0 (no inputs provided yet)
+                    }
+                    ComputeNodeOp::Core(ComputeOp::CaptureAccess { .. }) => {
+                        if !frame.control_gated.contains(&node_id) {
+                            frame.work_list.push_back(node_id);
+                        }
+                    }
+                    // Nodes that are seedable with no data inputs
+                    ComputeNodeOp::Core(ComputeOp::Alloc)
+                    | ComputeNodeOp::Core(ComputeOp::ReadLine) => {
+                        if !frame.control_gated.contains(&node_id) {
+                            frame.work_list.push_back(node_id);
+                        }
+                        frame.readiness.insert(node_id, 0);
+                    }
+                    _ => {
+                        // All other nodes require data inputs to become ready
                         frame.readiness.insert(node_id, 0);
                     }
                 }
@@ -470,8 +498,24 @@ impl<'g> Interpreter<'g> {
 
         // Pop from work list -- nodes in the work list should be ready
         // but we verify readiness for non-seed nodes
+        let mut deferred = VecDeque::new();
+
         while let Some(node_id) = frame.work_list.pop_front() {
-            // Check if this node is a seed node (Parameter, Const, etc.) or fully ready
+            // Skip already evaluated nodes
+            if frame.evaluated.contains(&node_id) {
+                continue;
+            }
+
+            // Check control readiness
+            let is_control_ready = !frame.control_gated.contains(&node_id)
+                || frame.control_ready.contains(&node_id);
+
+            if !is_control_ready {
+                deferred.push_back(node_id);
+                continue;
+            }
+
+            // Check data readiness
             let node_idx: petgraph::graph::NodeIndex<u32> = node_id.into();
             let expected_inputs = self
                 .graph
@@ -481,14 +525,27 @@ impl<'g> Interpreter<'g> {
                 .count();
 
             if expected_inputs == 0 {
+                // Put deferred back
+                while let Some(d) = deferred.pop_front() {
+                    frame.work_list.push_back(d);
+                }
                 return Some(node_id);
             }
 
             let ready_count = frame.readiness.get(&node_id).copied().unwrap_or(0);
             if ready_count >= expected_inputs {
+                while let Some(d) = deferred.pop_front() {
+                    frame.work_list.push_back(d);
+                }
                 return Some(node_id);
             }
-            // Not yet ready -- could happen if added prematurely; skip
+            // Not yet ready; defer
+            deferred.push_back(node_id);
+        }
+
+        // Put all deferred nodes back
+        while let Some(d) = deferred.pop_front() {
+            frame.work_list.push_back(d);
         }
 
         None
@@ -809,12 +866,49 @@ impl<'g> Interpreter<'g> {
             }
             ComputeNodeOp::Core(ComputeOp::Phi) => {
                 // Phi: select value from the control flow path that was actually taken.
-                // Look at incoming data edges and find one whose source node has been evaluated.
-                let value = inputs
-                    .iter()
-                    .find(|(_, _)| true) // For now, take the first available input
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or(Value::Unit);
+                //
+                // Convention: incoming control edges from a Branch node carry
+                // branch_index. The branch node stores its Bool decision as a
+                // node_value. We map: true -> branch_index=0 -> data port 0,
+                // false -> branch_index=1 -> data port 1.
+                let node_idx: petgraph::graph::NodeIndex<u32> = node_id.into();
+
+                let frame = self.call_stack.last().ok_or_else(|| {
+                    RuntimeError::InternalError {
+                        message: "no call frame for Phi".into(),
+                    }
+                })?;
+
+                let mut selected_port: Option<u16> = None;
+
+                // Look at incoming control edges from branch nodes
+                for edge_ref in self.graph.compute().edges_directed(node_idx, Direction::Incoming) {
+                    if let FlowEdge::Control { branch_index: Some(_) } = edge_ref.weight() {
+                        let source_id = NodeId::from(edge_ref.source());
+                        if let Some(branch_val) = frame.node_values.get(&source_id) {
+                            match branch_val {
+                                Value::Bool(true) => { selected_port = Some(0); }
+                                Value::Bool(false) => { selected_port = Some(1); }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+
+                let value = if let Some(port) = selected_port {
+                    inputs
+                        .iter()
+                        .find(|(p, _)| *p == port)
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or(Value::Unit)
+                } else {
+                    // No control info available -- take first input
+                    inputs
+                        .iter()
+                        .find(|(_, _)| true)
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or(Value::Unit)
+                };
                 Ok(EvalResult::Value(value))
             }
             // Delegate all other ops (arithmetic, logic, comparison, structured) to eval_op
@@ -845,7 +939,7 @@ impl<'g> Interpreter<'g> {
         if is_branch {
             self.propagate_control_flow(node_id, op);
         } else {
-            // For non-control-flow nodes: propagate to all data successors
+            // Collect successors first (no mutable borrow)
             let successors: Vec<(NodeId, bool)> = self
                 .graph
                 .compute()
@@ -860,43 +954,60 @@ impl<'g> Interpreter<'g> {
                 })
                 .collect();
 
+            // Update readiness counters and control flags
             if let Some(frame) = self.call_stack.last_mut() {
-                for (succ_id, is_data) in successors {
+                for &(succ_id, is_data) in &successors {
                     if is_data {
                         let count = frame.readiness.entry(succ_id).or_insert(0);
                         *count += 1;
-
-                        // Check if the successor is now fully ready
-                        let succ_idx: petgraph::graph::NodeIndex<u32> = succ_id.into();
-                        let expected_inputs = self
-                            .graph
-                            .compute()
-                            .edges_directed(succ_idx, Direction::Incoming)
-                            .filter(|e| e.weight().is_data())
-                            .count();
-
-                        if *count >= expected_inputs {
-                            frame.work_list.push_back(succ_id);
-                        }
-                    }
-                    // Control edges from non-branch nodes just enable successors
-                    // after the node completes (sequential ordering)
-                    else {
-                        // For non-branch control edges, add successors if they have
-                        // no data inputs or are already data-ready
-                        let succ_idx: petgraph::graph::NodeIndex<u32> = succ_id.into();
-                        let expected_data = self
-                            .graph
-                            .compute()
-                            .edges_directed(succ_idx, Direction::Incoming)
-                            .filter(|e| e.weight().is_data())
-                            .count();
-                        let ready = frame.readiness.get(&succ_id).copied().unwrap_or(0);
-                        if expected_data == 0 || ready >= expected_data {
-                            frame.work_list.push_back(succ_id);
-                        }
+                    } else {
+                        frame.control_ready.insert(succ_id);
                     }
                 }
+            }
+
+            // Now schedule (separate borrow scope)
+            for (succ_id, _) in successors {
+                self.try_schedule_node(succ_id);
+            }
+        }
+    }
+
+    /// Tries to schedule a node onto the work list if it is both data-ready
+    /// and control-ready. Avoids duplicate scheduling.
+    fn try_schedule_node(&mut self, node_id: NodeId) {
+        let frame = match self.call_stack.last_mut() {
+            Some(f) => f,
+            None => return,
+        };
+
+        // Already evaluated?
+        if frame.evaluated.contains(&node_id) {
+            return;
+        }
+
+        // Control ready?
+        let is_control_ready = !frame.control_gated.contains(&node_id)
+            || frame.control_ready.contains(&node_id);
+        if !is_control_ready {
+            return;
+        }
+
+        // Data ready?
+        let node_idx: petgraph::graph::NodeIndex<u32> = node_id.into();
+        let expected_data = self
+            .graph
+            .compute()
+            .edges_directed(node_idx, Direction::Incoming)
+            .filter(|e| e.weight().is_data())
+            .count();
+        let ready_count = frame.readiness.get(&node_id).copied().unwrap_or(0);
+
+        // For seed nodes (Const, Alloc, etc.) expected_data is 0
+        if expected_data == 0 || ready_count >= expected_data {
+            // Avoid duplicate scheduling
+            if !frame.work_list.contains(&node_id) {
+                frame.work_list.push_back(node_id);
             }
         }
     }
@@ -929,7 +1040,6 @@ impl<'g> Interpreter<'g> {
                 }
             }
             ComputeNodeOp::Core(ComputeOp::Match) => {
-                // Extract discriminant value
                 match &branch_value {
                     Some(Value::I32(v)) => Some(*v as u16),
                     Some(Value::I8(v)) => Some(*v as u16),
@@ -942,7 +1052,7 @@ impl<'g> Interpreter<'g> {
             _ => None,
         };
 
-        // Collect outgoing control edges and activate only the taken branch
+        // Collect outgoing control edges
         let control_successors: Vec<(NodeId, Option<u16>)> = self
             .graph
             .compute()
@@ -955,7 +1065,7 @@ impl<'g> Interpreter<'g> {
             })
             .collect();
 
-        // Also collect outgoing data edges (e.g., IfElse might produce a result)
+        // Also collect outgoing data edges
         let data_successors: Vec<NodeId> = self
             .graph
             .compute()
@@ -966,48 +1076,30 @@ impl<'g> Interpreter<'g> {
             })
             .collect();
 
-        if let Some(frame) = self.call_stack.last_mut() {
-            // Activate only the taken control branch
-            for (succ_id, edge_branch) in control_successors {
-                let should_activate = match (taken_branch, edge_branch) {
-                    (Some(taken), Some(edge)) => taken == edge,
-                    (Some(_), None) => true, // unconditional edge from a branch
-                    (None, _) => true,       // no branch decision, activate all
-                };
+        // Activate only the taken control branch
+        for (succ_id, edge_branch) in control_successors {
+            let should_activate = match (taken_branch, edge_branch) {
+                (Some(taken), Some(edge)) => taken == edge,
+                (Some(_), None) => true,
+                (None, _) => true,
+            };
 
-                if should_activate {
-                    // For control successors, check if they also need data inputs
-                    let succ_idx: petgraph::graph::NodeIndex<u32> = succ_id.into();
-                    let expected_data = self
-                        .graph
-                        .compute()
-                        .edges_directed(succ_idx, Direction::Incoming)
-                        .filter(|e| e.weight().is_data())
-                        .count();
-                    let ready = frame.readiness.get(&succ_id).copied().unwrap_or(0);
-                    if expected_data == 0 || ready >= expected_data {
-                        frame.work_list.push_back(succ_id);
-                    }
+            if should_activate {
+                // Mark as control-ready and try to schedule
+                if let Some(frame) = self.call_stack.last_mut() {
+                    frame.control_ready.insert(succ_id);
                 }
+                self.try_schedule_node(succ_id);
             }
+        }
 
-            // Data successors from control flow nodes
-            for succ_id in data_successors {
+        // Data successors from control flow nodes
+        for succ_id in data_successors {
+            if let Some(frame) = self.call_stack.last_mut() {
                 let count = frame.readiness.entry(succ_id).or_insert(0);
                 *count += 1;
-
-                let succ_idx: petgraph::graph::NodeIndex<u32> = succ_id.into();
-                let expected_inputs = self
-                    .graph
-                    .compute()
-                    .edges_directed(succ_idx, Direction::Incoming)
-                    .filter(|e| e.weight().is_data())
-                    .count();
-
-                if *count >= expected_inputs {
-                    frame.work_list.push_back(succ_id);
-                }
             }
+            self.try_schedule_node(succ_id);
         }
     }
 
@@ -1025,23 +1117,12 @@ impl<'g> Interpreter<'g> {
             })
             .collect();
 
-        if let Some(frame) = self.call_stack.last_mut() {
-            for succ_id in successors {
+        for succ_id in successors {
+            if let Some(frame) = self.call_stack.last_mut() {
                 let count = frame.readiness.entry(succ_id).or_insert(0);
                 *count += 1;
-
-                let succ_idx: petgraph::graph::NodeIndex<u32> = succ_id.into();
-                let expected_inputs = self
-                    .graph
-                    .compute()
-                    .edges_directed(succ_idx, Direction::Incoming)
-                    .filter(|e| e.weight().is_data())
-                    .count();
-
-                if *count >= expected_inputs {
-                    frame.work_list.push_back(succ_id);
-                }
             }
+            self.try_schedule_node(succ_id);
         }
     }
 
