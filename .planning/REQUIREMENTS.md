@@ -107,53 +107,53 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GRAPH-01 | Phase ? | Pending |
-| GRAPH-02 | Phase ? | Pending |
-| GRAPH-03 | Phase ? | Pending |
-| GRAPH-04 | Phase ? | Pending |
-| GRAPH-05 | Phase ? | Pending |
-| GRAPH-06 | Phase ? | Pending |
-| STORE-01 | Phase ? | Pending |
-| STORE-02 | Phase ? | Pending |
-| STORE-03 | Phase ? | Pending |
-| STORE-04 | Phase ? | Pending |
-| STORE-05 | Phase ? | Pending |
-| TOOL-01 | Phase ? | Pending |
-| TOOL-02 | Phase ? | Pending |
-| TOOL-03 | Phase ? | Pending |
-| TOOL-04 | Phase ? | Pending |
-| TOOL-05 | Phase ? | Pending |
-| TOOL-06 | Phase ? | Pending |
-| CNTR-01 | Phase ? | Pending |
-| CNTR-02 | Phase ? | Pending |
-| CNTR-03 | Phase ? | Pending |
-| CNTR-04 | Phase ? | Pending |
-| CNTR-05 | Phase ? | Pending |
-| EXEC-01 | Phase ? | Pending |
-| EXEC-02 | Phase ? | Pending |
-| EXEC-03 | Phase ? | Pending |
-| EXEC-04 | Phase ? | Pending |
-| DUAL-01 | Phase ? | Pending |
-| DUAL-02 | Phase ? | Pending |
-| DUAL-03 | Phase ? | Pending |
-| DUAL-04 | Phase ? | Pending |
-| DUAL-05 | Phase ? | Pending |
-| DUAL-06 | Phase ? | Pending |
-| DUAL-07 | Phase ? | Pending |
-| MAGENT-01 | Phase ? | Pending |
-| MAGENT-02 | Phase ? | Pending |
-| MAGENT-03 | Phase ? | Pending |
-| MAGENT-04 | Phase ? | Pending |
-| VIZ-01 | Phase ? | Pending |
-| VIZ-02 | Phase ? | Pending |
-| VIZ-03 | Phase ? | Pending |
-| VIZ-04 | Phase ? | Pending |
+| GRAPH-01 | Phase 1 | Pending |
+| GRAPH-02 | Phase 1 | Pending |
+| GRAPH-03 | Phase 1 | Pending |
+| GRAPH-04 | Phase 1 | Pending |
+| GRAPH-05 | Phase 1 | Pending |
+| GRAPH-06 | Phase 1 | Pending |
+| STORE-01 | Phase 2 | Pending |
+| STORE-02 | Phase 2 | Pending |
+| STORE-03 | Phase 4 | Pending |
+| STORE-04 | Phase 2 | Pending |
+| STORE-05 | Phase 6 | Pending |
+| TOOL-01 | Phase 4 | Pending |
+| TOOL-02 | Phase 4 | Pending |
+| TOOL-03 | Phase 4 | Pending |
+| TOOL-04 | Phase 4 | Pending |
+| TOOL-05 | Phase 4 | Pending |
+| TOOL-06 | Phase 4 | Pending |
+| CNTR-01 | Phase 3 | Pending |
+| CNTR-02 | Phase 6 | Pending |
+| CNTR-03 | Phase 6 | Pending |
+| CNTR-04 | Phase 6 | Pending |
+| CNTR-05 | Phase 6 | Pending |
+| EXEC-01 | Phase 3 | Pending |
+| EXEC-02 | Phase 5 | Pending |
+| EXEC-03 | Phase 5 | Pending |
+| EXEC-04 | Phase 5 | Pending |
+| DUAL-01 | Phase 8 | Pending |
+| DUAL-02 | Phase 1 | Pending |
+| DUAL-03 | Phase 1 | Pending |
+| DUAL-04 | Phase 8 | Pending |
+| DUAL-05 | Phase 8 | Pending |
+| DUAL-06 | Phase 8 | Pending |
+| DUAL-07 | Phase 8 | Pending |
+| MAGENT-01 | Phase 7 | Pending |
+| MAGENT-02 | Phase 7 | Pending |
+| MAGENT-03 | Phase 7 | Pending |
+| MAGENT-04 | Phase 7 | Pending |
+| VIZ-01 | Phase 9 | Pending |
+| VIZ-02 | Phase 9 | Pending |
+| VIZ-03 | Phase 9 | Pending |
+| VIZ-04 | Phase 9 | Pending |
 
 **Coverage:**
-- v1 requirements: 40 total
-- Mapped to phases: 0
-- Unmapped: 40
+- v1 requirements: 41 total
+- Mapped to phases: 41
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-17*
-*Last updated: 2026-02-17 after initial definition*
+*Last updated: 2026-02-17 after roadmap creation*
