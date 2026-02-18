@@ -30,8 +30,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **TOOL-02**: `retrieve_subgraph` returns focused graph context by node ID, function boundary, N-hop neighborhood, or type/relationship filter as structured JSON
 - [ ] **TOOL-03**: `verify_and_propagate` type-checks affected subgraph, runs contract checks, marks dirty nodes, propagates changes between layers, returns pass/fail with diagnostics
 - [ ] **TOOL-04**: `simulate` executes a subgraph with provided inputs in the interpreter, returns output values and execution trace
-- [ ] **TOOL-05**: Tool API exposed as HTTP/JSON endpoints via axum, callable by any LLM with structured output support
-- [ ] **TOOL-06**: Error responses include structured diagnostics with graph location context (node IDs, edge paths, failing contract, expected vs actual types)
+- [x] **TOOL-05**: Tool API exposed as HTTP/JSON endpoints via axum, callable by any LLM with structured output support
+- [x] **TOOL-06**: Error responses include structured diagnostics with graph location context (node IDs, edge paths, failing contract, expected vs actual types)
 
 ### Contract System
 
@@ -122,8 +122,8 @@ Deferred to future release. Tracked but not in current roadmap.
 | TOOL-02 | Phase 4 | Pending |
 | TOOL-03 | Phase 4 | Pending |
 | TOOL-04 | Phase 4 | Pending |
-| TOOL-05 | Phase 4 | Pending |
-| TOOL-06 | Phase 4 | Pending |
+| TOOL-05 | Phase 4 | Complete |
+| TOOL-06 | Phase 4 | Complete |
 | CNTR-01 | Phase 3 | Complete |
 | CNTR-02 | Phase 6 | Pending |
 | CNTR-03 | Phase 6 | Pending |
