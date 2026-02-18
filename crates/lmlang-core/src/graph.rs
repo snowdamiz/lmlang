@@ -379,6 +379,23 @@ impl ProgramGraph {
         self.compute.node_weight(idx)
     }
 
+    /// Modifies a compute node's operation in place, returning the old op.
+    ///
+    /// This is used by the service layer for ModifyNode mutations and undo.
+    pub fn modify_compute_node_op(
+        &mut self,
+        id: NodeId,
+        new_op: ComputeNodeOp,
+    ) -> Result<ComputeNodeOp, CoreError> {
+        let idx: NodeIndex<u32> = id.into();
+        let node = self
+            .compute
+            .node_weight_mut(idx)
+            .ok_or(CoreError::NodeNotFound { id })?;
+        let old = std::mem::replace(&mut node.op, new_op);
+        Ok(old)
+    }
+
     // -----------------------------------------------------------------------
     // Edge methods
     // -----------------------------------------------------------------------
