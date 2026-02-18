@@ -7,6 +7,7 @@ pub mod edge;
 pub mod node;
 pub mod function;
 pub mod module;
+pub mod graph;
 
 // Re-export commonly used types
 pub use types::{LmType, ScalarType, ConstValue, Visibility, StructDef, EnumDef, EnumVariant};
@@ -18,3 +19,4 @@ pub use edge::{FlowEdge, SemanticEdge};
 pub use node::{ComputeNode, SemanticNode};
 pub use function::{FunctionDef, Capture, CaptureMode};
 pub use module::{ModuleDef, ModuleTree};
+pub use graph::ProgramGraph;
