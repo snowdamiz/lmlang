@@ -99,12 +99,13 @@ Plans:
   2. The compilation pipeline produces working native binaries (x86_64 or ARM) through LLVM optimization passes and the system linker
   3. LLVM codegen uses function-scoped Context (create, compile, serialize, drop) with no LLVM types escaping the compilation boundary
   4. For any program, the native binary produces the same outputs as the graph interpreter given the same inputs
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
-- [ ] 05-03: TBD
+- [ ] 05-01-PLAN.md — Crate setup, type mapping, error types, runtime declarations, linker
+- [ ] 05-02-PLAN.md — Per-function codegen: all ~34 op nodes to LLVM IR
+- [ ] 05-03-PLAN.md — Top-level compiler pipeline, HTTP endpoint, function-scoped Context
+- [ ] 05-04-PLAN.md — End-to-end integration tests: compiled output matches interpreter
 
 ### Phase 6: Full Contract System & Incremental Compilation
 **Goal**: Programs have rich behavioral contracts (pre/post-conditions, invariants, property-based tests) and only changed functions recompile
@@ -181,7 +182,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 2. Storage & Persistence | 3/3 | Complete   | 2026-02-18 |
 | 3. Type Checking & Graph Interpreter | 2/3 | Complete    | 2026-02-18 |
 | 4. AI Agent Tool API | 3/4 | Complete    | 2026-02-18 |
-| 5. LLVM Compilation Pipeline | 0/? | Not started | - |
+| 5. LLVM Compilation Pipeline | 0/4 | Planned | - |
 | 6. Full Contract System & Incremental Compilation | 0/? | Not started | - |
 | 7. Multi-Agent Concurrency | 0/? | Not started | - |
 | 8. Dual-Layer Semantic Architecture | 0/? | Not started | - |
