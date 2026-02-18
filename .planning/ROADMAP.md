@@ -50,11 +50,12 @@ Plans:
   1. A graph program saved to SQLite can be loaded back with all nodes, edges, types, and structure intact across process restarts
   2. Storage operations go through a GraphStore trait that can be swapped to an alternative backend (e.g., in-memory) without changing core logic
   3. Every graph node has a deterministic content hash that changes when and only when the node's content changes
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md — GraphStore trait, StorageError, ProgramId, decompose/recompose, InMemoryStore
+- [ ] 02-02-PLAN.md — SQLite schema, migrations, SqliteStore implementation, save/load roundtrip tests
+- [ ] 02-03-PLAN.md — blake3 content hashing, Merkle-tree composition, per-function root hashes
 
 ### Phase 3: Type Checking & Graph Interpreter
 **Goal**: Programs can be statically type-checked and executed via interpretation for development-time feedback without requiring LLVM
