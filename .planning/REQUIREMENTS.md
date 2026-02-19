@@ -14,9 +14,9 @@
 
 ### Generic Autonomous Execution
 
-- [ ] **AUT-04**: Executor can apply generic mutation batches from planner output (not limited to hello-world command heuristics).
-- [ ] **AUT-05**: Executor runs a bounded loop (`plan -> apply -> verify -> replan`) until success or retry budget exhaustion.
-- [ ] **AUT-06**: Execution failures produce explicit stop reason codes and transcript evidence for operator inspection.
+- [x] **AUT-04**: Executor can apply generic mutation batches from planner output (not limited to hello-world command heuristics).
+- [x] **AUT-05**: Executor runs a bounded loop (`plan -> apply -> verify -> replan`) until success or retry budget exhaustion.
+- [x] **AUT-06**: Execution failures produce explicit stop reason codes and transcript evidence for operator inspection.
 
 ### Verification, Compile, and Repair
 
@@ -48,9 +48,9 @@
 | AUT-01 | Phase 14 | Complete (14-02) |
 | AUT-02 | Phase 14 | Complete (14-01) |
 | AUT-03 | Phase 14 | Complete (14-01) |
-| AUT-04 | Phase 15 | Planned |
-| AUT-05 | Phase 15 | Planned |
-| AUT-06 | Phase 15 | Planned |
+| AUT-04 | Phase 15 | Complete (15-01, 15-03) |
+| AUT-05 | Phase 15 | Complete (15-02, 15-03) |
+| AUT-06 | Phase 15 | Complete (15-01, 15-02, 15-03) |
 | AUT-07 | Phase 16 | Planned |
 | AUT-08 | Phase 16 | Planned |
 | AUT-09 | Phase 17 | Planned |

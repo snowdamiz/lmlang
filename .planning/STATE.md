@@ -5,22 +5,25 @@
 See: `.planning/PROJECT.md` (updated 2026-02-19)
 
 **Core value:** AI agents can build, modify, verify, and execute programs from natural-language goals with full graph-level awareness
-**Current focus:** Defining and planning v1.2 autonomous program synthesis
+**Current focus:** Advancing v1.2 autonomous program synthesis with verify/compile repair loop planning
 
 ## Current Position
 
-Phase: 15 - Generic Graph Build Executor
-Plan: Not planned
-Status: Phase 14 complete and verified; ready to plan Phase 15
-Last activity: 2026-02-19 - Executed and verified Phase 14 (plans 14-01 through 14-03)
+Phase: 16 - Verify/Compile Repair Loop
+Plan: 00/00 planned
+Status: Phase 15 completed (3/3 plans executed); ready to plan Phase 16
+Last activity: 2026-02-19 - Executed Phase 15 plans 01-03 and completed phase
 
-Progress: [##--------] 25%
+Progress: [#####-----] 50%
 
 ## Performance Metrics
 
 - 2026-02-19 - Phase 14 / Plan 01 complete (20 min, 2 tasks, 4 files, commits: 2b46344, ae468db)
 - 2026-02-19 - Phase 14 / Plan 02 complete (18 min, 2 tasks, 8 files, commits: f0cdd90, 8d85728)
 - 2026-02-19 - Phase 14 / Plan 03 complete (10 min, 2 tasks, 4 files, commits: 98e5084, 9c37385)
+- 2026-02-19 - Phase 15 / Plan 01 complete (33 min, 2 tasks, 5 files, commits: ab7c942, 824865b)
+- 2026-02-19 - Phase 15 / Plan 02 complete (24 min, 2 tasks, 5 files, commits: 0486106, 4c711bb)
+- 2026-02-19 - Phase 15 / Plan 03 complete (11 min, 2 tasks, 2 files, commits: 5ebfa9d, c5ed032)
 
 ## Accumulated Context
 
@@ -32,26 +35,27 @@ Progress: [##--------] 25%
 - v1.2 focuses on autonomous program synthesis from natural-language prompts
 - Planner outputs must be schema-validated and executable by deterministic server logic
 - "Create a simple calculator" is a required acceptance benchmark for this milestone
-- [Phase 14]: Planner contract version pinned to 2026-02-19 for deterministic compatibility checks. — Phase 14 requires explicit versioning semantics and machine-verifiable contract negotiation.
-- [Phase 14]: Planner action payload fields remain semantically validated (instead of parse-only strict) so handlers receive machine-readable missing-field reasons.
-- [Phase 14]: Envelope-level and action-level guardrails are enforced before routing to runtime execution to block oversized or malformed plans.
-- [Phase 14]: Non-command chat requests now route through planner contract path with structured outcomes (accepted or explicit failure), replacing plain-text fallback behavior.
-- [Phase 14]: API responses now expose planner metadata (status, action summaries, failure codes/validation errors) for operator-visible autonomy decisions.
-- [Phase 14]: Deterministic integration tests now lock planner accepted/failed routing behavior across project-agent and dashboard chat APIs.
+- [Phase 14]: Planner contract version pinned to 2026-02-19 for deterministic compatibility checks
+- [Phase 14]: Envelope-level and action-level guardrails are enforced before runtime routing
+- [Phase 14]: Non-command chat requests route through planner contract path with structured outcomes
+- [Phase 15]: Executor dispatch is fail-fast per attempt and emits typed per-action evidence rows
+- [Phase 15]: Retry budget defaults to 3 attempts and is configurable via `LMLANG_AUTONOMY_MAX_ATTEMPTS`
+- [Phase 15]: Autonomous success requires post-execution verify gate before terminal `completed`
+- [Phase 15]: Agent and dashboard chat payloads expose optional `execution` and `stop_reason` metadata
 
 ### Pending Todos
 
-- Plan Phase 15 executor tasks (generic mutation action execution and bounded retry loop)
-- Define executor stop-reason taxonomy and transcript evidence contract
-- Design verification hooks for plan->apply->verify->replan loop orchestration
+- Plan Phase 16 (verify/compile diagnostics capture and targeted repair loop)
+- Design phase16 integration tests for verify+compile feedback chaining
+- Resolve pre-existing dashboard shell assertion drift in phase10 integration tests
 
 ### Blockers/Concerns
 
-- Main risk: under-specified planner contract causing fragile execution behavior
-- Main risk: mutation semantics may be too low-level for reliable multi-step generation without additional helper primitives
+- Main risk: verify/compile diagnostics may need richer planner feedback shaping in phase16
+- Pre-existing unrelated test failures remain in `phase10_dashboard_routes_serve_shell_and_assets` and `phase10_dashboard_and_observe_routes_coexist_with_reuse_contract`
 
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed Phase 14 and wrote `14-VERIFICATION.md`; next action is planning Phase 15
+Stopped at: Completed Phase 15 execution and docs; next action is planning `16-01-PLAN.md`
 Resume file: None
