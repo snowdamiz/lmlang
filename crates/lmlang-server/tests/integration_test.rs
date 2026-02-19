@@ -13,8 +13,10 @@
 //! mutations to add all nodes and edges atomically.
 
 use axum::body::Body;
+use axum::extract::State;
 use axum::http::{Request, StatusCode};
-use axum::Router;
+use axum::routing::post;
+use axum::{Json, Router};
 use serde_json::json;
 use tower::ServiceExt;
 
@@ -42,6 +44,54 @@ fn temp_db_path(prefix: &str) -> String {
         .join(format!("{}_{}.db", prefix, uuid::Uuid::new_v4()))
         .to_string_lossy()
         .to_string()
+}
+
+#[derive(Clone)]
+struct MockPlannerState {
+    response_content: String,
+    requests: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
+}
+
+async fn mock_planner_chat(
+    State(state): State<MockPlannerState>,
+    Json(request): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    state.requests.lock().unwrap().push(request);
+    Json(json!({
+        "choices": [{
+            "message": {
+                "content": state.response_content
+            }
+        }]
+    }))
+}
+
+async fn start_mock_planner_server(
+    response_content: &str,
+) -> (
+    String,
+    std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
+    tokio::task::JoinHandle<()>,
+) {
+    let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let state = MockPlannerState {
+        response_content: response_content.to_string(),
+        requests: requests.clone(),
+    };
+
+    let app = Router::new()
+        .route("/chat/completions", post(mock_planner_chat))
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("failed to bind mock planner server");
+    let addr = listener.local_addr().expect("failed to read mock server addr");
+    let handle = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    (format!("http://{}", addr), requests, handle)
 }
 
 /// Sends a POST request with a JSON body and returns (status, json).
@@ -2325,4 +2375,277 @@ async fn phase10_dashboard_and_observe_routes_coexist_with_reuse_contract() {
     let (status, js) = get_text(&app, "/dashboard/app.js").await;
     assert_eq!(status, StatusCode::OK, "dashboard js should be available");
     assert!(js.contains("/programs/${state.selectedProgramId}/observability"));
+}
+
+// ===========================================================================
+// PHASE 14: Planner contract routing
+// ===========================================================================
+
+#[tokio::test]
+async fn phase14_program_agent_chat_routes_non_command_to_planner() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "build a simple calculator",
+        "actions": [
+            {
+                "type": "inspect",
+                "request": {
+                    "query": "calculator requirements",
+                    "max_results": 5
+                }
+            },
+            {
+                "type": "verify",
+                "request": { "scope": "Full" }
+            }
+        ]
+    }"#;
+    let (base_url, requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    let (status, register) = post_json(
+        &app,
+        "/agents/register",
+        json!({
+            "name": "planner-agent",
+            "provider": "openai_compatible",
+            "model": "planner-test",
+            "api_base_url": base_url,
+            "api_key": "test-key"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "register failed: {:?}", register);
+    let agent_id = register["agent_id"].as_str().unwrap();
+
+    let (status, assign) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/assign", pid, agent_id),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "assign failed: {:?}", assign);
+
+    let (status, chat) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/chat", pid, agent_id),
+        json!({
+            "message": "build a simple calculator with add and subtract operations"
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "planner chat failed: {:?}",
+        chat
+    );
+    assert_eq!(chat["planner"]["status"], json!("accepted"));
+    assert_eq!(chat["planner"]["version"], json!("2026-02-19"));
+    assert!(
+        chat["planner"]["actions"].as_array().unwrap().len() >= 2,
+        "expected multi-step planner actions: {:?}",
+        chat["planner"]
+    );
+    assert!(chat["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Planner accepted"));
+
+    let requests_guard = requests.lock().unwrap();
+    assert!(!requests_guard.is_empty(), "mock planner received no requests");
+    assert_eq!(
+        requests_guard[0]["response_format"]["type"],
+        json!("json_object")
+    );
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn phase14_program_agent_chat_returns_structured_failure_for_invalid_planner_json() {
+    let (base_url, _requests, server) = start_mock_planner_server("not-json-at-all").await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    let (status, register) = post_json(
+        &app,
+        "/agents/register",
+        json!({
+            "name": "planner-agent",
+            "provider": "openai_compatible",
+            "model": "planner-test",
+            "api_base_url": base_url,
+            "api_key": "test-key"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "register failed: {:?}", register);
+    let agent_id = register["agent_id"].as_str().unwrap();
+
+    let (status, assign) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/assign", pid, agent_id),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "assign failed: {:?}", assign);
+
+    let (status, chat) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/chat", pid, agent_id),
+        json!({
+            "message": "build a state machine for ticket approval"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "chat failed: {:?}", chat);
+    assert_eq!(chat["planner"]["status"], json!("failed"));
+    assert_eq!(
+        chat["planner"]["failure"]["code"],
+        json!("planner_invalid_json")
+    );
+    assert!(chat["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("planner_invalid_json"));
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn phase14_dashboard_ai_chat_surfaces_planner_payload() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "build calculator workflow",
+        "actions": [
+            {
+                "type": "inspect",
+                "request": {
+                    "query": "calculator plan",
+                    "max_results": 4
+                }
+            },
+            {
+                "type": "verify",
+                "request": { "scope": "Local" }
+            }
+        ]
+    }"#;
+    let (base_url, _requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+
+    let (status, create_project) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "create project phase14-planner-dashboard"
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create project failed: {:?}",
+        create_project
+    );
+    let program_id = create_project["selected_program_id"].as_i64().unwrap();
+
+    let register_message = format!(
+        "register agent planner provider openai_compatible model planner-test base url {} api key test-key",
+        base_url
+    );
+    let (status, register_agent) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": register_message,
+            "selected_program_id": program_id
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "register agent failed: {:?}",
+        register_agent
+    );
+    let agent_id = register_agent["selected_agent_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let (status, assign) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "assign agent",
+            "selected_program_id": program_id,
+            "selected_agent_id": agent_id
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "assign failed: {:?}", assign);
+
+    let (status, chat) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "build calculator workflow from this prompt",
+            "selected_program_id": program_id,
+            "selected_agent_id": agent_id,
+            "selected_project_agent_id": agent_id
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "dashboard chat failed: {:?}", chat);
+    assert_eq!(chat["planner"]["status"], json!("accepted"));
+    assert!(
+        chat["planner"]["actions"].as_array().unwrap().len() >= 2,
+        "expected planner actions in dashboard response"
+    );
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn phase14_explicit_command_prompt_keeps_deterministic_hello_world_path() {
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    let (status, register) =
+        post_json(&app, "/agents/register", json!({ "name": "command-agent" })).await;
+    assert_eq!(status, StatusCode::OK, "register failed: {:?}", register);
+    let agent_id = register["agent_id"].as_str().unwrap();
+
+    let (status, assign) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/assign", pid, agent_id),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "assign failed: {:?}", assign);
+
+    let (status, chat) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/chat", pid, agent_id),
+        json!({
+            "message": "create hello world program"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "chat failed: {:?}", chat);
+    assert!(chat["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Hello world scaffold ready"));
+    assert!(
+        chat["planner"].is_null(),
+        "command-path response should not include planner payload: {:?}",
+        chat
+    );
 }
