@@ -45,7 +45,7 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUT-01 | Phase 14 | Planned |
+| AUT-01 | Phase 14 | Complete (14-02) |
 | AUT-02 | Phase 14 | Complete (14-01) |
 | AUT-03 | Phase 14 | Complete (14-01) |
 | AUT-04 | Phase 15 | Planned |
