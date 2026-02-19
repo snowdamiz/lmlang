@@ -188,11 +188,20 @@ impl ProgramService {
     }
 
     /// Deletes a program.
+    ///
+    /// If the deleted program is the currently active one, the service
+    /// switches to another available program first.  When no other program
+    /// exists, the in-memory graph is reset to a fresh empty graph.
     pub fn delete_program(&mut self, id: ProgramId) -> Result<(), ApiError> {
         if id == self.program_id {
-            return Err(ApiError::BadRequest(
-                "cannot delete the active program".to_string(),
-            ));
+            let programs = self.list_programs()?;
+            if let Some(other) = programs.iter().find(|p| p.id != id) {
+                self.load_program(other.id)?;
+            } else {
+                // Last program – reset to a blank graph; program_id will be
+                // stale but harmless since there are no programs left.
+                self.graph = ProgramGraph::new("main");
+            }
         }
         self.store.delete_program(id)?;
         Ok(())

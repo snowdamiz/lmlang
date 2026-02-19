@@ -1,6 +1,6 @@
 //! Unified dashboard handlers for Operate + Observe UX.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::header;
 use axum::response::{Html, IntoResponse};
 use axum::Json;
@@ -10,7 +10,10 @@ use crate::concurrency::{AgentId, AgentLlmConfig};
 use crate::error::ApiError;
 use crate::project_agent::ProjectAgentMessage;
 use crate::schema::agent_control::AgentChatMessageView;
-use crate::schema::dashboard::{DashboardAiChatRequest, DashboardAiChatResponse};
+use crate::schema::dashboard::{
+    DashboardAiChatRequest, DashboardAiChatResponse, DashboardOpenRouterStatusQuery,
+    DashboardOpenRouterStatusResponse,
+};
 use crate::state::AppState;
 
 use super::agent_control::execute_program_agent_chat;
@@ -241,11 +244,180 @@ pub async fn ai_chat(
     }))
 }
 
+/// Provider connectivity + credits probe for dashboard badges.
+///
+/// `GET /dashboard/openrouter/status`
+pub async fn openrouter_status(
+    State(state): State<AppState>,
+    Query(query): Query<DashboardOpenRouterStatusQuery>,
+) -> Json<DashboardOpenRouterStatusResponse> {
+    let selected = query.selected_agent_id.map(AgentId);
+    let selected_session = selected.and_then(|id| state.agent_registry.get(&id));
+
+    let session = selected_session.or_else(|| {
+        state.agent_registry.list().into_iter().find(|entry| {
+            entry.llm.provider.as_deref() == Some("openrouter") && entry.llm.api_key.is_some()
+        })
+    });
+
+    let Some(session) = session else {
+        return Json(DashboardOpenRouterStatusResponse {
+            success: true,
+            connected: false,
+            provider: Some("openrouter".to_string()),
+            message: Some("No OpenRouter-configured agent found.".to_string()),
+            credit_balance: None,
+            total_credits: None,
+            total_usage: None,
+        });
+    };
+
+    if session.llm.provider.as_deref() != Some("openrouter") {
+        return Json(DashboardOpenRouterStatusResponse {
+            success: true,
+            connected: false,
+            provider: session.llm.provider.clone(),
+            message: Some("Selected agent is not using OpenRouter.".to_string()),
+            credit_balance: None,
+            total_credits: None,
+            total_usage: None,
+        });
+    }
+
+    let Some(api_key) = session.llm.api_key.clone() else {
+        return Json(DashboardOpenRouterStatusResponse {
+            success: true,
+            connected: false,
+            provider: Some("openrouter".to_string()),
+            message: Some("OpenRouter API key is not configured.".to_string()),
+            credit_balance: None,
+            total_credits: None,
+            total_usage: None,
+        });
+    };
+
+    let base_url = session
+        .llm
+        .api_base_url
+        .clone()
+        .unwrap_or_else(|| "https://openrouter.ai/api/v1".to_string());
+
+    let probe = probe_openrouter(&base_url, &api_key).await;
+    Json(DashboardOpenRouterStatusResponse {
+        success: true,
+        connected: probe.connected,
+        provider: Some("openrouter".to_string()),
+        message: probe.message,
+        credit_balance: probe.credit_balance,
+        total_credits: probe.total_credits,
+        total_usage: probe.total_usage,
+    })
+}
+
 #[derive(Debug, Default)]
 struct DashboardContext {
     selected_program_id: Option<i64>,
     selected_agent_id: Option<AgentId>,
     selected_project_agent_id: Option<AgentId>,
+}
+
+#[derive(Debug, Default)]
+struct OpenRouterProbe {
+    connected: bool,
+    message: Option<String>,
+    credit_balance: Option<f64>,
+    total_credits: Option<f64>,
+    total_usage: Option<f64>,
+}
+
+async fn probe_openrouter(base_url: &str, api_key: &str) -> OpenRouterProbe {
+    let client = reqwest::Client::new();
+    let base = base_url.trim_end_matches('/');
+    let key_endpoint = format!("{}/key", base);
+
+    let mut probe = OpenRouterProbe::default();
+
+    let key_resp = match client
+        .get(&key_endpoint)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("HTTP-Referer", "https://localhost:3000")
+        .header("X-Title", "lmlang dashboard")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+    {
+        Ok(resp) => resp,
+        Err(err) => {
+            probe.message = Some(format!("OpenRouter unreachable: {}", err));
+            return probe;
+        }
+    };
+
+    if !key_resp.status().is_success() {
+        probe.message = Some(format!(
+            "OpenRouter key check failed ({})",
+            key_resp.status()
+        ));
+        return probe;
+    }
+
+    probe.connected = true;
+
+    let key_json = key_resp
+        .json::<serde_json::Value>()
+        .await
+        .unwrap_or(serde_json::Value::Null);
+    let key_data = key_json.get("data").unwrap_or(&key_json);
+    let key_remaining = parse_json_number(key_data.get("limit_remaining"))
+        .or_else(|| parse_json_number(key_data.get("remaining_credits")));
+    let key_limit = parse_json_number(key_data.get("limit"));
+    let key_usage = parse_json_number(key_data.get("usage"));
+
+    let credits_endpoint = format!("{}/credits", base);
+    let mut credits_error: Option<String> = None;
+    if let Ok(credits_resp) = client
+        .get(&credits_endpoint)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("HTTP-Referer", "https://localhost:3000")
+        .header("X-Title", "lmlang dashboard")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+    {
+        if credits_resp.status().is_success() {
+            let credits_json = credits_resp
+                .json::<serde_json::Value>()
+                .await
+                .unwrap_or(serde_json::Value::Null);
+            let credits_data = credits_json.get("data").unwrap_or(&credits_json);
+            probe.total_credits = parse_json_number(credits_data.get("total_credits"));
+            probe.total_usage = parse_json_number(credits_data.get("total_usage"));
+        } else {
+            credits_error = Some(format!(
+                "credits endpoint returned {}",
+                credits_resp.status()
+            ));
+        }
+    } else {
+        credits_error = Some("credits endpoint unreachable".to_string());
+    }
+
+    probe.credit_balance = probe
+        .total_credits
+        .zip(probe.total_usage)
+        .map(|(total, used)| (total - used).max(0.0))
+        .or(key_remaining)
+        .or_else(|| {
+            key_limit
+                .zip(key_usage)
+                .map(|(limit, used)| (limit - used).max(0.0))
+        });
+
+    if probe.credit_balance.is_none() {
+        probe.message = credits_error;
+    }
+
+    probe
 }
 
 async fn create_and_load_program(state: &AppState, name: &str) -> Result<i64, ApiError> {
@@ -578,6 +750,14 @@ fn to_transcript_view(messages: &[ProjectAgentMessage]) -> Vec<AgentChatMessageV
             timestamp: msg.timestamp.clone(),
         })
         .collect()
+}
+
+fn parse_json_number(value: Option<&serde_json::Value>) -> Option<f64> {
+    match value {
+        Some(serde_json::Value::Number(num)) => num.as_f64(),
+        Some(serde_json::Value::String(text)) => text.parse::<f64>().ok(),
+        _ => None,
+    }
 }
 
 fn unix_seconds() -> u64 {

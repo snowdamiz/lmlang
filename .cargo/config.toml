@@ -1,5 +1,5 @@
 [alias]
-start-server = "!bash ./scripts/start-server.sh"
+start-server = "run -p lmlang-server"
 
 [env]
 LLVM_SYS_211_PREFIX = "/opt/homebrew/opt/llvm"

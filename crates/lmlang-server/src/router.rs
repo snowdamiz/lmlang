@@ -33,6 +33,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/dashboard", get(handlers::dashboard::ui_root_index))
         .route("/dashboard/ai/chat", post(handlers::dashboard::ai_chat))
         .route(
+            "/dashboard/openrouter/status",
+            get(handlers::dashboard::openrouter_status),
+        )
+        .route(
             "/dashboard/app.js",
             get(handlers::dashboard::ui_root_app_js),
         )

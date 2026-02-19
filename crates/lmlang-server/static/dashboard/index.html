@@ -3,117 +3,177 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>lmlang Unified Dashboard</title>
+    <title>lmlang Dashboard</title>
     <link rel="stylesheet" href="/dashboard/styles.css" />
   </head>
   <body data-initial-program-id="__INITIAL_PROGRAM_ID__">
-    <div class="page-shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">lmlang Control Center</p>
-          <h1>Unified Dashboard</h1>
-          <p class="subtitle">AI-first control loop: use the chat box to create projects, configure agents, build, run, and query.</p>
+    <div class="shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="24" height="24" rx="6" fill="currentColor" fill-opacity="0.15"/>
+              <path d="M7 8h10M7 12h6M7 16h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <span class="logo-text">lmlang</span>
+          </div>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
         </div>
-        <div class="badge-row">
-          <span class="badge" id="activeProjectBadge">Project: none</span>
-          <span class="badge" id="activeAgentBadge">Agent: none</span>
-          <span class="badge" id="runStatusBadge">Run: idle</span>
+
+        <div class="sidebar-body">
+          <!-- ── Projects ── -->
+          <section class="sidebar-section">
+            <div class="section-header">
+              <h3 class="section-label">Projects</h3>
+              <button id="refreshProjectsBtn" type="button" class="section-action-btn" title="Refresh projects">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M14 8A6 6 0 1 1 8 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 1l3 1.5L8 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+            <div class="field-row">
+              <input id="projectNameInput" placeholder="New project name..." />
+              <button id="createProjectBtn" type="button" class="btn btn-sm">Create</button>
+            </div>
+            <ul id="projectList" class="entity-list"></ul>
+            <details class="collapsible">
+              <summary>Project tools</summary>
+              <div class="collapsible-body">
+                <button id="createHelloWorldBtn" type="button" class="btn btn-block btn-ghost-sidebar">Scaffold Hello World</button>
+                <a id="observeLink" class="btn-link" href="#" target="_blank" rel="noopener noreferrer">Open in Observe</a>
+              </div>
+            </details>
+          </section>
+
+          <div class="sidebar-divider"></div>
+
+          <!-- ── Agents ── -->
+          <section class="sidebar-section">
+            <div class="section-header">
+              <h3 class="section-label">Agents</h3>
+              <button id="refreshAgentsBtn" type="button" class="section-action-btn" title="Refresh agents">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M14 8A6 6 0 1 1 8 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 1l3 1.5L8 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+
+            <!-- Registered agent list (click to select, x to delete) -->
+            <ul id="agentList" class="entity-list"></ul>
+
+            <div class="field-row">
+              <input id="agentNameInput" placeholder="New agent name..." />
+              <button id="registerAgentBtn" type="button" class="btn btn-sm">Add</button>
+            </div>
+
+            <details class="collapsible">
+              <summary>Provider config</summary>
+              <div class="collapsible-body">
+                <select id="agentProviderSelect">
+                  <option value="">No external provider</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="openai_compatible">OpenAI-compatible</option>
+                </select>
+                <input id="agentModelInput" placeholder="Model (e.g. openai/gpt-4o-mini)" />
+                <input id="agentBaseUrlInput" placeholder="API base URL (optional)" />
+                <input id="agentApiKeyInput" type="password" placeholder="API key" />
+                <input id="agentSystemPromptInput" placeholder="System prompt (optional)" />
+                <button id="saveAgentConfigBtn" type="button" class="btn btn-block">Save Config</button>
+              </div>
+            </details>
+
+            <div class="sidebar-divider"></div>
+
+            <h4 class="section-sublabel">Assigned to Project</h4>
+            <ul id="projectAgentList" class="entity-list entity-list-compact"></ul>
+          </section>
         </div>
-      </header>
+      </aside>
 
-      <main class="workspace">
-        <section class="panel" aria-label="Projects">
-          <h2>Projects</h2>
-          <p class="hint">Create a project, then select it to manage assigned agents.</p>
-          <div class="controls">
-            <input id="projectNameInput" placeholder="new-project-name" />
-            <button id="createProjectBtn" type="button">Create Project</button>
-            <button id="refreshProjectsBtn" type="button">Refresh</button>
+      <main class="content">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button class="sidebar-open-btn" id="sidebarOpenBtn" type="button" aria-label="Open sidebar">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h12M3 13h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+            <h1 class="page-title">Dashboard</h1>
           </div>
-          <ul id="projectList" class="list"></ul>
-          <div class="controls">
-            <button id="createHelloWorldBtn" type="button">Create Hello World Scaffold</button>
+          <div class="status-indicators">
+            <span class="indicator" id="activeProjectBadge">
+              <span class="indicator-dot idle"></span>
+              Project: none
+            </span>
+            <span class="indicator" id="activeAgentBadge">Agent: none</span>
+            <span class="indicator" id="runStatusBadge">Run: idle</span>
+            <span class="indicator" id="apiKeyStatusBadge">
+              <span class="indicator-dot disconnected" aria-hidden="true"></span>
+              <span class="badge-label">OpenRouter: disconnected</span>
+            </span>
           </div>
-          <p class="hint">
-            Seeds a first `hello_world` function and verifies it so you can immediately visualize/query in Observe.
-          </p>
-          <a id="observeLink" class="inline-link" href="#" target="_blank" rel="noopener noreferrer">Open selected project in Observe</a>
-        </section>
+        </header>
 
-        <section class="panel" aria-label="Agents">
-          <h2>Agents</h2>
-          <p class="hint">Register global agents, configure AI provider access, then assign one to the selected project.</p>
-          <div class="controls">
-            <input id="agentNameInput" placeholder="optional agent name" />
-            <button id="registerAgentBtn" type="button">Register Agent</button>
-            <button id="refreshAgentsBtn" type="button">Refresh</button>
+        <div class="chat-container">
+          <div class="chat-toolbar">
+            <input id="goalInput" class="goal-input" placeholder="Build goal (e.g. add login and tests)..." />
+            <button id="startBuildBtn" type="button" class="btn btn-primary">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 1.5l9 5.5-9 5.5V1.5z" fill="currentColor"/></svg>
+              Build
+            </button>
+            <button id="stopBuildBtn" type="button" class="btn btn-danger">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor"/></svg>
+              Stop
+            </button>
           </div>
-          <div class="controls">
-            <select id="agentProviderSelect">
-              <option value="">No external provider</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="openai_compatible">OpenAI-compatible</option>
-            </select>
-            <input id="agentModelInput" placeholder="model (e.g. openai/gpt-4o-mini)" />
-          </div>
-          <div class="controls">
-            <input id="agentBaseUrlInput" placeholder="api base url (optional for OpenRouter)" />
-            <input id="agentApiKeyInput" type="password" placeholder="api key (stored in-memory)" />
-          </div>
-          <div class="controls">
-            <input id="agentSystemPromptInput" placeholder="system prompt (optional)" />
-            <button id="saveAgentConfigBtn" type="button">Save Agent Config</button>
-          </div>
-          <div class="controls">
-            <select id="agentAssignSelect"></select>
-            <button id="assignAgentBtn" type="button">Assign To Project</button>
-          </div>
-          <h3>Assigned To Project</h3>
-          <ul id="projectAgentList" class="list"></ul>
-        </section>
 
-        <section class="panel panel-chat" aria-label="Build and Chat">
-          <h2>Build Control + Chat</h2>
-          <p class="hint">Primary interface: ask chat to do everything (create project, register/configure/assign agent, start/stop build, create/compile/run).</p>
-          <div class="controls">
-            <input id="goalInput" placeholder="build goal" />
-            <button id="startBuildBtn" type="button">Start Build</button>
-            <button id="stopBuildBtn" type="button">Stop Build</button>
-          </div>
           <div class="chat-log" id="chatLog"></div>
-          <div class="controls">
-            <input id="chatInput" placeholder="message to agent" />
-            <button id="sendChatBtn" type="button">Send</button>
-          </div>
-        </section>
-      </main>
 
-      <footer class="statusbar" id="statusBar" data-state="idle">Dashboard ready.</footer>
+          <div class="chat-input-area">
+            <input id="chatInput" class="chat-input" placeholder="Message the agent..." />
+            <button id="sendChatBtn" type="button" class="btn btn-primary btn-send">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2l12 6-12 6V9l8-1-8-1V2z" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <footer class="statusbar" id="statusBar" data-state="idle">Dashboard ready.</footer>
+      </main>
     </div>
 
-    <div class="setup-overlay hidden" id="setupWizard" role="dialog" aria-modal="true" aria-label="First-time setup">
-      <section class="setup-card">
-        <h2>First-Time AI Setup</h2>
-        <p class="hint">
-          Configure your provider once so agents can use real AI replies from the dashboard.
-        </p>
-        <div class="controls">
-          <input id="setupAgentNameInput" placeholder="agent name (optional)" />
-          <select id="setupProviderSelect">
-            <option value="openrouter">OpenRouter</option>
-            <option value="openai_compatible">OpenAI-compatible</option>
-          </select>
+    <div class="modal-overlay hidden" id="setupWizard" role="dialog" aria-modal="true" aria-label="First-time setup">
+      <div class="modal-backdrop"></div>
+      <section class="modal-card">
+        <div class="modal-header">
+          <h2>AI Provider Setup</h2>
+          <p class="modal-subtitle">Configure an AI provider so agents can generate real responses.</p>
         </div>
-        <div class="controls">
-          <input id="setupModelInput" placeholder="model (e.g. openai/gpt-4o-mini)" />
-          <input id="setupApiKeyInput" type="password" placeholder="api key" />
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="setupAgentNameInput">Agent name</label>
+            <input id="setupAgentNameInput" placeholder="e.g. builder" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="setupProviderSelect">Provider</label>
+              <select id="setupProviderSelect">
+                <option value="openrouter">OpenRouter</option>
+                <option value="openai_compatible">OpenAI-compatible</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="setupModelInput">Model</label>
+              <input id="setupModelInput" placeholder="openai/gpt-4o-mini" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="setupApiKeyInput">API Key</label>
+            <input id="setupApiKeyInput" type="password" placeholder="sk-..." />
+          </div>
+          <div class="form-group">
+            <label for="setupBaseUrlInput">Base URL <span class="label-hint">(optional for OpenRouter)</span></label>
+            <input id="setupBaseUrlInput" placeholder="https://openrouter.ai/api/v1" />
+          </div>
         </div>
-        <div class="controls">
-          <input id="setupBaseUrlInput" placeholder="base url (optional for OpenRouter)" />
-        </div>
-        <div class="controls">
-          <button id="setupCompleteBtn" type="button">Complete Setup</button>
-          <button id="setupSkipBtn" type="button">Skip For Now</button>
+        <div class="modal-footer">
+          <button id="setupSkipBtn" type="button" class="btn btn-ghost">Skip</button>
+          <button id="setupCompleteBtn" type="button" class="btn btn-primary">Complete Setup</button>
         </div>
       </section>
     </div>

@@ -30,3 +30,27 @@ pub struct DashboardAiChatResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript: Option<Vec<AgentChatMessageView>>,
 }
+
+/// Query params for OpenRouter connectivity status checks.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DashboardOpenRouterStatusQuery {
+    #[serde(default)]
+    pub selected_agent_id: Option<Uuid>,
+}
+
+/// Response body for OpenRouter connectivity + credits status.
+#[derive(Debug, Clone, Serialize)]
+pub struct DashboardOpenRouterStatusResponse {
+    pub success: bool,
+    pub connected: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credit_balance: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_credits: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_usage: Option<f64>,
+}

@@ -2,6 +2,10 @@
   const initialProgramIdRaw = document.body.dataset.initialProgramId || "";
   const initialProgramId = Number(initialProgramIdRaw);
   const SETUP_STORAGE_KEY = "lmlang.dashboard.first_time_setup.v1";
+  const SIDEBAR_STORAGE_KEY = "lmlang.dashboard.sidebar_collapsed.v1";
+  const OPENROUTER_POLL_INTERVAL_MS = 30000;
+  let openRouterPollTimer = null;
+  let openRouterStatusRequestId = 0;
 
   const state = {
     programs: [],
@@ -11,9 +15,20 @@
     selectedAgentId: null,
     selectedProjectAgentId: null,
     transcript: [],
+    openRouterStatus: {
+      connected: false,
+      creditBalance: null,
+      totalCredits: null,
+      totalUsage: null,
+      message: null,
+    },
   };
 
   const el = {
+    sidebar: document.getElementById("sidebar"),
+    sidebarToggle: document.getElementById("sidebarToggle"),
+    sidebarOpenBtn: document.getElementById("sidebarOpenBtn"),
+
     projectNameInput: document.getElementById("projectNameInput"),
     createProjectBtn: document.getElementById("createProjectBtn"),
     refreshProjectsBtn: document.getElementById("refreshProjectsBtn"),
@@ -24,14 +39,13 @@
     agentNameInput: document.getElementById("agentNameInput"),
     registerAgentBtn: document.getElementById("registerAgentBtn"),
     refreshAgentsBtn: document.getElementById("refreshAgentsBtn"),
+    agentList: document.getElementById("agentList"),
     agentProviderSelect: document.getElementById("agentProviderSelect"),
     agentModelInput: document.getElementById("agentModelInput"),
     agentBaseUrlInput: document.getElementById("agentBaseUrlInput"),
     agentApiKeyInput: document.getElementById("agentApiKeyInput"),
     agentSystemPromptInput: document.getElementById("agentSystemPromptInput"),
     saveAgentConfigBtn: document.getElementById("saveAgentConfigBtn"),
-    agentAssignSelect: document.getElementById("agentAssignSelect"),
-    assignAgentBtn: document.getElementById("assignAgentBtn"),
     projectAgentList: document.getElementById("projectAgentList"),
 
     setupWizard: document.getElementById("setupWizard"),
@@ -53,8 +67,25 @@
     activeProjectBadge: document.getElementById("activeProjectBadge"),
     activeAgentBadge: document.getElementById("activeAgentBadge"),
     runStatusBadge: document.getElementById("runStatusBadge"),
+    apiKeyStatusBadge: document.getElementById("apiKeyStatusBadge"),
     statusBar: document.getElementById("statusBar"),
   };
+
+  // ── Sidebar toggle ──
+
+  function initSidebar() {
+    const collapsed = safeStorageGet(SIDEBAR_STORAGE_KEY) === "1";
+    if (collapsed) {
+      el.sidebar.classList.add("collapsed");
+    }
+  }
+
+  function toggleSidebar() {
+    const isCollapsed = el.sidebar.classList.toggle("collapsed");
+    safeStorageSet(SIDEBAR_STORAGE_KEY, isCollapsed ? "1" : "0");
+  }
+
+  // ── Utilities ──
 
   function setStatus(message, tone = "idle") {
     el.statusBar.textContent = message;
@@ -124,6 +155,8 @@
     const selectedProjectAgent = state.projectAgents.find(
       (a) => a.agent_id === state.selectedProjectAgentId
     );
+    const openRouterConnected = Boolean(state.openRouterStatus.connected);
+    const creditBalance = state.openRouterStatus.creditBalance;
 
     el.activeProjectBadge.textContent = selectedProject
       ? `Project: ${selectedProject.name} (#${selectedProject.id})`
@@ -136,6 +169,33 @@
     el.runStatusBadge.textContent = selectedProjectAgent
       ? `Run: ${selectedProjectAgent.run_status}`
       : "Run: idle";
+
+    if (el.apiKeyStatusBadge) {
+      el.apiKeyStatusBadge.classList.toggle("connected", openRouterConnected);
+      el.apiKeyStatusBadge.classList.toggle("disconnected", !openRouterConnected);
+
+      const dot = el.apiKeyStatusBadge.querySelector(".indicator-dot");
+      if (dot) {
+        dot.classList.toggle("connected", openRouterConnected);
+        dot.classList.toggle("disconnected", !openRouterConnected);
+      }
+
+      const label = el.apiKeyStatusBadge.querySelector(".badge-label");
+      if (label) {
+        let text = openRouterConnected
+          ? "OpenRouter: connected"
+          : "OpenRouter: disconnected";
+        if (openRouterConnected && creditBalance !== null) {
+          text += ` \u00b7 ${formatUsd(creditBalance)}`;
+        }
+        label.textContent = text;
+      }
+      if (state.openRouterStatus.message) {
+        el.apiKeyStatusBadge.title = state.openRouterStatus.message;
+      } else {
+        el.apiKeyStatusBadge.removeAttribute("title");
+      }
+    }
   }
 
   async function api(method, path, body) {
@@ -159,9 +219,65 @@
     return data;
   }
 
+  function parseFiniteNumber(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function formatUsd(amount) {
+    return `$${amount.toFixed(2)}`;
+  }
+
+  function openRouterStatusPath() {
+    const params = new URLSearchParams();
+    if (state.selectedAgentId) {
+      params.set("selected_agent_id", state.selectedAgentId);
+    }
+    const query = params.toString();
+    return query
+      ? `/dashboard/openrouter/status?${query}`
+      : "/dashboard/openrouter/status";
+  }
+
+  async function refreshOpenRouterStatus() {
+    const requestId = ++openRouterStatusRequestId;
+    try {
+      const response = await api("GET", openRouterStatusPath());
+      if (requestId !== openRouterStatusRequestId) {
+        return;
+      }
+      state.openRouterStatus.connected = Boolean(response?.connected);
+      state.openRouterStatus.creditBalance = parseFiniteNumber(response?.credit_balance);
+      state.openRouterStatus.totalCredits = parseFiniteNumber(response?.total_credits);
+      state.openRouterStatus.totalUsage = parseFiniteNumber(response?.total_usage);
+      state.openRouterStatus.message = response?.message || null;
+    } catch (error) {
+      if (requestId !== openRouterStatusRequestId) {
+        return;
+      }
+      state.openRouterStatus.connected = false;
+      state.openRouterStatus.creditBalance = null;
+      state.openRouterStatus.totalCredits = null;
+      state.openRouterStatus.totalUsage = null;
+      state.openRouterStatus.message = error.message;
+    }
+    updateBadges();
+  }
+
+  function startOpenRouterStatusPolling() {
+    if (openRouterPollTimer !== null) {
+      return;
+    }
+    openRouterPollTimer = window.setInterval(() => {
+      void refreshOpenRouterStatus();
+    }, OPENROUTER_POLL_INTERVAL_MS);
+  }
+
+  // ── Render: Projects ──
+
   function renderProjects() {
     if (!state.programs.length) {
-      el.projectList.innerHTML = '<li class="list-item">No projects yet.</li>';
+      el.projectList.innerHTML = '<li class="list-item"><div class="list-item-content"><span class="item-meta">No projects yet.</span></div></li>';
       return;
     }
 
@@ -169,38 +285,112 @@
       .map((program) => {
         const selected = program.id === state.selectedProgramId ? "selected" : "";
         return `
-          <li class="list-item ${selected}">
-            <p class="item-title">${program.name}</p>
-            <p class="item-meta">program_id=${program.id}</p>
-            <button type="button" data-project-id="${program.id}">Select Project</button>
+          <li class="list-item ${selected}" data-project-id="${program.id}">
+            <div class="list-item-content">
+              <span class="item-title">${program.name}</span>
+              <span class="item-meta">#${program.id}</span>
+            </div>
+            <button class="item-delete-btn" data-delete-project-id="${program.id}" title="Delete project">&times;</button>
           </li>
         `;
       })
       .join("");
 
-    el.projectList.querySelectorAll("[data-project-id]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        await selectProject(Number(button.dataset.projectId));
+    // Click on item content -> select, click on X -> delete
+    el.projectList.querySelectorAll("[data-project-id]").forEach((item) => {
+      item.addEventListener("click", async (e) => {
+        // Ignore if click was on the delete button
+        if (e.target.closest("[data-delete-project-id]")) return;
+        await selectProject(Number(item.dataset.projectId));
+      });
+    });
+
+    el.projectList.querySelectorAll("[data-delete-project-id]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await onDeleteProject(Number(btn.dataset.deleteProjectId));
       });
     });
   }
 
-  function renderAgentAssignOptions() {
+  // ── Render: Agent list (registered agents) ──
+
+  function renderAgentList() {
     if (!state.agents.length) {
-      el.agentAssignSelect.innerHTML = '<option value="">No registered agents</option>';
+      el.agentList.innerHTML = '<li class="list-item"><div class="list-item-content"><span class="item-meta">No agents registered.</span></div></li>';
       renderSelectedAgentConfig();
       return;
     }
 
-    el.agentAssignSelect.innerHTML = state.agents
+    const hasProject = Boolean(state.selectedProgramId);
+
+    el.agentList.innerHTML = state.agents
       .map((agent) => {
-        const label = `${agent.name || "unnamed-agent"} (${agent.agent_id})`;
         const selected = agent.agent_id === state.selectedAgentId ? "selected" : "";
-        return `<option value="${agent.agent_id}" ${selected}>${label}</option>`;
+        const name = agent.name || "unnamed";
+        const llm = agent.llm || {};
+        const providerInfo = llm.provider
+          ? `${llm.provider}${llm.model ? " \u00b7 " + llm.model : ""}`
+          : "no provider";
+        return `
+          <li class="list-item ${selected}" data-agent-id="${agent.agent_id}">
+            <div class="list-item-content">
+              <span class="item-title">${name}</span>
+              <span class="item-meta">${providerInfo}</span>
+            </div>
+            <button class="item-action-btn" data-assign-agent-id="${agent.agent_id}" title="${hasProject ? "Assign to project" : "Select a project first"}" ${hasProject ? "" : "disabled"}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+            <button class="item-delete-btn" data-delete-agent-id="${agent.agent_id}" title="Delete agent">&times;</button>
+          </li>
+        `;
       })
       .join("");
 
-    if (!state.selectedAgentId) {
+    // Click on item -> select agent, click on assign -> assign, click on X -> delete
+    el.agentList.querySelectorAll("[data-agent-id]").forEach((item) => {
+      item.addEventListener("click", (e) => {
+        if (e.target.closest("[data-delete-agent-id]")) return;
+        if (e.target.closest("[data-assign-agent-id]")) return;
+        state.selectedAgentId = item.dataset.agentId;
+        renderAgentList();
+        renderSelectedAgentConfig();
+        void refreshOpenRouterStatus();
+      });
+    });
+
+    el.agentList.querySelectorAll("[data-assign-agent-id]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const agentId = btn.dataset.assignAgentId;
+        if (!state.selectedProgramId) {
+          setStatus("Select a project first.", "error");
+          return;
+        }
+        try {
+          await api(
+            "POST",
+            `/programs/${state.selectedProgramId}/agents/${agentId}/assign`,
+            {}
+          );
+          state.selectedProjectAgentId = agentId;
+          await refreshProjectAgents();
+          await refreshProjectAgentDetail();
+          setStatus("Assigned agent to project.", "idle");
+        } catch (error) {
+          setStatus(`Assign agent failed: ${error.message}`, "error");
+        }
+      });
+    });
+
+    el.agentList.querySelectorAll("[data-delete-agent-id]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await onDeregisterAgent(btn.dataset.deleteAgentId);
+      });
+    });
+
+    if (!state.selectedAgentId && state.agents.length > 0) {
       state.selectedAgentId = state.agents[0].agent_id;
     }
 
@@ -270,14 +460,16 @@
     );
   }
 
+  // ── Render: Project agents ──
+
   function renderProjectAgents() {
     if (!state.selectedProgramId) {
-      el.projectAgentList.innerHTML = '<li class="list-item">Select a project first.</li>';
+      el.projectAgentList.innerHTML = '<li class="list-item"><div class="list-item-content"><span class="item-meta">Select a project first.</span></div></li>';
       return;
     }
 
     if (!state.projectAgents.length) {
-      el.projectAgentList.innerHTML = '<li class="list-item">No assigned agents for this project.</li>';
+      el.projectAgentList.innerHTML = '<li class="list-item"><div class="list-item-content"><span class="item-meta">No agents assigned.</span></div></li>';
       return;
     }
 
@@ -285,11 +477,11 @@
       .map((session) => {
         const selected = session.agent_id === state.selectedProjectAgentId ? "selected" : "";
         return `
-          <li class="list-item ${selected}">
-            <p class="item-title">${session.name || "unnamed-agent"}</p>
-            <p class="item-meta">${session.agent_id}</p>
-            <p class="item-meta">status=${session.run_status}${session.active_goal ? ` goal=${session.active_goal}` : ""}</p>
-            <button type="button" data-project-agent-id="${session.agent_id}">Select Agent</button>
+          <li class="list-item ${selected}" data-project-agent-id="${session.agent_id}">
+            <div class="list-item-content">
+              <span class="item-title">${session.name || "unnamed"}</span>
+              <span class="item-meta">${session.run_status}${session.active_goal ? " \u00b7 " + session.active_goal : ""}</span>
+            </div>
           </li>
         `;
       })
@@ -297,9 +489,9 @@
 
     el.projectAgentList
       .querySelectorAll("[data-project-agent-id]")
-      .forEach((button) => {
-        button.addEventListener("click", async () => {
-          state.selectedProjectAgentId = button.dataset.projectAgentId;
+      .forEach((item) => {
+        item.addEventListener("click", async () => {
+          state.selectedProjectAgentId = item.dataset.projectAgentId;
           await refreshProjectAgentDetail();
           renderProjectAgents();
           updateBadges();
@@ -307,9 +499,11 @@
       });
   }
 
+  // ── Render: Chat ──
+
   function renderChatLog() {
     if (!state.transcript.length) {
-      el.chatLog.innerHTML = '<div class="chat-msg system"><p class="chat-role">system</p><p class="chat-content">No chat yet.</p></div>';
+      el.chatLog.innerHTML = '<div class="chat-msg system"><p class="chat-role">system</p><p class="chat-content">No messages yet. Start a build or send a message to begin.</p></div>';
       return;
     }
 
@@ -317,7 +511,7 @@
       .map((entry) => {
         return `
           <div class="chat-msg ${entry.role}">
-            <p class="chat-role">${entry.role} • ${entry.timestamp}</p>
+            <p class="chat-role">${entry.role} \u00b7 ${entry.timestamp}</p>
             <p class="chat-content">${entry.content}</p>
           </div>
         `;
@@ -325,6 +519,8 @@
       .join("");
     el.chatLog.scrollTop = el.chatLog.scrollHeight;
   }
+
+  // ── Data: Refresh ──
 
   async function refreshPrograms() {
     const response = await api("GET", "/programs");
@@ -345,6 +541,7 @@
 
     renderProjects();
     updateObserveLink();
+
     updateBadges();
   }
 
@@ -359,9 +556,10 @@
       state.selectedAgentId = null;
     }
 
-    renderAgentAssignOptions();
-    renderSelectedAgentConfig();
+    renderAgentList();
     maybeShowSetupWizard();
+    updateBadges();
+    void refreshOpenRouterStatus();
   }
 
   async function refreshProjectAgents() {
@@ -428,6 +626,7 @@
     await refreshProjectAgents();
 
     renderProjects();
+    renderAgentList();
     renderProjectAgents();
     renderChatLog();
     updateObserveLink();
@@ -438,13 +637,15 @@
   function updateObserveLink() {
     if (!state.selectedProgramId) {
       el.observeLink.href = "#";
-      el.observeLink.textContent = "Open selected project in Observe";
+      el.observeLink.textContent = "Open in Observe";
       return;
     }
 
     el.observeLink.href = `/programs/${state.selectedProgramId}/observability`;
-    el.observeLink.textContent = `Open project ${state.selectedProgramId} in Observe`;
+    el.observeLink.textContent = `Open project #${state.selectedProgramId} in Observe`;
   }
+
+  // ── Actions ──
 
   async function onCreateProject() {
     const name = el.projectNameInput.value.trim();
@@ -459,9 +660,34 @@
       el.projectNameInput.value = "";
       await refreshPrograms();
       await selectProject(programId);
-      setStatus(`Created project '${name}' (${programId}).`, "idle");
+      setStatus(`Created project '${name}' (#${programId}).`, "idle");
     } catch (error) {
       setStatus(`Create project failed: ${error.message}`, "error");
+    }
+  }
+
+  async function onDeleteProject(programId) {
+    const program = state.programs.find((p) => p.id === programId);
+    const name = program ? program.name : `#${programId}`;
+
+    try {
+      await api("DELETE", `/programs/${programId}`);
+
+      if (state.selectedProgramId === programId) {
+        state.selectedProgramId = null;
+        state.projectAgents = [];
+        state.selectedProjectAgentId = null;
+        state.transcript = [];
+        renderProjectAgents();
+        renderChatLog();
+      }
+
+      await refreshPrograms();
+      renderAgentList();
+      updateObserveLink();
+      setStatus(`Deleted project '${name}'.`, "idle");
+    } catch (error) {
+      setStatus(`Delete project failed: ${error.message}`, "error");
     }
   }
 
@@ -487,8 +713,26 @@
     }
   }
 
+  async function onDeregisterAgent(agentId) {
+    const agent = state.agents.find((a) => a.agent_id === agentId);
+    const name = agent?.name || agentId.slice(0, 8);
+
+    try {
+      await api("DELETE", `/agents/${agentId}`);
+
+      if (state.selectedAgentId === agentId) {
+        state.selectedAgentId = null;
+      }
+
+      await refreshAgents();
+      setStatus(`Deleted agent '${name}'.`, "idle");
+    } catch (error) {
+      setStatus(`Delete agent failed: ${error.message}`, "error");
+    }
+  }
+
   async function onSaveAgentConfig() {
-    const agentId = el.agentAssignSelect.value || state.selectedAgentId;
+    const agentId = state.selectedAgentId;
     if (!agentId) {
       setStatus("Select an agent first.", "error");
       return;
@@ -497,13 +741,12 @@
     try {
       await api("POST", `/agents/${agentId}/config`, agentConfigPayload());
       el.agentApiKeyInput.value = "";
-      state.selectedAgentId = agentId;
       await refreshAgents();
       if (hasConfiguredAgent()) {
         markSetupComplete();
         hideSetupWizard();
       }
-      setStatus(`Saved config for agent ${agentId}.`, "idle");
+      setStatus(`Saved config for agent.`, "idle");
     } catch (error) {
       setStatus(`Save config failed: ${error.message}`, "error");
     }
@@ -537,7 +780,7 @@
   function onSkipSetupWizard() {
     markSetupComplete();
     hideSetupWizard();
-    setStatus("Setup skipped. You can configure provider settings in Agents.", "idle");
+    setStatus("Setup skipped. Configure provider settings in the sidebar.", "idle");
   }
 
   async function onCreateHelloWorldScaffold() {
@@ -608,38 +851,11 @@
       const results = Array.isArray(queryPreview.results) ? queryPreview.results.length : 0;
 
       setStatus(
-        `Hello world scaffold created. Open Observe and query 'hello world' (${results} preview results).`,
+        `Hello world scaffold created (${results} preview results).`,
         "idle"
       );
     } catch (error) {
       setStatus(`Hello world scaffold failed: ${error.message}`, "error");
-    }
-  }
-
-  async function onAssignAgent() {
-    if (!state.selectedProgramId) {
-      setStatus("Select a project first.", "error");
-      return;
-    }
-
-    const agentId = el.agentAssignSelect.value;
-    if (!agentId) {
-      setStatus("Select an agent to assign.", "error");
-      return;
-    }
-
-    try {
-      await api(
-        "POST",
-        `/programs/${state.selectedProgramId}/agents/${agentId}/assign`,
-        {}
-      );
-      state.selectedProjectAgentId = agentId;
-      await refreshProjectAgents();
-      await refreshProjectAgentDetail();
-      setStatus(`Assigned agent ${agentId} to project ${state.selectedProgramId}.`, "idle");
-    } catch (error) {
-      setStatus(`Assign agent failed: ${error.message}`, "error");
     }
   }
 
@@ -725,8 +941,9 @@
       }
 
       renderProjects();
-      renderAgentAssignOptions();
+      renderAgentList();
       renderProjectAgents();
+  
       updateBadges();
       updateObserveLink();
       setStatus(response.reply || "AI action completed.", "idle");
@@ -735,7 +952,12 @@
     }
   }
 
+  // ── Event binding ──
+
   function bindEvents() {
+    el.sidebarToggle.addEventListener("click", toggleSidebar);
+    el.sidebarOpenBtn.addEventListener("click", toggleSidebar);
+
     el.createProjectBtn.addEventListener("click", onCreateProject);
     el.createHelloWorldBtn.addEventListener("click", onCreateHelloWorldScaffold);
     el.refreshProjectsBtn.addEventListener("click", async () => {
@@ -758,14 +980,36 @@
       }
     });
 
-    el.assignAgentBtn.addEventListener("click", onAssignAgent);
     el.startBuildBtn.addEventListener("click", onStartBuild);
     el.stopBuildBtn.addEventListener("click", onStopBuild);
     el.sendChatBtn.addEventListener("click", onSendChat);
 
-    el.agentAssignSelect.addEventListener("change", () => {
-      state.selectedAgentId = el.agentAssignSelect.value || null;
-      renderSelectedAgentConfig();
+    el.chatInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        onSendChat();
+      }
+    });
+
+    el.goalInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        onStartBuild();
+      }
+    });
+
+    el.projectNameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        onCreateProject();
+      }
+    });
+
+    el.agentNameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        onRegisterAgent();
+      }
     });
 
     el.agentProviderSelect.addEventListener("change", () => {
@@ -789,11 +1033,15 @@
     });
   }
 
+  // ── Init ──
+
   async function init() {
+    initSidebar();
     bindEvents();
+    startOpenRouterStatusPolling();
 
     try {
-      setStatus("Loading projects and agents...", "running");
+      setStatus("Loading...", "running");
       await refreshPrograms();
       await refreshAgents();
 
@@ -802,10 +1050,11 @@
       }
 
       renderProjects();
-      renderAgentAssignOptions();
+      renderAgentList();
       renderProjectAgents();
       renderChatLog();
       updateObserveLink();
+  
       updateBadges();
       maybeShowSetupWizard();
       setStatus("Dashboard ready.", "idle");
