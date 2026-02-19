@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 6 of 9 (Full Contract System & Incremental Compilation)
-Plan: 2 of 5 in current phase
+Plan: 3 of 5 in current phase
 Status: Executing Phase 6
-Last activity: 2026-02-18 — Completed 06-02-PLAN.md
+Last activity: 2026-02-18 — Completed 06-03-PLAN.md
 
-Progress: [██████░░░░] 68%
+Progress: [███████░░░] 72%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 20
+- Total plans completed: 21
 - Average duration: 7min
-- Total execution time: 2.52 hours
+- Total execution time: 2.72 hours
 
 **By Phase:**
 
@@ -32,11 +32,11 @@ Progress: [██████░░░░] 68%
 | 03 | 3/3 | 35min | 12min |
 | 04 | 4/4 | 24min | 6min |
 | 05 | 4/4 | 36min | 9min |
-| 06 | 2/5 | 24min | 12min |
+| 06 | 3/5 | 36min | 12min |
 
 **Recent Trend:**
-- Last 5 plans: 05-02 (12min), 05-03 (5min), 05-04 (12min), 06-01 (12min), 06-02 (12min)
-- Trend: Property test harness added to contract system, all 368 tests pass
+- Last 5 plans: 05-03 (5min), 05-04 (12min), 06-01 (12min), 06-02 (12min), 06-03 (12min)
+- Trend: Incremental compilation engine with dirty tracking, all 369 tests pass
 
 *Updated after each plan completion*
 
@@ -131,6 +131,10 @@ Recent decisions affecting current work:
 - [Phase 06]: Interpreter evaluates contract ops inline -- Precondition/Postcondition/Invariant check condition input and halt with ContractViolation when false
 - [Phase 06]: Property test boundary values weighted at 30% for edge-case coverage (ChaCha8Rng deterministic PRNG)
 - [Phase 06]: Contract graphs require control edge from contract node to Return for evaluation ordering
+- [Phase 06]: Per-function .o files with separate runtime.o to avoid duplicate symbol conflicts at link time
+- [Phase 06]: declare_runtime_functions_extern for multi-module builds; full body only in runtime.o
+- [Phase 06]: BFS propagation through reverse call graph for transitive dirty dependents
+- [Phase 06]: Lazy IncrementalState in ProgramService (first incremental compile creates it)
 
 ### Pending Todos
 
@@ -145,5 +149,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 06-02-PLAN.md
-Resume file: .planning/phases/06-full-contract-system-incremental-compilation/06-02-SUMMARY.md
+Stopped at: Completed 06-03-PLAN.md
+Resume file: .planning/phases/06-full-contract-system-incremental-compilation/06-03-SUMMARY.md
