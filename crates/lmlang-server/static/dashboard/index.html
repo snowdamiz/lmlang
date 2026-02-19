@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>lmlang Dashboard</title>
+    <link rel="stylesheet" href="/programs/__PROGRAM_ID__/dashboard/styles.css" />
+  </head>
+  <body data-program-id="__PROGRAM_ID__">
+    <div class="dashboard-shell">
+      <header class="dashboard-header">
+        <div class="brand-block">
+          <p class="eyebrow">Program Dashboard</p>
+          <h1>Operate + Observe</h1>
+          <p class="subtitle">
+            Endpoint-first orchestration controls paired with the existing observability surface.
+          </p>
+        </div>
+        <div class="badge-row">
+          <span class="badge" id="programBadge">Program __PROGRAM_ID__</span>
+          <span class="badge" id="agentBadge">No agent selected</span>
+          <span class="badge" id="statusBadge">Status: idle</span>
+        </div>
+      </header>
+
+      <nav class="tab-nav" aria-label="Dashboard modules">
+        <button class="tab-btn is-active" data-tab="operate" type="button">Operate</button>
+        <button class="tab-btn" data-tab="observe" type="button">Observe</button>
+      </nav>
+
+      <main class="tab-panels">
+        <section class="panel is-active" id="operatePanel" data-panel="operate" aria-label="Operate panel">
+          <div class="grid-layout">
+            <article class="panel-card" id="agentListContainer">
+              <h2>Agents & Session State</h2>
+              <p class="card-intro">Registered agents and derived session state appear here.</p>
+              <div id="operateAgentListMount" class="content-mount"></div>
+            </article>
+
+            <article class="panel-card" id="runSetupContainer">
+              <h2>Run Setup</h2>
+              <p class="card-intro">Program target, workflow template, and prompt setup.</p>
+              <div id="operateRunSetupMount" class="content-mount"></div>
+            </article>
+
+            <article class="panel-card" id="actionsContainer">
+              <h2>Actions</h2>
+              <p class="card-intro">Lock, mutation, verification, simulation, compile, and history actions.</p>
+              <div id="operateActionsMount" class="content-mount"></div>
+            </article>
+
+            <article class="panel-card" id="timelineContainer">
+              <h2>Timeline / History Preview</h2>
+              <p class="card-intro">Recent operation timeline and history snippets.</p>
+              <div id="operateTimelineMount" class="content-mount"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel" id="observePanel" data-panel="observe" aria-label="Observe panel">
+          <div class="observe-toolbar">
+            <p>
+              Observe reuses the existing observability UI and backend endpoints.
+            </p>
+            <a id="openObserveLink" href="/programs/__PROGRAM_ID__/observability" target="_blank" rel="noopener noreferrer">
+              Open Observe in a new tab
+            </a>
+          </div>
+          <div id="observeMount" class="observe-mount" data-observe-src="/programs/__PROGRAM_ID__/observability"></div>
+        </section>
+      </main>
+
+      <aside id="sharedStatusPanel" class="shared-status" aria-live="polite" aria-label="Shared status">
+        Dashboard shell initialized.
+      </aside>
+    </div>
+
+    <script src="/programs/__PROGRAM_ID__/dashboard/app.js" defer></script>
+  </body>
+</html>

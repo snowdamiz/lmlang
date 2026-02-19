@@ -7,6 +7,7 @@
 pub mod agents;
 pub mod compile;
 pub mod contracts;
+pub mod dashboard;
 pub mod history;
 pub mod locks;
 pub mod mutations;

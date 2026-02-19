@@ -86,6 +86,18 @@ pub fn build_router(state: AppState) -> Router {
             get(handlers::observability::ui_styles_css),
         )
         .route(
+            "/programs/{id}/dashboard",
+            get(handlers::dashboard::ui_index),
+        )
+        .route(
+            "/programs/{id}/dashboard/app.js",
+            get(handlers::dashboard::ui_app_js),
+        )
+        .route(
+            "/programs/{id}/dashboard/styles.css",
+            get(handlers::dashboard::ui_styles_css),
+        )
+        .route(
             "/programs/{id}/observability/graph",
             get(handlers::observability::graph),
         )

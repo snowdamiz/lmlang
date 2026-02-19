@@ -1738,3 +1738,38 @@ async fn phase09_observability_routes_serve_static_ui_assets() {
     assert!(css.contains(".graph-node"));
     assert!(css.contains(".edge-cross"));
 }
+
+// ===========================================================================
+// PHASE 10: Unified dashboard shell
+// ===========================================================================
+
+#[tokio::test]
+async fn phase10_dashboard_routes_serve_shell_and_assets() {
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    let (status, html) = get_text(&app, &format!("/programs/{}/dashboard", pid)).await;
+    assert_eq!(status, StatusCode::OK, "dashboard index not served");
+    assert!(html.contains("Operate + Observe"));
+    assert!(html.contains("data-tab=\"operate\""));
+    assert!(html.contains("data-tab=\"observe\""));
+    assert!(html.contains("id=\"operateAgentListMount\""));
+    assert!(html.contains("id=\"operateRunSetupMount\""));
+    assert!(html.contains("id=\"operateActionsMount\""));
+    assert!(html.contains("id=\"operateTimelineMount\""));
+    assert!(html.contains("id=\"observeMount\""));
+    assert!(html.contains(&format!("/programs/{}/dashboard/app.js", pid)));
+    assert!(html.contains(&format!("/programs/{}/dashboard/styles.css", pid)));
+
+    let (status, js) = get_text(&app, &format!("/programs/{}/dashboard/app.js", pid)).await;
+    assert_eq!(status, StatusCode::OK, "dashboard app.js not served");
+    assert!(js.contains("activateTab"));
+    assert!(js.contains("ensureObserveEmbedded"));
+    assert!(js.contains("/observability"));
+
+    let (status, css) = get_text(&app, &format!("/programs/{}/dashboard/styles.css", pid)).await;
+    assert_eq!(status, StatusCode::OK, "dashboard styles.css not served");
+    assert!(css.contains(".dashboard-shell"));
+    assert!(css.contains(".tab-btn"));
+    assert!(css.contains(".observe-frame"));
+}
