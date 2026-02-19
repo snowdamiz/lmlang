@@ -39,9 +39,14 @@ cargo test --package lmlang-server --test integration_test
 ```
 
 Observed outcome:
-- 24 tests passed, 0 failed
+- 25 tests passed, 0 failed
 - Includes Phase 10 route, static contract, and observe-reuse coexistence checks
 - No regressions in existing observability, mutation, verify, simulate, compile, or history integration tests
+
+Documentation alignment:
+- `README.md` includes unified dashboard route and workflow guidance
+- `docs/dashboard-operator-guide.md` provides end-to-end operator flow
+- `docs/api/operator-endpoints.md` maps Operate actions to routed server endpoints and headers
 
 ## Manual Smoke Checklist
 

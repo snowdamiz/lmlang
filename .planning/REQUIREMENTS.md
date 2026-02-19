@@ -1,42 +1,64 @@
 # Requirements: lmlang
 
 **Defined:** 2026-02-19
-**Milestone:** v1.1 milestone-2
+**Milestone:** v1.1 Agent Control Dashboard
 **Core Value:** AI agents can build, modify, and verify programs of arbitrary size with perfect local and global awareness
 
-## v1.1 Requirements (Draft)
+## v1.1 Requirements
 
-Scope is intentionally draft until explicitly approved.
+### Unified Dashboard (Operate + Observe)
 
-### Concurrency Hardening
+- [x] **UI-01**: User can view all registered agents and active sessions in the `Operate` tab with status (`idle`, `running`, `blocked`, `error`)
+- [x] **UI-02**: User can spawn a new agent run from `Operate` by selecting target program, workflow template, and task prompt
+- [ ] **UI-03**: User can pause, resume, and stop an active agent run from the dashboard once run lifecycle APIs are available
 
-- [ ] **MAGENT-03**: Optimistic concurrency detects overlapping edits and rolls back the later commit with conflict diagnostics
-- [ ] **MAGENT-04**: Verification runs on merge and confirms global invariants hold after concurrent modifications
+### Human-in-the-Loop Change Control
 
-### Release Readiness
+- [ ] **UI-04**: User can review proposed graph mutations as a structured diff before apply
+- [ ] **UI-05**: User can approve or reject a proposed change with a recorded reason
+- [ ] **UI-06**: User can undo or rollback from the dashboard using existing checkpoint/history mechanisms
 
-- [ ] **REL-01**: Milestone produces a release checklist and reproducible validation run for server, CLI, and core crates
+### Run Monitoring and Diagnostics
+
+- [ ] **UI-07**: User can inspect a run timeline that includes lifecycle transitions, tool calls, verification steps, and errors
+- [ ] **UI-08**: User can view lock/conflict state for agent sessions and identify blocked operations
+- [ ] **UI-09**: User can trigger verify/simulate/compile actions and see results linked to the run
+
+### Workflow Templates
+
+- [ ] **UI-10**: User can create and reuse workflow templates for common tasks (plan phase, execute phase, verify work)
 
 ## Future Requirements
 
-- All additional capabilities not explicitly selected into v1.1
+- Multi-user collaboration and permissions
+- Remote/cloud worker pools for agents
+- Fully autonomous background execution policies
 
 ## Out of Scope (v1.1)
 
-- New major architectural subsystems beyond concurrency hardening and release readiness
+- Enterprise auth/RBAC
+- Billing/quotas
+- Distributed control plane
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MAGENT-03 | TBD | Planned |
-| MAGENT-04 | TBD | Planned |
-| REL-01 | TBD | Planned |
+| UI-01 | Phase 10 | Complete |
+| UI-02 | Phase 10 | Complete |
+| UI-03 | Phase 12 | Planned |
+| UI-04 | Phase 11 | Planned |
+| UI-05 | Phase 11 | Planned |
+| UI-06 | Phase 11 | Planned |
+| UI-07 | Phase 12 | Planned |
+| UI-08 | Phase 12 | Planned |
+| UI-09 | Phase 12 | Planned |
+| UI-10 | Phase 13 | Planned |
 
 **Coverage:**
-- v1.1 requirements: 3 total
-- Mapped to phases: 0
-- Unmapped: 3
+- v1.1 requirements: 10 total
+- Mapped to phases: 10
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-19*
