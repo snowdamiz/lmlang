@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core value:** AI agents can build, modify, and verify programs of arbitrary size with perfect local and global awareness
-**Current focus:** Phase 9: Human Observability (ready for planning)
+**Current focus:** Phase 9: Human Observability (completed, verification passed)
 
 ## Current Position
 
 Phase: 9 of 9 (Human Observability)
-Plan: 0 of TBD in current phase
-Status: Phase 8 complete; phase 9 planning next
-Last activity: 2026-02-19 — Executed and verified Phase 8 (08-01, 08-02, 08-03)
+Plan: 3 of 3 in current phase
+Status: Phase 9 complete; milestone ready for closeout
+Last activity: 2026-02-19 — Executed Phase 9 (09-01, 09-02, 09-03) and verified VIZ-01..VIZ-04
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 26
+- Total plans completed: 29
 - Average duration: 7min
-- Total execution time: 2.92 hours
+- Total execution time: 3.23 hours
 
 **By Phase:**
 
@@ -35,10 +35,11 @@ Progress: [██████████] 100%
 | 06 | 4/4 | 40min | 10min |
 | 07 | 3/3 | 30min | 10min |
 | 08 | 3/3 | 39min | 13min |
+| 09 | 3/3 | 31min | 10min |
 
 **Recent Trend:**
-- Last 5 plans: 07-02 (11min), 07-03 (11min), 08-01 (13min), 08-02 (12min), 08-03 (14min)
-- Trend: Phase 8 complete -- rich semantic layer, deterministic propagation flush, and conflict diagnostics integrated
+- Last 5 plans: 08-02 (12min), 08-03 (14min), 09-01 (11min), 09-02 (10min), 09-03 (10min)
+- Trend: Phase 9 complete -- human observability UI + NL query experience fully integrated
 
 *Updated after each plan completion*
 
@@ -149,6 +150,10 @@ Recent decisions affecting current work:
 - [Phase 08]: Conflict precedence classes added (semantic-authoritative, compute-authoritative, mergeable, diagnostic-required)
 - [Phase 08]: Unresolved propagation conflicts surface structured diagnostics via 409 Conflict response payloads
 - [Phase 08]: Embedding refresh scoped to refreshed function/module semantic summaries during flush
+- [Phase 09]: Observability graph IDs use explicit `semantic:*` and `compute:*` namespaces to keep cross-layer sync stable
+- [Phase 09]: Function-boundary grouping is computed server-side for deterministic UI layout and test snapshots
+- [Phase 09]: NL observability ranking combines embedding similarity, lexical overlap, and relationship degree
+- [Phase 09]: Ambiguous queries return interpretation candidates; low-confidence queries return nearest related semantic nodes
 
 ### Pending Todos
 
@@ -158,10 +163,10 @@ None yet.
 
 - [Research]: Op node set needs careful mapping to LLVM IR targets before Phase 1 implementation
 - [Research]: Agent tool API schema design is novel -- test with real LLMs early in Phase 4
-- [Phase 09]: Human observability/UX remains unimplemented and is the next milestone focus
+- [Milestone]: Final milestone closure and release packaging still pending
 
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-human-observability/09-CONTEXT.md
+Stopped at: Phase 9 complete and verified (09-VERIFICATION.md)
+Resume file: None

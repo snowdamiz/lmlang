@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Full Contract System & Incremental Compilation** - Pre/post-conditions, invariants, property-based testing, and red-green dirty tracking (completed 2026-02-19)
 - [x] **Phase 7: Multi-Agent Concurrency** - Concurrent graph editing with region locking and optimistic concurrency control (completed 2026-02-19)
 - [x] **Phase 8: Dual-Layer Semantic Architecture** - Semantic knowledge graph, bidirectional propagation, and vector embeddings (completed 2026-02-19)
-- [ ] **Phase 9: Human Observability** - Graph visualization, layer differentiation, natural language queries, and contextual results
+- [x] **Phase 9: Human Observability** - Graph visualization, layer differentiation, natural language queries, and contextual results (completed 2026-02-19)
 
 ## Phase Details
 
@@ -167,11 +167,12 @@ Plans:
   2. Visualization visually distinguishes between semantic and computational layers (e.g., different colors, shapes, or layout regions)
   3. A human can ask a natural language question about the program and receive relevant subgraph results found via semantic embeddings and relationship edges
   4. Query results include contextual information: summaries, relationships, and contracts for the returned subgraph nodes
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 09-01: TBD
-- [ ] 09-02: TBD
+- [x] 09-01-PLAN.md — Observability backend contract: graph projection payloads + NL query ranking/ambiguity/fallback behavior
+- [x] 09-02-PLAN.md — Interactive DAG explorer UI with layer differentiation, filters, and right-side details panel
+- [x] 09-03-PLAN.md — Natural-language query UX with contextual tabs and bidirectional graph/result synchronization
 
 ## Progress
 
@@ -188,4 +189,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 6. Full Contract System & Incremental Compilation | 3/4 | Complete    | 2026-02-19 |
 | 7. Multi-Agent Concurrency | 3/3 | Complete | 2026-02-19 |
 | 8. Dual-Layer Semantic Architecture | 3/3 | Complete | 2026-02-19 |
-| 9. Human Observability | 0/? | Not started | - |
+| 9. Human Observability | 3/3 | Complete | 2026-02-19 |

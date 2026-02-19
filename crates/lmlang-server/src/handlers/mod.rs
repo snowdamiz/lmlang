@@ -10,6 +10,7 @@ pub mod contracts;
 pub mod history;
 pub mod locks;
 pub mod mutations;
+pub mod observability;
 pub mod programs;
 pub mod queries;
 pub mod simulate;

@@ -67,10 +67,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Human Observability
 
-- [ ] **VIZ-01**: Graph visualization renders the program as an interactive DAG showing nodes with op types, edges with data types, and function boundaries
-- [ ] **VIZ-02**: Visualization distinguishes between semantic and computational layers with visual differentiation
-- [ ] **VIZ-03**: Natural language query interface maps questions to graph queries via semantic embeddings + relationship edges
-- [ ] **VIZ-04**: Query results return relevant subgraphs with context (summaries, relationships, contracts)
+- [x] **VIZ-01**: Graph visualization renders the program as an interactive DAG showing nodes with op types, edges with data types, and function boundaries
+- [x] **VIZ-02**: Visualization distinguishes between semantic and computational layers with visual differentiation
+- [x] **VIZ-03**: Natural language query interface maps questions to graph queries via semantic embeddings + relationship edges
+- [x] **VIZ-04**: Query results return relevant subgraphs with context (summaries, relationships, contracts)
 
 ## v2 Requirements
 
@@ -144,10 +144,10 @@ Deferred to future release. Tracked but not in current roadmap.
 | MAGENT-02 | Phase 7 | Complete |
 | MAGENT-03 | Phase 7 | Pending |
 | MAGENT-04 | Phase 7 | Pending |
-| VIZ-01 | Phase 9 | Pending |
-| VIZ-02 | Phase 9 | Pending |
-| VIZ-03 | Phase 9 | Pending |
-| VIZ-04 | Phase 9 | Pending |
+| VIZ-01 | Phase 9 | Complete |
+| VIZ-02 | Phase 9 | Complete |
+| VIZ-03 | Phase 9 | Complete |
+| VIZ-04 | Phase 9 | Complete |
 
 **Coverage:**
 - v1 requirements: 41 total
@@ -156,4 +156,4 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-02-17*
-*Last updated: 2026-02-19 after phase 6 gap closure*
+*Last updated: 2026-02-19 after phase 9 completion*

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>lmlang Observability</title>
+    <link rel="stylesheet" href="/programs/__PROGRAM_ID__/observability/styles.css" />
+  </head>
+  <body data-program-id="__PROGRAM_ID__">
+    <div class="page-shell">
+      <header class="topbar">
+        <div class="topbar-brand">
+          <h1>lmlang Observability</h1>
+          <p>Dual-layer graph explorer for semantic and compute flows</p>
+        </div>
+        <div class="topbar-badges">
+          <span class="badge" id="programBadge">Program __PROGRAM_ID__</span>
+          <span class="badge" id="nodeCountBadge">0 nodes</span>
+          <span class="badge" id="edgeCountBadge">0 edges</span>
+        </div>
+      </header>
+
+      <section class="query-strip" aria-label="Natural language query">
+        <form id="queryForm" class="query-form" autocomplete="off">
+          <label for="queryInput" class="sr-only">Ask about this graph</label>
+          <input
+            id="queryInput"
+            type="text"
+            placeholder="Ask: where are contracts enforced?"
+            required
+          />
+          <button type="submit">Query</button>
+        </form>
+        <div id="chipRow" class="chip-row" aria-label="Suggested prompts"></div>
+        <div id="queryStatus" class="query-status" role="status" aria-live="polite"></div>
+      </section>
+
+      <section class="workspace" aria-label="Observability workspace">
+        <aside class="left-controls" aria-label="Graph controls">
+          <h2>Layers</h2>
+          <label><input type="checkbox" id="toggleSemantic" checked /> Semantic</label>
+          <label><input type="checkbox" id="toggleCompute" checked /> Compute</label>
+          <label><input type="checkbox" id="toggleCross" checked /> Cross-layer</label>
+
+          <h2>Presets</h2>
+          <div class="preset-grid">
+            <button class="preset-btn active" data-preset="all">All</button>
+            <button class="preset-btn" data-preset="semantic_only">Semantic</button>
+            <button class="preset-btn" data-preset="compute_only">Compute</button>
+            <button class="preset-btn" data-preset="interop">Interop</button>
+          </div>
+
+          <h2>Legend</h2>
+          <ul class="legend-list">
+            <li><span class="legend-dot semantic"></span> Semantic node</li>
+            <li><span class="legend-dot compute"></span> Compute node</li>
+            <li><span class="legend-line cross"></span> Cross-layer edge</li>
+          </ul>
+
+          <h2>Ambiguity</h2>
+          <p id="ambiguityPrompt" class="hint">No ambiguity pending.</p>
+          <div id="interpretationList" class="interpretation-list"></div>
+        </aside>
+
+        <main class="graph-stage" aria-label="Interactive DAG">
+          <div class="canvas-toolbar">
+            <button id="fitViewBtn" type="button">Fit View</button>
+            <button id="refreshBtn" type="button">Refresh</button>
+            <span id="selectionBadge" class="badge muted">No selection</span>
+          </div>
+          <svg id="graphCanvas" viewBox="0 0 1400 900" role="img" aria-label="Program graph canvas">
+            <defs>
+              <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto">
+                <polygon points="0 0, 8 3.5, 0 7" />
+              </marker>
+            </defs>
+            <g id="viewport">
+              <g id="edgeLayer"></g>
+              <g id="groupLayer"></g>
+              <g id="nodeLayer"></g>
+            </g>
+          </svg>
+        </main>
+
+        <aside class="details-panel" aria-label="Node details panel">
+          <h2>Details</h2>
+          <div id="detailsContent" class="details-content empty">
+            Select a node to inspect summary, relationships, and contracts.
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="Result context tabs">
+            <button class="tab-btn active" data-tab="summary" role="tab">Summary</button>
+            <button class="tab-btn" data-tab="relationships" role="tab">Relationships</button>
+            <button class="tab-btn" data-tab="contracts" role="tab">Contracts</button>
+          </div>
+          <div id="tabBody" class="tab-body"></div>
+
+          <h3>Query Results</h3>
+          <div id="resultList" class="result-list"></div>
+        </aside>
+      </section>
+    </div>
+
+    <script src="/programs/__PROGRAM_ID__/observability/app.js" defer></script>
+  </body>
+</html>

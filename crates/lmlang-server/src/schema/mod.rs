@@ -11,6 +11,7 @@ pub mod diagnostics;
 pub mod history;
 pub mod locks;
 pub mod mutations;
+pub mod observability;
 pub mod programs;
 pub mod queries;
 pub mod simulate;

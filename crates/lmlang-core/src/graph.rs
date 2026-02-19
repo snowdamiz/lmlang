@@ -683,6 +683,27 @@ impl ProgramGraph {
             .collect()
     }
 
+    /// Returns all compute node IDs owned by a function in deterministic order.
+    pub fn function_nodes_sorted(&self, id: FunctionId) -> Vec<NodeId> {
+        let mut nodes = self.function_nodes(id);
+        nodes.sort_by_key(|node_id| node_id.0);
+        nodes
+    }
+
+    /// Returns all function IDs in deterministic order.
+    pub fn sorted_function_ids(&self) -> Vec<FunctionId> {
+        let mut ids: Vec<FunctionId> = self.functions.keys().copied().collect();
+        ids.sort_by_key(|id| id.0);
+        ids
+    }
+
+    /// Returns the semantic node id for a function, if present.
+    pub fn semantic_node_id_for_function(&self, id: FunctionId) -> Option<u32> {
+        self.function_semantic_nodes
+            .get(&id)
+            .map(|idx| idx.index() as u32)
+    }
+
     /// Returns the number of nodes in the computational graph.
     pub fn node_count(&self) -> usize {
         self.compute.node_count()
@@ -1460,6 +1481,39 @@ mod tests {
         assert_eq!(f1_nodes.len(), 2);
         assert!(f1_nodes.contains(&n1));
         assert!(f1_nodes.contains(&n2));
+    }
+
+    #[test]
+    fn function_nodes_sorted_is_deterministic() {
+        let mut graph = ProgramGraph::new("main");
+        let root = graph.modules.root_id();
+        let f = graph
+            .add_function("f".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+            .unwrap();
+        let n2 = graph.add_core_op(ComputeOp::Return, f).unwrap();
+        let n1 = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, f)
+            .unwrap();
+        let sorted = graph.function_nodes_sorted(f);
+        let mut expected = vec![n1, n2];
+        expected.sort_by_key(|id| id.0);
+        assert_eq!(sorted, expected);
+    }
+
+    #[test]
+    fn sorted_function_ids_and_semantic_lookup_work() {
+        let mut graph = ProgramGraph::new("main");
+        let root = graph.modules.root_id();
+        let f1 = graph
+            .add_function("f1".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+            .unwrap();
+        let f2 = graph
+            .add_function("f2".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+            .unwrap();
+
+        assert_eq!(graph.sorted_function_ids(), vec![f1, f2]);
+        assert!(graph.semantic_node_id_for_function(f1).is_some());
+        assert!(graph.semantic_node_id_for_function(f2).is_some());
     }
 
     #[test]

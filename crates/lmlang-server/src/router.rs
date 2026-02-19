@@ -72,6 +72,27 @@ pub fn build_router(state: AppState) -> Router {
             "/programs/{id}/semantic",
             post(handlers::queries::semantic_query),
         )
+        // Observability (VIZ-01..VIZ-04)
+        .route(
+            "/programs/{id}/observability",
+            get(handlers::observability::ui_index),
+        )
+        .route(
+            "/programs/{id}/observability/app.js",
+            get(handlers::observability::ui_app_js),
+        )
+        .route(
+            "/programs/{id}/observability/styles.css",
+            get(handlers::observability::ui_styles_css),
+        )
+        .route(
+            "/programs/{id}/observability/graph",
+            get(handlers::observability::graph),
+        )
+        .route(
+            "/programs/{id}/observability/query",
+            post(handlers::observability::query),
+        )
         // Verify (TOOL-03)
         .route("/programs/{id}/verify", post(handlers::verify::verify))
         .route("/programs/{id}/verify/flush", post(handlers::verify::flush))

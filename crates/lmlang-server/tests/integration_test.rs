@@ -72,6 +72,21 @@ async fn get_json(app: &Router, path: &str) -> (StatusCode, serde_json::Value) {
     (status, json)
 }
 
+/// Sends a GET request and returns (status, body text).
+async fn get_text(app: &Router, path: &str) -> (StatusCode, String) {
+    let response = app
+        .clone()
+        .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let text = String::from_utf8(body_bytes.to_vec()).unwrap_or_default();
+    (status, text)
+}
+
 /// Creates a program, loads it, returns the program_id.
 async fn setup_program(app: &Router) -> i64 {
     let (status, body) = post_json(app, "/programs", json!({ "name": "test_prog" })).await;
@@ -1514,4 +1529,212 @@ async fn phase08_unresolved_conflict_returns_structured_diagnostic() {
         details[0]["precedence"].as_str().unwrap(),
         "diagnostic-required"
     );
+}
+
+// ===========================================================================
+// PHASE 09: Human observability
+// ===========================================================================
+
+#[tokio::test]
+async fn phase09_observability_graph_exposes_layers_boundaries_and_cross_links() {
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let func_id = add_typed_function(&app, pid, "sum_alpha", json!([["a", 3], ["b", 3]]), 3).await;
+    let param_a = insert_param(&app, pid, func_id, 0).await;
+    let param_b = insert_param(&app, pid, func_id, 1).await;
+
+    let add_node_id = param_b + 1;
+    let ret_node_id = param_b + 2;
+    let body = batch_mutate(
+        &app,
+        pid,
+        json!([
+            {
+                "type": "InsertNode",
+                "op": {"Core": {"BinaryArith": {"op": "Add"}}},
+                "owner": func_id
+            },
+            {
+                "type": "InsertNode",
+                "op": {"Core": "Return"},
+                "owner": func_id
+            },
+            {
+                "type": "AddEdge",
+                "from": param_a, "to": add_node_id,
+                "source_port": 0, "target_port": 0,
+                "value_type": 3
+            },
+            {
+                "type": "AddEdge",
+                "from": param_b, "to": add_node_id,
+                "source_port": 0, "target_port": 1,
+                "value_type": 3
+            },
+            {
+                "type": "AddEdge",
+                "from": add_node_id, "to": ret_node_id,
+                "source_port": 0, "target_port": 0,
+                "value_type": 3
+            }
+        ]),
+    )
+    .await;
+    assert!(
+        body["valid"].as_bool().unwrap(),
+        "batch invalid: {:?}",
+        body
+    );
+    assert!(
+        body["committed"].as_bool().unwrap(),
+        "batch not committed: {:?}",
+        body
+    );
+
+    let (status, graph_a) = get_json(&app, &format!("/programs/{}/observability/graph", pid)).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "graph request failed: {:?}",
+        graph_a
+    );
+
+    let nodes = graph_a["nodes"].as_array().unwrap();
+    let edges = graph_a["edges"].as_array().unwrap();
+    let groups = graph_a["groups"].as_array().unwrap();
+    assert!(
+        !groups.is_empty(),
+        "groups should include function boundary metadata"
+    );
+    assert!(
+        nodes.iter().any(|n| n["layer"] == "semantic"),
+        "should include semantic layer nodes"
+    );
+    assert!(
+        nodes.iter().any(|n| n["layer"] == "compute"),
+        "should include compute layer nodes"
+    );
+    assert!(
+        edges
+            .iter()
+            .any(|e| e["cross_layer"].as_bool().unwrap_or(false)),
+        "should include cross-layer links"
+    );
+    assert!(
+        edges
+            .iter()
+            .any(|e| e["edge_kind"] == "data" && e["value_type"].is_number()),
+        "should include typed data edges"
+    );
+
+    let (status, graph_b) = get_json(&app, &format!("/programs/{}/observability/graph", pid)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        graph_a, graph_b,
+        "observability projection must be deterministic"
+    );
+}
+
+#[tokio::test]
+async fn phase09_observability_query_handles_ambiguity_and_low_confidence_fallback() {
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let _sum_alpha =
+        add_typed_function(&app, pid, "sum_alpha", json!([["x", 3], ["y", 3]]), 3).await;
+    let _sum_beta = add_typed_function(&app, pid, "sum_beta", json!([["x", 3], ["y", 3]]), 3).await;
+
+    let (status, flush_body) = post_json(
+        &app,
+        &format!("/programs/{}/verify/flush", pid),
+        json!({ "dry_run": false }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "flush failed: {:?}", flush_body);
+
+    let (status, ambiguous_body) = post_json(
+        &app,
+        &format!("/programs/{}/observability/query", pid),
+        json!({ "query": "sum", "max_results": 5 }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "observability query failed: {:?}",
+        ambiguous_body
+    );
+    assert!(
+        ambiguous_body["ambiguous"].as_bool().unwrap(),
+        "query should be flagged ambiguous: {:?}",
+        ambiguous_body
+    );
+    assert!(ambiguous_body["ambiguity_prompt"].is_string());
+    let interpretations = ambiguous_body["interpretations"].as_array().unwrap();
+    assert!(
+        interpretations.len() >= 2,
+        "ambiguous query should provide interpretation choices"
+    );
+    let selected = interpretations[0]["candidate_id"].as_str().unwrap();
+
+    let (status, disambiguated_body) = post_json(
+        &app,
+        &format!("/programs/{}/observability/query", pid),
+        json!({
+            "query": "sum",
+            "selected_candidate_id": selected,
+            "max_results": 5
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "disambiguated query failed");
+    assert!(
+        !disambiguated_body["ambiguous"].as_bool().unwrap(),
+        "selected candidate should resolve ambiguity"
+    );
+    let results = disambiguated_body["results"].as_array().unwrap();
+    assert!(!results.is_empty(), "resolved query should return results");
+    let first = &results[0];
+    assert!(first["summary"].is_object());
+    assert!(first["relationships"].is_object());
+    assert!(first["contracts"].is_object());
+
+    let (status, fallback_body) = post_json(
+        &app,
+        &format!("/programs/{}/observability/query", pid),
+        json!({ "query": "quasar neutrino graph arcana", "max_results": 5 }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "fallback query failed");
+    assert!(
+        fallback_body["low_confidence"].as_bool().unwrap(),
+        "unmatched query should be low-confidence"
+    );
+    assert!(fallback_body["fallback_reason"].is_string());
+    let fallback_results = fallback_body["results"].as_array().unwrap();
+    assert!(
+        !fallback_results.is_empty(),
+        "low-confidence query should return nearest related results"
+    );
+}
+
+#[tokio::test]
+async fn phase09_observability_routes_serve_static_ui_assets() {
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    let (status, html) = get_text(&app, &format!("/programs/{}/observability", pid)).await;
+    assert_eq!(status, StatusCode::OK, "ui index not served");
+    assert!(html.contains("lmlang Observability"));
+    assert!(html.contains(&format!("/programs/{}/observability/app.js", pid)));
+
+    let (status, js) = get_text(&app, &format!("/programs/{}/observability/app.js", pid)).await;
+    assert_eq!(status, StatusCode::OK, "app.js not served");
+    assert!(js.contains("runQuery"));
+    assert!(js.contains("renderGraph"));
+
+    let (status, css) =
+        get_text(&app, &format!("/programs/{}/observability/styles.css", pid)).await;
+    assert_eq!(status, StatusCode::OK, "styles.css not served");
+    assert!(css.contains(".graph-node"));
+    assert!(css.contains(".edge-cross"));
 }

@@ -4,7 +4,8 @@
 //! All business logic flows through [`ProgramService`]. Handlers will be thin
 //! wrappers that delegate to these methods.
 
-use std::collections::{HashSet, VecDeque};
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -13,12 +14,12 @@ use rusqlite::Connection;
 
 use lmlang_check::interpreter::{ExecutionState, Interpreter, InterpreterConfig, Value};
 use lmlang_check::typecheck;
-use lmlang_core::edge::FlowEdge;
+use lmlang_core::edge::{FlowEdge, SemanticEdge};
 use lmlang_core::graph::{
     ComputeEvent, ProgramGraph, PropagationEventKind, PropagationLayer, SemanticEvent,
 };
 use lmlang_core::id::{EdgeId, FunctionId, ModuleId, NodeId};
-use lmlang_core::node::ComputeNode;
+use lmlang_core::node::{ComputeNode, SemanticNode};
 use lmlang_core::ops::{ComputeNodeOp, ComputeOp};
 use lmlang_core::type_id::TypeId;
 use lmlang_storage::traits::GraphStore;
@@ -33,6 +34,14 @@ use crate::schema::history::{
     RedoResponse, RestoreCheckpointResponse, UndoResponse,
 };
 use crate::schema::mutations::{CreatedEntity, Mutation, ProposeEditRequest, ProposeEditResponse};
+use crate::schema::observability::{
+    ObservabilityEdgeView, ObservabilityGraphRequest, ObservabilityGraphResponse,
+    ObservabilityGroupView, ObservabilityLayer, ObservabilityNodeView, ObservabilityPreset,
+    ObservabilityQueryRequest, ObservabilityQueryResponse, ObservabilityQueryResultView,
+    QueryContractEntryView, QueryContractsTabView, QueryInterpretationView,
+    QueryRelationshipItemView, QueryRelationshipsTabView, QuerySummaryTabView,
+    SuggestedPromptChipView,
+};
 use crate::schema::programs::ProgramSummaryView;
 use crate::schema::queries::{
     DetailLevel, EdgeView, FunctionView, GetFunctionResponse, NeighborhoodResponse, NodeView,
@@ -1153,6 +1162,456 @@ impl ProgramService {
         })
     }
 
+    /// Projects the dual-layer graph into a UI-oriented observability payload.
+    pub fn observability_graph(
+        &self,
+        request: ObservabilityGraphRequest,
+    ) -> Result<ObservabilityGraphResponse, ApiError> {
+        let mut function_name_by_id = HashMap::new();
+        let mut groups = Vec::new();
+        for function_id in self.graph.sorted_function_ids() {
+            let Some(function) = self.graph.get_function(function_id) else {
+                continue;
+            };
+            function_name_by_id.insert(function_id, function.name.clone());
+            let compute_node_ids: Vec<String> = self
+                .graph
+                .function_nodes_sorted(function_id)
+                .into_iter()
+                .map(observability_compute_node_id)
+                .collect();
+            groups.push(ObservabilityGroupView {
+                id: observability_group_id(function_id),
+                function_id,
+                function_name: function.name.clone(),
+                module_id: function.module,
+                semantic_anchor_id: self
+                    .graph
+                    .semantic_node_id_for_function(function_id)
+                    .map(observability_semantic_node_id),
+                compute_node_ids,
+            });
+        }
+        groups.sort_by(|a, b| a.function_id.0.cmp(&b.function_id.0));
+
+        let mut nodes = Vec::new();
+        let mut semantic_indices: Vec<_> = self.graph.semantic().node_indices().collect();
+        semantic_indices.sort_by_key(|idx| idx.index());
+        if preset_includes_layer(request.preset, ObservabilityLayer::Semantic) {
+            for idx in semantic_indices {
+                let Some(node) = self.graph.semantic().node_weight(idx) else {
+                    continue;
+                };
+                let semantic_node_id = idx.index() as u32;
+                let function_id = node.function_id();
+                nodes.push(ObservabilityNodeView {
+                    id: observability_semantic_node_id(semantic_node_id),
+                    layer: ObservabilityLayer::Semantic,
+                    kind: node.kind().to_string(),
+                    label: node.label(),
+                    short_label: abbreviate_label(&node.label(), 20),
+                    group_id: function_id.map(observability_group_id),
+                    function_id,
+                    function_name: function_id
+                        .and_then(|fid| function_name_by_id.get(&fid).cloned()),
+                    module_id: node.module_id(),
+                    compute_node_id: None,
+                    semantic_node_id: Some(semantic_node_id),
+                    summary: Some(node.metadata().summary.body.clone()),
+                });
+            }
+        }
+
+        let mut compute_indices: Vec<_> = self.graph.compute().node_indices().collect();
+        compute_indices.sort_by_key(|idx| idx.index());
+        if preset_includes_layer(request.preset, ObservabilityLayer::Compute) {
+            for idx in compute_indices {
+                let Some(node) = self.graph.compute().node_weight(idx) else {
+                    continue;
+                };
+                let node_id = NodeId::from(idx);
+                nodes.push(ObservabilityNodeView {
+                    id: observability_compute_node_id(node_id),
+                    layer: ObservabilityLayer::Compute,
+                    kind: op_kind_name(&node.op),
+                    label: format!("{} #{}", op_kind_name(&node.op), node_id.0),
+                    short_label: op_kind_name(&node.op),
+                    group_id: Some(observability_group_id(node.owner)),
+                    function_id: Some(node.owner),
+                    function_name: function_name_by_id.get(&node.owner).cloned(),
+                    module_id: self.graph.get_function(node.owner).map(|f| f.module),
+                    compute_node_id: Some(node_id),
+                    semantic_node_id: None,
+                    summary: None,
+                });
+            }
+        }
+
+        nodes.sort_by(|a, b| {
+            layer_rank(a.layer)
+                .cmp(&layer_rank(b.layer))
+                .then_with(|| a.id.cmp(&b.id))
+        });
+
+        let mut edges = Vec::new();
+        let mut compute_edge_indices: Vec<_> = self.graph.compute().edge_indices().collect();
+        compute_edge_indices.sort_by_key(|idx| idx.index());
+        for edge_idx in compute_edge_indices {
+            let Some((from_idx, to_idx)) = self.graph.compute().edge_endpoints(edge_idx) else {
+                continue;
+            };
+            let Some(weight) = self.graph.compute().edge_weight(edge_idx) else {
+                continue;
+            };
+            edges.push(match weight {
+                FlowEdge::Data {
+                    source_port,
+                    target_port,
+                    value_type,
+                } => ObservabilityEdgeView {
+                    id: format!("compute-edge:{}", edge_idx.index()),
+                    from: observability_compute_node_id(NodeId::from(from_idx)),
+                    to: observability_compute_node_id(NodeId::from(to_idx)),
+                    from_layer: ObservabilityLayer::Compute,
+                    to_layer: ObservabilityLayer::Compute,
+                    edge_kind: "data".to_string(),
+                    cross_layer: false,
+                    value_type: Some(*value_type),
+                    source_port: Some(*source_port),
+                    target_port: Some(*target_port),
+                    branch_index: None,
+                    relationship: None,
+                },
+                FlowEdge::Control { branch_index } => ObservabilityEdgeView {
+                    id: format!("compute-edge:{}", edge_idx.index()),
+                    from: observability_compute_node_id(NodeId::from(from_idx)),
+                    to: observability_compute_node_id(NodeId::from(to_idx)),
+                    from_layer: ObservabilityLayer::Compute,
+                    to_layer: ObservabilityLayer::Compute,
+                    edge_kind: "control".to_string(),
+                    cross_layer: false,
+                    value_type: None,
+                    source_port: None,
+                    target_port: None,
+                    branch_index: *branch_index,
+                    relationship: None,
+                },
+            });
+        }
+
+        let mut semantic_edge_indices: Vec<_> = self.graph.semantic().edge_indices().collect();
+        semantic_edge_indices.sort_by_key(|idx| idx.index());
+        for edge_idx in semantic_edge_indices {
+            let Some((from_idx, to_idx)) = self.graph.semantic().edge_endpoints(edge_idx) else {
+                continue;
+            };
+            let Some(weight) = self.graph.semantic().edge_weight(edge_idx) else {
+                continue;
+            };
+            edges.push(ObservabilityEdgeView {
+                id: format!("semantic-edge:{}", edge_idx.index()),
+                from: observability_semantic_node_id(from_idx.index() as u32),
+                to: observability_semantic_node_id(to_idx.index() as u32),
+                from_layer: ObservabilityLayer::Semantic,
+                to_layer: ObservabilityLayer::Semantic,
+                edge_kind: semantic_edge_kind(*weight),
+                cross_layer: false,
+                value_type: None,
+                source_port: None,
+                target_port: None,
+                branch_index: None,
+                relationship: Some(*weight),
+            });
+        }
+
+        if request.include_cross_layer {
+            for group in &groups {
+                let Some(semantic_anchor_id) = &group.semantic_anchor_id else {
+                    continue;
+                };
+                for compute_id in &group.compute_node_ids {
+                    edges.push(ObservabilityEdgeView {
+                        id: format!("cross-edge:{}:{}", group.function_id.0, compute_id),
+                        from: semantic_anchor_id.clone(),
+                        to: compute_id.clone(),
+                        from_layer: ObservabilityLayer::Semantic,
+                        to_layer: ObservabilityLayer::Compute,
+                        edge_kind: "function_boundary".to_string(),
+                        cross_layer: true,
+                        value_type: None,
+                        source_port: None,
+                        target_port: None,
+                        branch_index: None,
+                        relationship: None,
+                    });
+                }
+            }
+        }
+
+        let node_ids: HashSet<String> = nodes.iter().map(|node| node.id.clone()).collect();
+        edges.retain(|edge| {
+            node_ids.contains(&edge.from)
+                && node_ids.contains(&edge.to)
+                && preset_includes_edge(request.preset, edge)
+        });
+        edges.sort_by(|a, b| a.id.cmp(&b.id));
+
+        Ok(ObservabilityGraphResponse {
+            preset: request.preset,
+            node_count: nodes.len(),
+            edge_count: edges.len(),
+            nodes,
+            edges,
+            groups,
+        })
+    }
+
+    /// Executes a natural-language observability query with ranking,
+    /// disambiguation, and low-confidence fallback.
+    pub fn observability_query(
+        &self,
+        request: ObservabilityQueryRequest,
+    ) -> Result<ObservabilityQueryResponse, ApiError> {
+        let query = request.query.trim();
+        if query.is_empty() {
+            return Err(ApiError::BadRequest(
+                "query must be non-empty for observability search".to_string(),
+            ));
+        }
+
+        let max_results = request.max_results.clamp(1, 10);
+        let query_terms = normalized_terms(query);
+
+        #[derive(Clone)]
+        struct Candidate {
+            semantic_node_id: u32,
+            label: String,
+            score: f32,
+            lexical: f32,
+            reason: String,
+        }
+
+        let mut candidates = Vec::new();
+        let mut semantic_indices: Vec<_> = self.graph.semantic().node_indices().collect();
+        semantic_indices.sort_by_key(|idx| idx.index());
+        for idx in semantic_indices {
+            let Some(node) = self.graph.semantic().node_weight(idx) else {
+                continue;
+            };
+            let metadata = node.metadata();
+            let semantic_node_id = idx.index() as u32;
+
+            let corpus = format!(
+                "{} {} {}",
+                node.label(),
+                metadata.summary.title,
+                metadata.summary.body
+            );
+            let lexical = lexical_overlap_score(&query_terms, &normalized_terms(&corpus));
+            let relationship_degree = self
+                .graph
+                .semantic()
+                .edges_directed(idx, Direction::Incoming)
+                .count()
+                + self
+                    .graph
+                    .semantic()
+                    .edges_directed(idx, Direction::Outgoing)
+                    .count();
+            let relationship_score = (relationship_degree as f32 / 6.0).min(1.0);
+
+            let embedding_score = embedding_similarity(
+                query,
+                metadata
+                    .embeddings
+                    .node_embedding
+                    .as_ref()
+                    .or(metadata.embeddings.subgraph_summary_embedding.as_ref()),
+            )
+            .unwrap_or(0.0);
+
+            let score = 0.55 * embedding_score + 0.35 * lexical + 0.10 * relationship_score;
+            let reason = if embedding_score >= lexical {
+                "embedding".to_string()
+            } else {
+                "text-match".to_string()
+            };
+
+            candidates.push(Candidate {
+                semantic_node_id,
+                label: node.label(),
+                score,
+                lexical,
+                reason,
+            });
+        }
+
+        candidates.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| a.semantic_node_id.cmp(&b.semantic_node_id))
+        });
+
+        let selected_candidate = match &request.selected_candidate_id {
+            Some(candidate_id) => {
+                let maybe_id = candidate_id
+                    .strip_prefix("semantic:")
+                    .and_then(|id| id.parse::<u32>().ok());
+                let Some(semantic_node_id) = maybe_id else {
+                    return Err(ApiError::BadRequest(format!(
+                        "invalid selected_candidate_id '{}'",
+                        candidate_id
+                    )));
+                };
+                candidates
+                    .iter()
+                    .find(|c| c.semantic_node_id == semantic_node_id)
+                    .cloned()
+            }
+            None => candidates.first().cloned(),
+        };
+
+        let confidence = selected_candidate.as_ref().map(|c| c.score).unwrap_or(0.0);
+        let top_gap_small =
+            candidates.len() > 1 && (candidates[0].score - candidates[1].score).abs() <= 0.12;
+        let lexical_tie = candidates.len() > 1
+            && candidates[0].lexical >= 0.8
+            && candidates[1].lexical >= 0.8
+            && query_terms.len() <= 2;
+        let ambiguous = request.selected_candidate_id.is_none()
+            && candidates.len() > 1
+            && (top_gap_small || lexical_tie)
+            && candidates[0].score >= 0.20;
+        let low_confidence = confidence < 0.28;
+
+        let mut selected_ids = Vec::new();
+        if let Some(primary) = &selected_candidate {
+            selected_ids.push(primary.semantic_node_id);
+        }
+
+        if low_confidence {
+            if let Some(primary) = &selected_candidate {
+                let primary_idx = NodeIndex::<u32>::new(primary.semantic_node_id as usize);
+                let mut neighbor_ids = Vec::new();
+                for edge_ref in self
+                    .graph
+                    .semantic()
+                    .edges_directed(primary_idx, Direction::Outgoing)
+                {
+                    neighbor_ids.push(edge_ref.target().index() as u32);
+                }
+                for edge_ref in self
+                    .graph
+                    .semantic()
+                    .edges_directed(primary_idx, Direction::Incoming)
+                {
+                    neighbor_ids.push(edge_ref.source().index() as u32);
+                }
+                neighbor_ids.sort_unstable();
+                neighbor_ids.dedup();
+                for id in neighbor_ids {
+                    if selected_ids.len() >= max_results {
+                        break;
+                    }
+                    if !selected_ids.contains(&id) {
+                        selected_ids.push(id);
+                    }
+                }
+            }
+            if selected_ids.is_empty() {
+                selected_ids.extend(
+                    candidates
+                        .iter()
+                        .take(max_results)
+                        .map(|candidate| candidate.semantic_node_id),
+                );
+            }
+        } else {
+            selected_ids.extend(
+                candidates
+                    .iter()
+                    .take(max_results)
+                    .map(|candidate| candidate.semantic_node_id),
+            );
+            selected_ids.sort_unstable();
+            selected_ids.dedup();
+        }
+
+        let candidate_score_by_id: HashMap<u32, f32> = candidates
+            .iter()
+            .map(|candidate| (candidate.semantic_node_id, candidate.score))
+            .collect();
+
+        let mut results = Vec::new();
+        for (rank, semantic_node_id) in selected_ids.iter().copied().enumerate() {
+            let idx = NodeIndex::<u32>::new(semantic_node_id as usize);
+            let Some(node) = self.graph.semantic().node_weight(idx) else {
+                continue;
+            };
+
+            let relationships = self.query_relationship_tab(semantic_node_id);
+            let contracts = self.query_contracts_tab(node);
+
+            results.push(ObservabilityQueryResultView {
+                rank: rank + 1,
+                node_id: observability_semantic_node_id(semantic_node_id),
+                label: node.label(),
+                layer: ObservabilityLayer::Semantic,
+                score: *candidate_score_by_id.get(&semantic_node_id).unwrap_or(&0.0),
+                related_node_ids: relationships.mini_graph_node_ids.clone(),
+                summary: QuerySummaryTabView {
+                    title: node.metadata().summary.title.clone(),
+                    body: node.metadata().summary.body.clone(),
+                    module_id: node.module_id(),
+                    function_id: node.function_id(),
+                    function_name: node
+                        .function_id()
+                        .and_then(|fid| self.graph.get_function(fid).map(|f| f.name.clone())),
+                    complexity: node.metadata().complexity,
+                },
+                relationships,
+                contracts,
+            });
+        }
+
+        let interpretations = candidates
+            .iter()
+            .take(3)
+            .map(|candidate| QueryInterpretationView {
+                candidate_id: observability_semantic_node_id(candidate.semantic_node_id),
+                node_id: observability_semantic_node_id(candidate.semantic_node_id),
+                label: candidate.label.clone(),
+                score: candidate.score,
+                reason: candidate.reason.clone(),
+            })
+            .collect();
+
+        Ok(ObservabilityQueryResponse {
+            query: query.to_string(),
+            suggested_prompts: default_prompt_chips(),
+            ambiguous,
+            low_confidence,
+            confidence,
+            ambiguity_prompt: if ambiguous {
+                Some(
+                    "This query matches multiple semantic entities. Choose an interpretation."
+                        .to_string(),
+                )
+            } else {
+                None
+            },
+            interpretations,
+            fallback_reason: if low_confidence {
+                Some("No strong semantic match; showing nearest related nodes.".to_string())
+            } else {
+                None
+            },
+            selected_graph_node_id: results.first().map(|result| result.node_id.clone()),
+            results,
+        })
+    }
+
     /// Returns a high-level program overview.
     pub fn program_overview(&self) -> Result<ProgramOverviewResponse, ApiError> {
         let modules: Vec<ModuleId> = self
@@ -1172,6 +1631,109 @@ impl ProgramService {
             node_count: self.graph.node_count(),
             edge_count: self.graph.edge_count(),
         })
+    }
+
+    fn query_relationship_tab(&self, semantic_node_id: u32) -> QueryRelationshipsTabView {
+        let idx = NodeIndex::<u32>::new(semantic_node_id as usize);
+        let mut mini_graph_node_ids = vec![observability_semantic_node_id(semantic_node_id)];
+        let mut mini_graph_edge_ids = Vec::new();
+        let mut items = Vec::new();
+
+        for edge_ref in self
+            .graph
+            .semantic()
+            .edges_directed(idx, Direction::Outgoing)
+        {
+            let neighbor_id = edge_ref.target().index() as u32;
+            if let Some(neighbor) = self.graph.semantic().node_weight(edge_ref.target()) {
+                mini_graph_node_ids.push(observability_semantic_node_id(neighbor_id));
+                mini_graph_edge_ids.push(format!("semantic-edge:{}", edge_ref.id().index()));
+                items.push(QueryRelationshipItemView {
+                    direction: "outgoing".to_string(),
+                    edge_kind: semantic_edge_kind(*edge_ref.weight()),
+                    node_id: observability_semantic_node_id(neighbor_id),
+                    label: neighbor.label(),
+                });
+            }
+        }
+
+        for edge_ref in self
+            .graph
+            .semantic()
+            .edges_directed(idx, Direction::Incoming)
+        {
+            let neighbor_id = edge_ref.source().index() as u32;
+            if let Some(neighbor) = self.graph.semantic().node_weight(edge_ref.source()) {
+                mini_graph_node_ids.push(observability_semantic_node_id(neighbor_id));
+                mini_graph_edge_ids.push(format!("semantic-edge:{}", edge_ref.id().index()));
+                items.push(QueryRelationshipItemView {
+                    direction: "incoming".to_string(),
+                    edge_kind: semantic_edge_kind(*edge_ref.weight()),
+                    node_id: observability_semantic_node_id(neighbor_id),
+                    label: neighbor.label(),
+                });
+            }
+        }
+
+        if let Some(node) = self.graph.semantic().node_weight(idx) {
+            if let Some(function_id) = node.function_id() {
+                let compute_nodes = self.graph.function_nodes_sorted(function_id);
+                for node_id in compute_nodes {
+                    if let Some(compute_node) = self.graph.get_compute_node(node_id) {
+                        mini_graph_node_ids.push(observability_compute_node_id(node_id));
+                        mini_graph_edge_ids.push(format!(
+                            "cross-edge:{}:{}",
+                            function_id.0,
+                            observability_compute_node_id(node_id)
+                        ));
+                        items.push(QueryRelationshipItemView {
+                            direction: "boundary".to_string(),
+                            edge_kind: "function_boundary".to_string(),
+                            node_id: observability_compute_node_id(node_id),
+                            label: op_kind_name(&compute_node.op),
+                        });
+                    }
+                }
+            }
+        }
+
+        mini_graph_node_ids.sort();
+        mini_graph_node_ids.dedup();
+        mini_graph_edge_ids.sort();
+        mini_graph_edge_ids.dedup();
+        items.sort_by(|a, b| a.node_id.cmp(&b.node_id));
+
+        QueryRelationshipsTabView {
+            mini_graph_node_ids,
+            mini_graph_edge_ids,
+            items,
+        }
+    }
+
+    fn query_contracts_tab(&self, semantic_node: &SemanticNode) -> QueryContractsTabView {
+        let mut entries = Vec::new();
+        if let Some(function_id) = semantic_node.function_id() {
+            for node_id in self.graph.function_nodes_sorted(function_id) {
+                let Some(node) = self.graph.get_compute_node(node_id) else {
+                    continue;
+                };
+                let contract_kind = contract_name_from_op(&node.op);
+                let message = contract_message_from_op(&node.op);
+                if let (Some(contract_kind), Some(message)) = (contract_kind, message) {
+                    entries.push(QueryContractEntryView {
+                        node_id: observability_compute_node_id(node_id),
+                        contract_kind,
+                        message,
+                    });
+                }
+            }
+        }
+
+        entries.sort_by(|a, b| a.node_id.cmp(&b.node_id));
+        QueryContractsTabView {
+            has_contracts: !entries.is_empty(),
+            entries,
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1855,6 +2417,194 @@ impl ProgramService {
 // Helpers
 // ---------------------------------------------------------------------------
 
+fn observability_compute_node_id(node_id: NodeId) -> String {
+    format!("compute:{}", node_id.0)
+}
+
+fn observability_semantic_node_id(node_id: u32) -> String {
+    format!("semantic:{}", node_id)
+}
+
+fn observability_group_id(function_id: FunctionId) -> String {
+    format!("function:{}", function_id.0)
+}
+
+fn layer_rank(layer: ObservabilityLayer) -> u8 {
+    match layer {
+        ObservabilityLayer::Semantic => 0,
+        ObservabilityLayer::Compute => 1,
+    }
+}
+
+fn preset_includes_layer(preset: ObservabilityPreset, layer: ObservabilityLayer) -> bool {
+    match preset {
+        ObservabilityPreset::All | ObservabilityPreset::Interop => true,
+        ObservabilityPreset::SemanticOnly => layer == ObservabilityLayer::Semantic,
+        ObservabilityPreset::ComputeOnly => layer == ObservabilityLayer::Compute,
+    }
+}
+
+fn preset_includes_edge(preset: ObservabilityPreset, edge: &ObservabilityEdgeView) -> bool {
+    match preset {
+        ObservabilityPreset::All => true,
+        ObservabilityPreset::SemanticOnly => {
+            !edge.cross_layer
+                && edge.from_layer == ObservabilityLayer::Semantic
+                && edge.to_layer == ObservabilityLayer::Semantic
+        }
+        ObservabilityPreset::ComputeOnly => {
+            !edge.cross_layer
+                && edge.from_layer == ObservabilityLayer::Compute
+                && edge.to_layer == ObservabilityLayer::Compute
+        }
+        ObservabilityPreset::Interop => edge.cross_layer,
+    }
+}
+
+fn semantic_edge_kind(edge: SemanticEdge) -> String {
+    format!("{:?}", edge).to_ascii_lowercase()
+}
+
+fn abbreviate_label(label: &str, max_len: usize) -> String {
+    if label.chars().count() <= max_len {
+        label.to_string()
+    } else {
+        let truncated: String = label.chars().take(max_len).collect();
+        format!("{}...", truncated)
+    }
+}
+
+fn op_kind_name(op: &ComputeNodeOp) -> String {
+    match op {
+        ComputeNodeOp::Core(inner) => match inner {
+            ComputeOp::Const { .. } => "Const".to_string(),
+            ComputeOp::BinaryArith { .. } => "BinaryArith".to_string(),
+            ComputeOp::UnaryArith { .. } => "UnaryArith".to_string(),
+            ComputeOp::Compare { .. } => "Compare".to_string(),
+            ComputeOp::BinaryLogic { .. } => "BinaryLogic".to_string(),
+            ComputeOp::Not => "Not".to_string(),
+            ComputeOp::Shift { .. } => "Shift".to_string(),
+            ComputeOp::IfElse => "IfElse".to_string(),
+            ComputeOp::Loop => "Loop".to_string(),
+            ComputeOp::Match => "Match".to_string(),
+            ComputeOp::Branch => "Branch".to_string(),
+            ComputeOp::Jump => "Jump".to_string(),
+            ComputeOp::Phi => "Phi".to_string(),
+            ComputeOp::Alloc => "Alloc".to_string(),
+            ComputeOp::Load => "Load".to_string(),
+            ComputeOp::Store => "Store".to_string(),
+            ComputeOp::GetElementPtr => "GetElementPtr".to_string(),
+            ComputeOp::Call { .. } => "Call".to_string(),
+            ComputeOp::IndirectCall => "IndirectCall".to_string(),
+            ComputeOp::Return => "Return".to_string(),
+            ComputeOp::Parameter { .. } => "Parameter".to_string(),
+            ComputeOp::Print => "Print".to_string(),
+            ComputeOp::ReadLine => "ReadLine".to_string(),
+            ComputeOp::FileOpen => "FileOpen".to_string(),
+            ComputeOp::FileRead => "FileRead".to_string(),
+            ComputeOp::FileWrite => "FileWrite".to_string(),
+            ComputeOp::FileClose => "FileClose".to_string(),
+            ComputeOp::MakeClosure { .. } => "MakeClosure".to_string(),
+            ComputeOp::CaptureAccess { .. } => "CaptureAccess".to_string(),
+            ComputeOp::Precondition { .. } => "Precondition".to_string(),
+            ComputeOp::Postcondition { .. } => "Postcondition".to_string(),
+            ComputeOp::Invariant { .. } => "Invariant".to_string(),
+        },
+        ComputeNodeOp::Structured(inner) => format!("{:?}", inner),
+    }
+}
+
+fn normalized_terms(input: &str) -> Vec<String> {
+    input
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(|token| token.to_ascii_lowercase())
+        .collect()
+}
+
+fn lexical_overlap_score(query_terms: &[String], corpus_terms: &[String]) -> f32 {
+    if query_terms.is_empty() || corpus_terms.is_empty() {
+        return 0.0;
+    }
+    let corpus: HashSet<&str> = corpus_terms.iter().map(String::as_str).collect();
+    let overlap = query_terms
+        .iter()
+        .filter(|term| corpus.contains(term.as_str()))
+        .count();
+    overlap as f32 / query_terms.len() as f32
+}
+
+fn deterministic_embedding(seed: &str, dims: usize) -> Vec<f32> {
+    if dims == 0 {
+        return Vec::new();
+    }
+    const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for byte in seed.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+
+    let mut vec = Vec::with_capacity(dims);
+    for idx in 0..dims {
+        let mixed = hash.wrapping_add((idx as u64).wrapping_mul(0x9e3779b97f4a7c15));
+        let scaled = (mixed % 10_000) as f32 / 10_000.0;
+        vec.push((scaled * 2.0) - 1.0);
+    }
+    vec
+}
+
+fn vector_cosine_similarity(a: &[f32], b: &[f32]) -> Option<f32> {
+    if a.is_empty() || b.is_empty() || a.len() != b.len() {
+        return None;
+    }
+    let mut dot = 0.0f32;
+    let mut norm_a = 0.0f32;
+    let mut norm_b = 0.0f32;
+    for (lhs, rhs) in a.iter().zip(b.iter()) {
+        dot += lhs * rhs;
+        norm_a += lhs * lhs;
+        norm_b += rhs * rhs;
+    }
+    if norm_a <= f32::EPSILON || norm_b <= f32::EPSILON {
+        return None;
+    }
+    Some((dot / (norm_a.sqrt() * norm_b.sqrt())).clamp(-1.0, 1.0))
+}
+
+fn embedding_similarity(query: &str, embedding: Option<&Vec<f32>>) -> Option<f32> {
+    let embedding = embedding?;
+    let q = deterministic_embedding(query, embedding.len());
+    vector_cosine_similarity(&q, embedding)
+}
+
+fn default_prompt_chips() -> Vec<SuggestedPromptChipView> {
+    vec![
+        SuggestedPromptChipView {
+            id: "chip-overview".to_string(),
+            label: "Program Overview".to_string(),
+            query: "show the high level structure".to_string(),
+        },
+        SuggestedPromptChipView {
+            id: "chip-contracts".to_string(),
+            label: "Contract Checks".to_string(),
+            query: "which functions enforce contracts".to_string(),
+        },
+        SuggestedPromptChipView {
+            id: "chip-data-flow".to_string(),
+            label: "Data Flow".to_string(),
+            query: "trace how values flow through main".to_string(),
+        },
+        SuggestedPromptChipView {
+            id: "chip-interpreter".to_string(),
+            label: "Execution Path".to_string(),
+            query: "what does the interpreter execute first".to_string(),
+        },
+    ]
+}
+
 /// Converts a serde_json::Value to an interpreter Value.
 ///
 /// Uses the function parameter type hint to disambiguate numeric types.
@@ -1946,6 +2696,15 @@ fn contract_name_from_op(op: &ComputeNodeOp) -> Option<String> {
         ComputeNodeOp::Core(ComputeOp::Precondition { .. }) => Some("precondition".to_string()),
         ComputeNodeOp::Core(ComputeOp::Postcondition { .. }) => Some("postcondition".to_string()),
         ComputeNodeOp::Core(ComputeOp::Invariant { .. }) => Some("invariant".to_string()),
+        _ => None,
+    }
+}
+
+fn contract_message_from_op(op: &ComputeNodeOp) -> Option<String> {
+    match op {
+        ComputeNodeOp::Core(ComputeOp::Precondition { message })
+        | ComputeNodeOp::Core(ComputeOp::Postcondition { message })
+        | ComputeNodeOp::Core(ComputeOp::Invariant { message, .. }) => Some(message.clone()),
         _ => None,
     }
 }
