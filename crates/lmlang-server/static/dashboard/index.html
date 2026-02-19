@@ -125,6 +125,14 @@
 
           <div class="chat-log" id="chatLog"></div>
 
+          <section class="timeline-panel" aria-live="polite">
+            <div class="timeline-header">
+              <h2 class="timeline-title">Autonomous Timeline</h2>
+              <span id="timelineStatus" class="timeline-status">No attempts</span>
+            </div>
+            <div id="executionTimeline" class="timeline-list"></div>
+          </section>
+
           <div class="chat-input-area">
             <input id="chatInput" class="chat-input" placeholder="Message the agent..." />
             <button id="sendChatBtn" type="button" class="btn btn-primary btn-send">

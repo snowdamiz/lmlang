@@ -774,6 +774,149 @@ body {
   margin: 0;
 }
 
+/* ─── Timeline panel ─── */
+.timeline-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 230px;
+}
+
+.timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.timeline-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.timeline-status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.timeline-empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.timeline-attempt {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-hover);
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.timeline-attempt-success {
+  border-left: 3px solid var(--success);
+}
+
+.timeline-attempt-failure {
+  border-left: 3px solid var(--danger);
+}
+
+.timeline-attempt-neutral {
+  border-left: 3px solid var(--text-tertiary);
+}
+
+.timeline-attempt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.timeline-attempt-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.timeline-attempt-status {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  text-transform: lowercase;
+}
+
+.timeline-attempt-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+.timeline-actions {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-action-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.timeline-action-empty {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.timeline-action-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+.timeline-action-summary {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.timeline-action-error {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--danger);
+}
+
+.timeline-stop-reason {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
 /* ─── Chat input ─── */
 .chat-input-area {
   display: flex;
@@ -993,6 +1136,10 @@ body {
 
   .modal-card {
     margin: 8px;
+  }
+
+  .timeline-panel {
+    max-height: 190px;
   }
 
   .form-row {

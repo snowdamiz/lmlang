@@ -15,6 +15,7 @@
     selectedAgentId: null,
     selectedProjectAgentId: null,
     transcript: [],
+    executionAttempts: [],
     openRouterStatus: {
       connected: false,
       creditBalance: null,
@@ -61,6 +62,8 @@
     startBuildBtn: document.getElementById("startBuildBtn"),
     stopBuildBtn: document.getElementById("stopBuildBtn"),
     chatLog: document.getElementById("chatLog"),
+    executionTimeline: document.getElementById("executionTimeline"),
+    timelineStatus: document.getElementById("timelineStatus"),
     chatInput: document.getElementById("chatInput"),
     sendChatBtn: document.getElementById("sendChatBtn"),
 
@@ -226,6 +229,15 @@
 
   function formatUsd(amount) {
     return `$${amount.toFixed(2)}`;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function openRouterStatusPath() {
@@ -520,6 +532,70 @@
     el.chatLog.scrollTop = el.chatLog.scrollHeight;
   }
 
+  function attemptTone(attempt) {
+    const code = attempt?.stop_reason?.code || "";
+    if (code === "completed") return "success";
+    if (!code) return "neutral";
+    return "failure";
+  }
+
+  function renderExecutionTimeline() {
+    const attempts = Array.isArray(state.executionAttempts) ? state.executionAttempts : [];
+    if (el.timelineStatus) {
+      el.timelineStatus.textContent = attempts.length
+        ? `${attempts.length} attempt${attempts.length === 1 ? "" : "s"}`
+        : "No attempts";
+    }
+
+    if (!attempts.length) {
+      el.executionTimeline.innerHTML =
+        '<div class="timeline-empty">No autonomous attempts yet. Start a build to populate timeline history.</div>';
+      return;
+    }
+
+    el.executionTimeline.innerHTML = attempts
+      .map((attempt) => {
+        const tone = attemptTone(attempt);
+        const stopReason = attempt.stop_reason || null;
+        const stopLabel = stopReason?.code || "in_progress";
+        const stopMessage = stopReason?.message || "Attempt is in progress.";
+        const actions = Array.isArray(attempt.actions) ? attempt.actions : [];
+
+        const actionRows = actions.length
+          ? actions
+              .map((action) => {
+                const diagnosticsSummary = action?.diagnostics?.summary
+                  ? ` \u00b7 ${escapeHtml(action.diagnostics.summary)}`
+                  : "";
+                const errorCode = action?.error_code
+                  ? `<span class="timeline-action-error">${escapeHtml(action.error_code)}</span>`
+                  : "";
+                return `
+                  <li class="timeline-action-row">
+                    <span class="timeline-action-meta">#${escapeHtml(action.action_index)} \u00b7 ${escapeHtml(action.kind)} \u00b7 ${escapeHtml(action.status)}</span>
+                    <span class="timeline-action-summary">${escapeHtml(action.summary)}${diagnosticsSummary}</span>
+                    ${errorCode}
+                  </li>
+                `;
+              })
+              .join("")
+          : '<li class="timeline-action-row timeline-action-empty">No actions recorded for this attempt.</li>';
+
+        return `
+          <article class="timeline-attempt timeline-attempt-${tone}">
+            <header class="timeline-attempt-header">
+              <span class="timeline-attempt-title">Attempt ${escapeHtml(attempt.attempt)}/${escapeHtml(attempt.max_attempts)}</span>
+              <span class="timeline-attempt-status">${escapeHtml(stopLabel)}</span>
+            </header>
+            <p class="timeline-attempt-meta">planner=${escapeHtml(attempt.planner_status)} \u00b7 actions=${escapeHtml(attempt.action_count)} \u00b7 succeeded=${escapeHtml(attempt.succeeded_actions)}</p>
+            <ul class="timeline-actions">${actionRows}</ul>
+            <p class="timeline-stop-reason">${escapeHtml(stopMessage)}</p>
+          </article>
+        `;
+      })
+      .join("");
+  }
+
   // ── Data: Refresh ──
 
   async function refreshPrograms() {
@@ -567,8 +643,10 @@
       state.projectAgents = [];
       state.selectedProjectAgentId = null;
       state.transcript = [];
+      state.executionAttempts = [];
       renderProjectAgents();
       renderChatLog();
+      renderExecutionTimeline();
       updateBadges();
       return;
     }
@@ -582,6 +660,7 @@
     ) {
       state.selectedProjectAgentId = null;
       state.transcript = [];
+      state.executionAttempts = [];
     }
 
     if (!state.selectedProjectAgentId && state.projectAgents.length > 0) {
@@ -589,14 +668,26 @@
       await refreshProjectAgentDetail();
     }
 
+    const selectedSession = state.projectAgents.find(
+      (session) => session.agent_id === state.selectedProjectAgentId
+    );
+    if (selectedSession && Array.isArray(selectedSession.execution_attempts)) {
+      state.executionAttempts = selectedSession.execution_attempts;
+    } else if (!state.selectedProjectAgentId) {
+      state.executionAttempts = [];
+    }
+
     renderProjectAgents();
+    renderExecutionTimeline();
     updateBadges();
   }
 
   async function refreshProjectAgentDetail() {
     if (!state.selectedProgramId || !state.selectedProjectAgentId) {
       state.transcript = [];
+      state.executionAttempts = [];
       renderChatLog();
+      renderExecutionTimeline();
       return;
     }
 
@@ -605,6 +696,9 @@
       `/programs/${state.selectedProgramId}/agents/${state.selectedProjectAgentId}`
     );
     state.transcript = response.transcript || [];
+    state.executionAttempts = Array.isArray(response?.session?.execution_attempts)
+      ? response.session.execution_attempts
+      : [];
 
     const idx = state.projectAgents.findIndex(
       (session) => session.agent_id === state.selectedProjectAgentId
@@ -614,6 +708,7 @@
     }
 
     renderChatLog();
+    renderExecutionTimeline();
     updateBadges();
   }
 
@@ -621,6 +716,7 @@
     state.selectedProgramId = programId;
     state.selectedProjectAgentId = null;
     state.transcript = [];
+    state.executionAttempts = [];
 
     await api("POST", `/programs/${programId}/load`, {});
     await refreshProjectAgents();
@@ -629,6 +725,7 @@
     renderAgentList();
     renderProjectAgents();
     renderChatLog();
+    renderExecutionTimeline();
     updateObserveLink();
     updateBadges();
     setStatus(`Selected project ${programId}.`, "idle");
@@ -678,8 +775,10 @@
         state.projectAgents = [];
         state.selectedProjectAgentId = null;
         state.transcript = [];
+        state.executionAttempts = [];
         renderProjectAgents();
         renderChatLog();
+        renderExecutionTimeline();
       }
 
       await refreshPrograms();
@@ -939,11 +1038,15 @@
         state.transcript = response.transcript;
         renderChatLog();
       }
+      if (Array.isArray(response.execution_attempts)) {
+        state.executionAttempts = response.execution_attempts;
+        renderExecutionTimeline();
+      }
 
       renderProjects();
       renderAgentList();
       renderProjectAgents();
-  
+
       updateBadges();
       updateObserveLink();
       setStatus(response.reply || "AI action completed.", "idle");
@@ -1053,8 +1156,9 @@
       renderAgentList();
       renderProjectAgents();
       renderChatLog();
+      renderExecutionTimeline();
       updateObserveLink();
-  
+
       updateBadges();
       maybeShowSetupWizard();
       setStatus("Dashboard ready.", "idle");
