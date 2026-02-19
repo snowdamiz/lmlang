@@ -21,10 +21,13 @@ use crate::schema::agent_control::{
     PlannerValidationErrorView, ProgramAgentActionResponse, ProgramAgentDetailResponse,
     ProgramAgentSessionView, StartProgramAgentRequest, StopProgramAgentRequest,
 };
+use crate::schema::autonomy_execution::{bounded_attempt_history, AutonomyExecutionAttemptSummary};
 use crate::schema::compile::CompileRequest;
 use crate::schema::mutations::{CreatedEntity, Mutation, ProposeEditRequest};
 use crate::schema::verify::VerifyScope;
 use crate::state::AppState;
+
+const MAX_EXECUTION_TIMELINE_ATTEMPTS: usize = 8;
 
 /// `GET /programs/{id}/agents`
 pub async fn list_program_agents(
@@ -170,6 +173,7 @@ pub async fn chat_with_program_agent(
         transcript: to_transcript_view(&session.transcript),
         planner,
         execution: to_latest_execution_view(&session),
+        execution_attempts: to_execution_attempt_views(&session),
     }))
 }
 
@@ -247,6 +251,7 @@ async fn ensure_program_exists(state: &AppState, program_id: i64) -> Result<(), 
 
 fn to_session_view(session: ProjectAgentSession) -> ProgramAgentSessionView {
     let execution = to_latest_execution_view(&session);
+    let execution_attempts = to_execution_attempt_views(&session);
     let stop_reason = session
         .stop_reason
         .as_ref()
@@ -270,6 +275,7 @@ fn to_session_view(session: ProjectAgentSession) -> ProgramAgentSessionView {
         message_count: session.transcript.len(),
         stop_reason,
         execution,
+        execution_attempts,
     }
 }
 
@@ -612,27 +618,32 @@ pub(crate) fn to_latest_execution_view(
     session: &ProjectAgentSession,
 ) -> Option<ExecutionSummaryView> {
     let latest = session.execution_attempts.last()?;
-    let diagnostics = latest
-        .action_results
-        .iter()
-        .rev()
-        .find_map(|action| {
-            action.diagnostics.as_ref().or_else(|| {
-                action
-                    .error
-                    .as_ref()
-                    .and_then(|error| error.diagnostics.as_ref())
-            })
-        })
-        .map(to_diagnostics_view);
+    Some(to_execution_summary_view(
+        latest,
+        session.stop_reason.as_ref(),
+    ))
+}
 
-    Some(ExecutionSummaryView {
-        attempt: latest.attempt,
-        max_attempts: latest.max_attempts,
-        planner_status: latest.planner_status.clone(),
-        action_count: latest.action_count,
-        succeeded_actions: latest.succeeded_actions,
-        actions: latest
+pub(crate) fn to_execution_attempt_views(
+    session: &ProjectAgentSession,
+) -> Vec<ExecutionSummaryView> {
+    bounded_attempt_history(&session.execution_attempts, MAX_EXECUTION_TIMELINE_ATTEMPTS)
+        .iter()
+        .map(|attempt| to_execution_summary_view(attempt, None))
+        .collect()
+}
+
+fn to_execution_summary_view(
+    attempt: &AutonomyExecutionAttemptSummary,
+    fallback_stop_reason: Option<&crate::schema::autonomy_execution::StopReason>,
+) -> ExecutionSummaryView {
+    ExecutionSummaryView {
+        attempt: attempt.attempt,
+        max_attempts: attempt.max_attempts,
+        planner_status: attempt.planner_status.clone(),
+        action_count: attempt.action_count,
+        succeeded_actions: attempt.succeeded_actions,
+        actions: attempt
             .action_results
             .iter()
             .map(|action| ExecutionActionView {
@@ -653,13 +664,11 @@ pub(crate) fn to_latest_execution_view(
                     .map(to_diagnostics_view),
             })
             .collect(),
-        diagnostics,
-        stop_reason: latest
-            .stop_reason
-            .as_ref()
-            .map(to_stop_reason_view)
-            .or_else(|| session.stop_reason.as_ref().map(to_stop_reason_view)),
-    })
+        diagnostics: attempt.latest_diagnostics().map(to_diagnostics_view),
+        stop_reason: attempt
+            .terminal_stop_reason(fallback_stop_reason)
+            .map(to_stop_reason_view),
+    }
 }
 
 fn to_stop_reason_view(

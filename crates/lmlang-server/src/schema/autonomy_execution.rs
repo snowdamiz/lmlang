@@ -243,6 +243,26 @@ impl AutonomyExecutionAttemptSummary {
         self.stop_reason = Some(reason);
         self
     }
+
+    /// Latest diagnostics for this attempt from action or nested error payloads.
+    pub fn latest_diagnostics(&self) -> Option<&AutonomyDiagnostics> {
+        self.action_results.iter().rev().find_map(|action| {
+            action.diagnostics.as_ref().or_else(|| {
+                action
+                    .error
+                    .as_ref()
+                    .and_then(|error| error.diagnostics.as_ref())
+            })
+        })
+    }
+
+    /// Attempt stop reason, falling back to a session-level terminal reason.
+    pub fn terminal_stop_reason<'a>(
+        &'a self,
+        fallback: Option<&'a StopReason>,
+    ) -> Option<&'a StopReason> {
+        self.stop_reason.as_ref().or(fallback)
+    }
 }
 
 /// Top-level execution payload stored on sessions and surfaced via APIs.
@@ -273,4 +293,13 @@ impl AutonomyExecutionOutcome {
             stop_reason,
         }
     }
+}
+
+/// Return the most recent bounded slice of attempts for timeline rendering.
+pub fn bounded_attempt_history(
+    attempts: &[AutonomyExecutionAttemptSummary],
+    max_entries: usize,
+) -> &[AutonomyExecutionAttemptSummary] {
+    let start = attempts.len().saturating_sub(max_entries);
+    &attempts[start..]
 }

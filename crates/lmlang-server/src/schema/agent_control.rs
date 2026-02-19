@@ -30,6 +30,9 @@ pub struct ProgramAgentSessionView {
     /// Compact summary of latest autonomous execution attempt metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution: Option<ExecutionSummaryView>,
+    /// Ordered bounded autonomous attempt history for timeline rendering.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub execution_attempts: Vec<ExecutionSummaryView>,
 }
 
 /// Lists all agents assigned to a project.
@@ -80,6 +83,9 @@ pub struct ChatWithProgramAgentResponse {
     /// Latest autonomous execution metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution: Option<ExecutionSummaryView>,
+    /// Ordered bounded autonomous attempt history for timeline rendering.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub execution_attempts: Vec<ExecutionSummaryView>,
 }
 
 /// Detailed session view for one assigned agent.
