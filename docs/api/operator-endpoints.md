@@ -68,6 +68,65 @@ Supported orchestration prompts include:
 - `compile program`
 - `run program`
 
+## Planner contract (`AUT-02` / `AUT-03`)
+
+Natural-language build requests are represented by a versioned planner envelope:
+
+```json
+{
+  "version": "2026-02-19",
+  "goal": "create a simple calculator",
+  "metadata": {
+    "planner": "phase14-planner",
+    "model": "openai/gpt-4o-mini"
+  },
+  "actions": [
+    {
+      "type": "mutate_batch",
+      "request": {
+        "mutations": [{ "type": "add_function", "name": "add", "module": 0, "params": [], "return_type": "I32", "visibility": "Public" }],
+        "dry_run": false
+      }
+    },
+    {
+      "type": "verify",
+      "request": { "scope": "Full" }
+    }
+  ]
+}
+```
+
+Contract notes:
+- `version` must match the server-supported planner contract version (`2026-02-19`).
+- `actions` is an ordered sequence (`max: 32`), validated before any autonomous execution routing.
+- Supported action variants: `mutate_batch`, `verify`, `compile`, `simulate`, `inspect`, `history`.
+- `mutate_batch` uses the same payload semantics as `POST /programs/{id}/mutations` (`Mutation` / `ProposeEditRequest` shape).
+- `verify` uses existing verify scope semantics (`Local` or `Full`).
+
+If no safe plan can be generated, planner output can return structured failure instead of actions:
+
+```json
+{
+  "version": "2026-02-19",
+  "goal": "build unsupported runtime target",
+  "actions": [],
+  "failure": {
+    "code": "unsupported_goal",
+    "message": "Requested target is unavailable in this environment.",
+    "detail": "missing runtime capability: wasm32 host",
+    "retryable": false
+  }
+}
+```
+
+Semantic validation errors are machine-readable and include explicit codes, including:
+- `unsupported_version`
+- `missing_actions`
+- `too_many_actions`
+- `missing_required_field`
+- `invalid_field_value`
+- `invalid_action_payload`
+
 ## List projects
 
 `GET /programs`
