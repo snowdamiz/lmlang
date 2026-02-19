@@ -20,8 +20,24 @@
           <span class="badge" id="programBadge">Program __PROGRAM_ID__</span>
           <span class="badge" id="agentBadge">No agent selected</span>
           <span class="badge" id="statusBadge">Status: idle</span>
+          <span class="badge" id="templateBadge">Template: execute-phase</span>
         </div>
       </header>
+
+      <section class="context-strip" aria-label="Run context overview">
+        <div>
+          <p class="strip-label">Program Context</p>
+          <p class="strip-value">Program ID <strong id="contextProgramId">__PROGRAM_ID__</strong></p>
+        </div>
+        <div>
+          <p class="strip-label">Workflow Mode</p>
+          <p class="strip-value">Endpoint-first Operate using existing API contracts</p>
+        </div>
+        <div>
+          <p class="strip-label">Observe Reuse</p>
+          <p class="strip-value">Mounted from <code>/programs/__PROGRAM_ID__/observability</code></p>
+        </div>
+      </section>
 
       <nav class="tab-nav" aria-label="Dashboard modules">
         <button class="tab-btn is-active" data-tab="operate" type="button">Operate</button>
@@ -35,7 +51,7 @@
               <header>
                 <h2>Agents & Session State</h2>
                 <p class="card-intro">
-                  Registered agents and derived session state appear here.
+                  Registered agents with derived state labels: idle, running, blocked, error.
                 </p>
               </header>
               <div id="operateAgentListMount" class="content-mount"></div>
@@ -45,7 +61,7 @@
               <header>
                 <h2>Run Setup</h2>
                 <p class="card-intro">
-                  Program target, workflow template, and task prompt setup.
+                  Configure workflow template and task prompt before launching actions.
                 </p>
               </header>
               <div id="operateRunSetupMount" class="content-mount"></div>
@@ -55,7 +71,7 @@
               <header>
                 <h2>Actions</h2>
                 <p class="card-intro">
-                  Lock, mutation, verification, simulation, compile, and history actions.
+                  Register/list/deregister agents, locks, mutations, verify, simulate, compile, and history.
                 </p>
               </header>
               <div id="operateActionsMount" class="content-mount"></div>
@@ -65,7 +81,7 @@
               <header>
                 <h2>Timeline / History Preview</h2>
                 <p class="card-intro">
-                  Recent operation timeline and history snippets.
+                  Operation timeline and history snapshots for rapid diagnostics.
                 </p>
               </header>
               <div id="operateTimelineMount" class="content-mount"></div>
@@ -75,18 +91,27 @@
               <header>
                 <h2>Request / Response Output</h2>
                 <p class="card-intro">
-                  Endpoint payload snapshots for operator trust and debugging.
+                  Structured payload snapshots for endpoint actions and troubleshooting.
                 </p>
               </header>
               <div id="operateOutputMount" class="content-mount"></div>
             </article>
           </div>
+          <section class="operate-footer-notes" aria-label="Operate notes">
+            <h3>Operate Notes</h3>
+            <p>
+              Actions in this tab intentionally target existing APIs first. Missing lifecycle/timeline controls are deferred to later phases.
+            </p>
+            <p>
+              Use the shared status bar for immediate feedback, then inspect request/response snapshots and the timeline panel for details.
+            </p>
+          </section>
         </section>
 
         <section class="panel" id="observePanel" data-panel="observe" aria-label="Observe panel">
           <div class="observe-toolbar">
             <p>
-              Observe reuses the existing observability UI and backend endpoints.
+              Observe reuses the existing observability UI and backend graph/query endpoints.
             </p>
             <a id="openObserveLink" href="/programs/__PROGRAM_ID__/observability" target="_blank" rel="noopener noreferrer">
               Open Observe in a new tab
