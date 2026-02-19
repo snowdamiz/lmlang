@@ -55,5 +55,5 @@ This milestone closes the core capability gap: agents currently route through fi
 |-------|----------------|--------|-----------|
 | 14. Action Protocol and Planner Contract | 3/3 | Complete | 2026-02-19 |
 | 15. Generic Graph Build Executor | 3/3 | Complete    | 2026-02-19 |
-| 16. Verify/Compile Repair Loop | 1/3 | In Progress | - |
+| 16. Verify/Compile Repair Loop | 2/3 | In Progress | - |
 | 17. Acceptance Benchmarks and Attempt Visibility | 0/0 | Planned | - |
