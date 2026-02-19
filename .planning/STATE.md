@@ -135,5 +135,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 05-04-PLAN.md (Phase 5 complete)
-Resume file: .planning/phases/05-llvm-compilation-pipeline/05-04-SUMMARY.md
+Stopped at: Phase 6 context gathered
+Resume file: .planning/phases/06-full-contract-system-incremental-compilation/06-CONTEXT.md
