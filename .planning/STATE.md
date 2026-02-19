@@ -5,16 +5,16 @@
 See: `.planning/PROJECT.md` (updated 2026-02-19)
 
 **Core value:** AI agents can build, modify, verify, and execute programs from natural-language goals with full graph-level awareness
-**Current focus:** Advancing v1.2 autonomous program synthesis with verify/compile repair loop planning
+**Current focus:** v1.2 autonomous program synthesis acceptance/visibility delivery completed; preparing milestone closeout
 
 ## Current Position
 
 Phase: 17 - Acceptance Benchmarks and Attempt Visibility
-Plan: 00/00 planned
-Status: Phase 16 complete (verified); ready to plan phase 17 benchmark acceptance flow
-Last activity: 2026-02-19 - Executed and verified Phase 16 (plans 16-01 through 16-03)
+Plan: 03/03 complete
+Status: Phase 17 execution complete with verification passed (AUT-09, AUT-10, AUT-11)
+Last activity: 2026-02-19 - Executed plans 17-01 through 17-03, verified benchmarks/timeline contract, and produced phase summaries
 
-Progress: [########--] 70%
+Progress: [##########] 100%
 
 ## Performance Metrics
 
@@ -27,6 +27,9 @@ Progress: [########--] 70%
 - 2026-02-19 - Phase 16 / Plan 01 complete (34 min, 2 tasks, 4 files, commits: aee09d4, bb6c286)
 - 2026-02-19 - Phase 16 / Plan 02 complete (9 min, 2 tasks, 7 files, commits: 1417bbb, 1554cab)
 - 2026-02-19 - Phase 16 / Plan 03 complete (6 min, 2 tasks, 3 files, commits: 2855795, 7683583)
+- 2026-02-19 - Phase 17 / Plan 01 complete (28 min, 2 tasks, 6 files, commits: 7601e3f, a7b51da)
+- 2026-02-19 - Phase 17 / Plan 02 complete (24 min, 2 tasks, 3 files, commits: 11eb008, 0547ad9)
+- 2026-02-19 - Phase 17 / Plan 03 complete (18 min, 2 tasks, 5 files, commits: c816f10, b48f81f)
 
 ## Accumulated Context
 
@@ -51,14 +54,19 @@ Progress: [########--] 70%
 - [Phase 16]: Agent and dashboard execution projections now expose optional diagnostics summaries for operator triage
 - [Phase 16]: Deterministic phase16 integration tests now protect diagnostics feedback chaining and terminal detail behavior
 - [Phase 16]: Operator endpoint docs now document AUT-07/AUT-08 diagnostics fields and troubleshooting flow
+- [Phase 17]: Acceptance coverage will use three benchmark prompts (calculator, string utility, state-machine) through the same autonomous planner/executor path
+- [Phase 17]: Attempt visibility will expose full per-attempt timeline rows while retaining backward-compatible latest execution summaries
+- [Phase 17]: Operator and dashboard payloads now expose bounded `execution_attempts` timeline rows sourced from persisted execution state
+- [Phase 17]: Benchmark acceptance requires semantic action summary markers (for example `add_function(name)`) rather than generic mutation counts
+- [Phase 17]: Dashboard now renders an autonomous timeline panel directly from structured attempt-history payloads (no transcript parsing)
 
 ### Pending Todos
 
-- Define phase17 benchmark prompts and acceptance assertions for calculator + two additional tasks
+- Milestone closeout: run full milestone audit/transition workflow and archive v1.2 planning artifacts
 
 ### Blockers/Concerns
 
-- Main risk: phase17 benchmark prompts may require tighter success/quality thresholds for reliable acceptance scoring
+- No active blockers for phase17 delivery; remaining risk is external planner/provider variability outside deterministic local mock coverage
 
 ### Quick Tasks Completed
 
@@ -69,5 +77,5 @@ Progress: [########--] 70%
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed `16-03-PLAN.md` and `16-VERIFICATION.md`; next action is planning phase 17
+Stopped at: Completed phase 17 execution and verification artifacts (`17-01`/`17-02`/`17-03` + `17-VERIFICATION.md`)
 Resume file: None

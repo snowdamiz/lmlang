@@ -25,9 +25,9 @@
 
 ### Acceptance and Observability
 
-- [ ] **AUT-09**: Timeline/history records each autonomous step (prompt context, planned actions, applied mutations, verify/compile outputs, terminal status).
-- [ ] **AUT-10**: Prompt `Create a simple calculator` triggers a real autonomous build attempt that creates calculator-related program structure and reaches verify/compile attempt.
-- [ ] **AUT-11**: At least two additional non-trivial benchmark prompts (for example string utility and state-machine tasks) trigger autonomous build attempts through the same generic path.
+- [x] **AUT-09**: Timeline/history records each autonomous step (prompt context, planned actions, applied mutations, verify/compile outputs, terminal status).
+- [x] **AUT-10**: Prompt `Create a simple calculator` triggers a real autonomous build attempt that creates calculator-related program structure and reaches verify/compile attempt.
+- [x] **AUT-11**: At least two additional non-trivial benchmark prompts (for example string utility and state-machine tasks) trigger autonomous build attempts through the same generic path.
 
 ## Future Requirements
 
@@ -53,9 +53,9 @@
 | AUT-06 | Phase 15 | Complete (15-01, 15-02, 15-03) |
 | AUT-07 | Phase 16 | Complete (16-01, 16-02, 16-03) |
 | AUT-08 | Phase 16 | Complete (16-01, 16-02, 16-03) |
-| AUT-09 | Phase 17 | Planned |
-| AUT-10 | Phase 17 | Planned |
-| AUT-11 | Phase 17 | Planned |
+| AUT-09 | Phase 17 | Complete (17-01, 17-02, 17-03) |
+| AUT-10 | Phase 17 | Complete (17-02, 17-03) |
+| AUT-11 | Phase 17 | Complete (17-02, 17-03) |
 
 **Coverage:**
 - v1.2 requirements: 11 total
