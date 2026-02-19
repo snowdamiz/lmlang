@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core value:** AI agents can build, modify, and verify programs of arbitrary size with perfect local and global awareness
-**Current focus:** Phase 4: AI Agent Tool API
+**Current focus:** Phase 5: LLVM Compilation Pipeline
 
 ## Current Position
 
-Phase: 4 of 9 (AI Agent Tool API)
-Plan: 4 of 4 in current phase (COMPLETE)
-Status: Phase 4 Complete
-Last activity: 2026-02-18 — Completed 04-04-PLAN.md
+Phase: 5 of 9 (LLVM Compilation Pipeline)
+Plan: 1 of 4 in current phase
+Status: Executing Phase 5
+Last activity: 2026-02-18 — Completed 05-01-PLAN.md
 
-Progress: [██████░░░░] 52%
+Progress: [██████░░░░] 56%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 14
+- Total plans completed: 15
 - Average duration: 7min
-- Total execution time: 1.52 hours
+- Total execution time: 1.64 hours
 
 **By Phase:**
 
@@ -31,10 +31,11 @@ Progress: [██████░░░░] 52%
 | 02 | 3/3 | 18min | 6min |
 | 03 | 3/3 | 35min | 12min |
 | 04 | 4/4 | 24min | 6min |
+| 05 | 1/4 | 7min | 7min |
 
 **Recent Trend:**
-- Last 5 plans: 03-03 (11min), 04-01 (5min), 04-02 (15min), 04-03 (3min), 04-04 (1min)
-- Trend: integration tests fast due to prior context establishing patterns; handler+router plans fast due to thin-wrapper pattern
+- Last 5 plans: 04-01 (5min), 04-02 (15min), 04-03 (3min), 04-04 (1min), 05-01 (7min)
+- Trend: LLVM codegen foundation plan took 7min including inkwell compilation; consistent with average
 
 *Updated after each plan completion*
 
@@ -104,6 +105,13 @@ Recent decisions affecting current work:
 - [Phase 04]: ProgramService::in_memory() uses shared temp file (not separate in-memory DBs) for FK constraint satisfaction
 - [Phase 04]: Batch mutations required for nodes needing inputs (BinaryArith + edges added atomically)
 
+- [Phase 05]: inkwell 0.8.0 with llvm21-1 feature (research had incorrect version 0.7.1/llvm21-0)
+- [Phase 05]: LLVM_SYS_211_PREFIX in .cargo/config.toml for build-time LLVM discovery
+- [Phase 05]: Enum tagged union layout: { i32 discriminant, [max_payload_bytes x i8] }; unit-only enums use just { i32 }
+- [Phase 05]: Direct libc calls (printf/fprintf/exit) for I/O rather than separate runtime library
+- [Phase 05]: lmlang_runtime_error emitted as LLVM IR function body with switch on error kind
+- [Phase 05]: Unsigned comparison (ULT) for bounds checking to catch negative indices
+
 ### Pending Todos
 
 None yet.
@@ -117,5 +125,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-llvm-compilation-pipeline/05-CONTEXT.md
+Stopped at: Completed 05-01-PLAN.md
+Resume file: .planning/phases/05-llvm-compilation-pipeline/05-01-SUMMARY.md
