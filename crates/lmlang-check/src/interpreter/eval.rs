@@ -114,6 +114,12 @@ fn eval_core_op(
                 op
             ),
         }),
+
+        // Contract ops: check nodes evaluated separately by contract checking hooks,
+        // not by the normal work-list flow. Return Ok(None) (no output value).
+        ComputeOp::Precondition { .. }
+        | ComputeOp::Postcondition { .. }
+        | ComputeOp::Invariant { .. } => Ok(None),
     }
 }
 

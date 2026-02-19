@@ -684,6 +684,70 @@ fn resolve_core_rule(
                 }),
             }
         }
+
+        // -- Contracts (development-time only, no output) --
+        ComputeOp::Precondition { .. } => {
+            // Port 0 = condition (Bool). No output.
+            let mut expected = Vec::new();
+            if let Some(t) = find_port_type(input_types, 0) {
+                if t != TypeId::BOOL {
+                    return Err(TypeError::NonBooleanCondition {
+                        node: node_id,
+                        actual: t,
+                        function_id,
+                    });
+                }
+                expected.push((0, TypeId::BOOL));
+            }
+            Ok(OpTypeRule {
+                expected_inputs: expected,
+                output_type: None,
+            })
+        }
+
+        ComputeOp::Postcondition { .. } => {
+            // Port 0 = condition (Bool), Port 1 = return value (any type). No output.
+            let mut expected = Vec::new();
+            if let Some(t) = find_port_type(input_types, 0) {
+                if t != TypeId::BOOL {
+                    return Err(TypeError::NonBooleanCondition {
+                        node: node_id,
+                        actual: t,
+                        function_id,
+                    });
+                }
+                expected.push((0, TypeId::BOOL));
+            }
+            if let Some(t) = find_port_type(input_types, 1) {
+                expected.push((1, t));
+            }
+            Ok(OpTypeRule {
+                expected_inputs: expected,
+                output_type: None,
+            })
+        }
+
+        ComputeOp::Invariant { .. } => {
+            // Port 0 = condition (Bool), Port 1 = value being checked (any type). No output.
+            let mut expected = Vec::new();
+            if let Some(t) = find_port_type(input_types, 0) {
+                if t != TypeId::BOOL {
+                    return Err(TypeError::NonBooleanCondition {
+                        node: node_id,
+                        actual: t,
+                        function_id,
+                    });
+                }
+                expected.push((0, TypeId::BOOL));
+            }
+            if let Some(t) = find_port_type(input_types, 1) {
+                expected.push((1, t));
+            }
+            Ok(OpTypeRule {
+                expected_inputs: expected,
+                output_type: None,
+            })
+        }
     }
 }
 

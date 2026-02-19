@@ -241,6 +241,36 @@ pub enum ComputeOp {
     /// the closure's capture list.
     /// Lowers to: `getelementptr` on the environment struct pointer.
     CaptureAccess { index: u32 },
+
+    // -- Contracts (development-time only) --
+    /// Precondition check at function entry.
+    /// Port 0 (input): Bool -- the condition that must be true.
+    /// No output -- check node only. Evaluated by interpreter before function body.
+    /// Skipped by compiler (zero overhead in compiled binaries).
+    Precondition {
+        /// Human-readable contract description for diagnostics.
+        message: String,
+    },
+    /// Postcondition check at function return.
+    /// Port 0 (input): Bool -- the condition that must be true.
+    /// Port 1 (input): The return value being checked.
+    /// No output. Evaluated by interpreter after return value computed.
+    /// Skipped by compiler.
+    Postcondition {
+        /// Human-readable contract description for diagnostics.
+        message: String,
+    },
+    /// Data structure invariant.
+    /// Port 0 (input): Bool -- the invariant condition.
+    /// Port 1 (input): The value being checked.
+    /// No output. Checked at module boundaries during interpretation.
+    /// Violations block compilation (errors, not warnings).
+    Invariant {
+        /// The type this invariant constrains.
+        target_type: TypeId,
+        /// Human-readable invariant description for diagnostics.
+        message: String,
+    },
 }
 
 impl ComputeOp {
@@ -271,6 +301,16 @@ impl ComputeOp {
                 | ComputeOp::FileRead
                 | ComputeOp::FileWrite
                 | ComputeOp::FileClose
+        )
+    }
+
+    /// Returns `true` if this op is a contract node (dev-only, skipped by compiler).
+    pub fn is_contract(&self) -> bool {
+        matches!(
+            self,
+            ComputeOp::Precondition { .. }
+                | ComputeOp::Postcondition { .. }
+                | ComputeOp::Invariant { .. }
         )
     }
 
@@ -384,6 +424,11 @@ impl ComputeNodeOp {
             ComputeNodeOp::Core(op) => op.is_io(),
             ComputeNodeOp::Structured(_) => false,
         }
+    }
+
+    /// Returns `true` if this is a contract node (development-time only).
+    pub fn is_contract(&self) -> bool {
+        matches!(self, ComputeNodeOp::Core(op) if op.is_contract())
     }
 }
 

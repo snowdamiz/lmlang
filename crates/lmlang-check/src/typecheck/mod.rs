@@ -302,7 +302,10 @@ fn check_input_count(
             | ComputeOp::FileWrite
             | ComputeOp::FileClose
             | ComputeOp::MakeClosure { .. }
-            | ComputeOp::CaptureAccess { .. } => None,
+            | ComputeOp::CaptureAccess { .. }
+            | ComputeOp::Precondition { .. }
+            | ComputeOp::Postcondition { .. }
+            | ComputeOp::Invariant { .. } => None,
         },
         lmlang_core::ops::ComputeNodeOp::Structured(struct_op) => match struct_op {
             StructuredOp::StructGet { .. } => Some(1),

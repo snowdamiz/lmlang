@@ -87,8 +87,17 @@ pub fn compile_function<'ctx>(
     let entry_bb = context.append_basic_block(function, "entry");
     builder.position_at_end(entry_bb);
 
-    // 3. Collect and sort function nodes
-    let func_nodes = graph.function_nodes(func_id);
+    // 3. Collect and sort function nodes (filter out contract nodes -- dev-only)
+    let func_nodes: Vec<NodeId> = graph.function_nodes(func_id)
+        .into_iter()
+        .filter(|node_id| {
+            if let Some(node) = graph.get_compute_node(*node_id) {
+                !node.op.is_contract()
+            } else {
+                true
+            }
+        })
+        .collect();
     let sorted_nodes = topological_sort(&func_nodes, graph)?;
 
     // 4. Track SSA values and basic blocks
@@ -795,6 +804,15 @@ fn emit_node<'ctx>(
                     .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
 
                 values.insert(node_id, val);
+            }
+
+            // ----- Contracts (filtered before reaching emit_node) -----
+            ComputeOp::Precondition { .. }
+            | ComputeOp::Postcondition { .. }
+            | ComputeOp::Invariant { .. } => {
+                // Contract nodes are filtered out before topological sort in
+                // compile_function. This arm exists only for exhaustiveness.
+                unreachable!("contract nodes should be filtered before codegen");
             }
         },
 

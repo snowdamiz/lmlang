@@ -161,6 +161,91 @@ pub fn hash_function(graph: &ProgramGraph, func_id: FunctionId) -> blake3::Hash 
     final_hasher.finalize()
 }
 
+/// Computes a function hash EXCLUDING contract nodes.
+///
+/// Used for incremental compilation dirty detection.
+/// Contract changes do NOT mark functions dirty (contracts are dev-only).
+/// Same logic as [`hash_function`] but filters out nodes where `op.is_contract()`.
+pub fn hash_function_for_compilation(graph: &ProgramGraph, func_id: FunctionId) -> blake3::Hash {
+    // Get all non-contract nodes owned by this function, sorted by NodeId
+    let mut func_nodes: Vec<NodeId> = graph.function_nodes(func_id)
+        .into_iter()
+        .filter(|node_id| {
+            if let Some(node) = graph.get_compute_node(*node_id) {
+                !node.op.is_contract()
+            } else {
+                true
+            }
+        })
+        .collect();
+    func_nodes.sort_by_key(|n| n.0);
+
+    let func_node_set: std::collections::HashSet<NodeId> =
+        func_nodes.iter().copied().collect();
+
+    // Pass 1: compute content hashes for all non-contract nodes
+    let mut content_hashes: HashMap<NodeId, blake3::Hash> = HashMap::new();
+    for &node_id in &func_nodes {
+        let node = graph.get_compute_node(node_id).unwrap();
+        content_hashes.insert(node_id, hash_node_content(node));
+    }
+
+    // Pass 2: composite hashes (with edges, excluding edges to/from contract nodes)
+    let mut composite_hashes: HashMap<NodeId, blake3::Hash> = HashMap::new();
+    for &node_id in &func_nodes {
+        let node = graph.get_compute_node(node_id).unwrap();
+        let node_idx: NodeIndex<u32> = node_id.into();
+
+        let mut outgoing: Vec<(NodeId, FlowEdge, blake3::Hash)> = Vec::new();
+        for edge_ref in graph.compute().edges_directed(node_idx, Direction::Outgoing) {
+            let target_id = NodeId::from(edge_ref.target());
+
+            // Skip edges to contract nodes
+            if let Some(target_node) = graph.get_compute_node(target_id) {
+                if target_node.op.is_contract() {
+                    continue;
+                }
+            }
+
+            let edge = edge_ref.weight().clone();
+
+            let target_hash = if func_node_set.contains(&target_id) {
+                content_hashes[&target_id]
+            } else {
+                let target_node = graph.get_compute_node(target_id).unwrap();
+                hash_node_content(target_node)
+            };
+
+            outgoing.push((target_id, edge, target_hash));
+        }
+
+        let composite = hash_node_with_edges(node, &outgoing);
+        composite_hashes.insert(node_id, composite);
+    }
+
+    let mut final_hasher = blake3::Hasher::new();
+    for &node_id in &func_nodes {
+        final_hasher.update(&node_id.0.to_le_bytes());
+        final_hasher.update(composite_hashes[&node_id].as_bytes());
+    }
+    final_hasher.finalize()
+}
+
+/// Computes compilation hashes for all functions, excluding contract nodes.
+///
+/// Returns a map from FunctionId to the function's compilation hash.
+/// Contract changes do not affect these hashes.
+pub fn hash_all_functions_for_compilation(graph: &ProgramGraph) -> HashMap<FunctionId, blake3::Hash> {
+    let mut func_ids: Vec<FunctionId> = graph.functions().keys().copied().collect();
+    func_ids.sort_by_key(|f| f.0);
+
+    let mut result = HashMap::new();
+    for func_id in func_ids {
+        result.insert(func_id, hash_function_for_compilation(graph, func_id));
+    }
+    result
+}
+
 /// Computes root hashes for all functions in a program graph.
 ///
 /// Returns a map from FunctionId to the function's root hash.
