@@ -5,6 +5,7 @@
 
 pub mod agent_control;
 pub mod agents;
+pub mod autonomy_plan;
 pub mod common;
 pub mod compile;
 pub mod contracts;
