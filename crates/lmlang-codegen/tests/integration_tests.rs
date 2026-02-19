@@ -857,3 +857,188 @@ fn test_multiple_prints_sequential() {
     assert_eq!(lines[1].trim(), "2");
     assert_eq!(lines[2].trim(), "3");
 }
+
+// ===========================================================================
+// Phase 6: Contract system integration tests
+// ===========================================================================
+
+/// Tests that a function with contract nodes compiles successfully.
+/// Contract nodes should be filtered out during compilation (zero overhead).
+/// The compiled binary should produce the same result as without contracts.
+#[test]
+fn test_contract_nodes_stripped_during_compilation() {
+    // Build: f(x) = x + 1 with precondition x >= 0
+    let mut graph = ProgramGraph::new("contract_test");
+    let root = graph.modules.root_id();
+
+    let func_id = graph
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::I32,
+            Visibility::Public,
+        )
+        .unwrap();
+
+    // Const 5
+    let c5 = graph
+        .add_core_op(
+            ComputeOp::Const { value: ConstValue::I32(5) },
+            func_id,
+        )
+        .unwrap();
+
+    // Const 1
+    let c1 = graph
+        .add_core_op(
+            ComputeOp::Const { value: ConstValue::I32(1) },
+            func_id,
+        )
+        .unwrap();
+
+    // Add: 5 + 1 = 6
+    let add = graph
+        .add_core_op(
+            ComputeOp::BinaryArith { op: ArithOp::Add },
+            func_id,
+        )
+        .unwrap();
+    graph.add_data_edge(c5, add, 0, 0, TypeId::I32).unwrap();
+    graph.add_data_edge(c1, add, 0, 1, TypeId::I32).unwrap();
+
+    // Return add result
+    let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+    graph.add_data_edge(add, ret, 0, 0, TypeId::I32).unwrap();
+
+    // Now add contract nodes that reference existing nodes
+    // Precondition: 5 > 0 (always true)
+    let const_zero = graph
+        .add_core_op(
+            ComputeOp::Const { value: ConstValue::I32(0) },
+            func_id,
+        )
+        .unwrap();
+
+    let cmp = graph
+        .add_core_op(
+            ComputeOp::Compare { op: CmpOp::Gt },
+            func_id,
+        )
+        .unwrap();
+    graph.add_data_edge(c5, cmp, 0, 0, TypeId::I32).unwrap();
+    graph.add_data_edge(const_zero, cmp, 0, 1, TypeId::I32).unwrap();
+
+    let precond = graph
+        .add_core_op(
+            ComputeOp::Precondition {
+                message: "input must be positive".into(),
+            },
+            func_id,
+        )
+        .unwrap();
+    graph.add_data_edge(cmp, precond, 0, 0, TypeId::BOOL).unwrap();
+
+    // Postcondition: result > 0 (always true since 6 > 0)
+    let post_cmp = graph
+        .add_core_op(
+            ComputeOp::Compare { op: CmpOp::Gt },
+            func_id,
+        )
+        .unwrap();
+    graph.add_data_edge(add, post_cmp, 0, 0, TypeId::I32).unwrap();
+    graph.add_data_edge(const_zero, post_cmp, 0, 1, TypeId::I32).unwrap();
+
+    let postcond = graph
+        .add_core_op(
+            ComputeOp::Postcondition {
+                message: "result must be positive".into(),
+            },
+            func_id,
+        )
+        .unwrap();
+    graph.add_data_edge(post_cmp, postcond, 0, 0, TypeId::BOOL).unwrap();
+    graph.add_data_edge(add, postcond, 0, 1, TypeId::I32).unwrap();
+
+    // Type check should pass
+    let errors = lmlang_check::typecheck::validate_graph(&graph);
+    assert!(
+        errors.is_empty(),
+        "Type check should pass with contract nodes: {:?}",
+        errors
+    );
+
+    // Compile and run: should produce exit code 6
+    let (_stdout, _stderr, exit_code) = compile_and_run(&graph, OptLevel::O0);
+    assert_eq!(exit_code, 6, "Contract nodes should be stripped; 5 + 1 = 6");
+}
+
+/// Tests that contract nodes do not affect the LLVM IR output.
+/// The IR should not contain any references to contract-related operations.
+#[test]
+fn test_compile_to_ir_excludes_contracts() {
+    let mut graph = ProgramGraph::new("ir_test");
+    let root = graph.modules.root_id();
+
+    let func_id = graph
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::I32,
+            Visibility::Public,
+        )
+        .unwrap();
+
+    let c42 = graph
+        .add_core_op(
+            ComputeOp::Const { value: ConstValue::I32(42) },
+            func_id,
+        )
+        .unwrap();
+
+    let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+    graph.add_data_edge(c42, ret, 0, 0, TypeId::I32).unwrap();
+
+    // Add a precondition
+    let const_true = graph
+        .add_core_op(
+            ComputeOp::Const { value: ConstValue::Bool(true) },
+            func_id,
+        )
+        .unwrap();
+    let precond = graph
+        .add_core_op(
+            ComputeOp::Precondition {
+                message: "always true".into(),
+            },
+            func_id,
+        )
+        .unwrap();
+    graph.add_data_edge(const_true, precond, 0, 0, TypeId::BOOL).unwrap();
+
+    let ir = compile_to_ir(
+        &graph,
+        &CompileOptions {
+            opt_level: OptLevel::O0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    // IR should contain main function
+    assert!(ir.contains("define"), "IR should contain function definitions");
+    // IR should NOT contain any contract-related strings
+    assert!(
+        !ir.contains("precondition"),
+        "IR should not contain contract-related strings"
+    );
+    assert!(
+        !ir.contains("postcondition"),
+        "IR should not contain contract-related strings"
+    );
+    assert!(
+        !ir.contains("invariant"),
+        "IR should not contain contract-related strings"
+    );
+}

@@ -633,6 +633,62 @@ mod tests {
     }
 
     #[test]
+    fn serde_roundtrip_precondition() {
+        let op = ComputeOp::Precondition {
+            message: "x must be positive".into(),
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        let back: ComputeOp = serde_json::from_str(&json).unwrap();
+        let json2 = serde_json::to_string(&back).unwrap();
+        assert_eq!(json, json2);
+    }
+
+    #[test]
+    fn serde_roundtrip_postcondition() {
+        let op = ComputeOp::Postcondition {
+            message: "result >= 0".into(),
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        let back: ComputeOp = serde_json::from_str(&json).unwrap();
+        let json2 = serde_json::to_string(&back).unwrap();
+        assert_eq!(json, json2);
+    }
+
+    #[test]
+    fn serde_roundtrip_invariant() {
+        let op = ComputeOp::Invariant {
+            target_type: TypeId(42),
+            message: "all fields non-negative".into(),
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        let back: ComputeOp = serde_json::from_str(&json).unwrap();
+        let json2 = serde_json::to_string(&back).unwrap();
+        assert_eq!(json, json2);
+    }
+
+    #[test]
+    fn is_contract_correct() {
+        assert!(ComputeOp::Precondition { message: "test".into() }.is_contract());
+        assert!(ComputeOp::Postcondition { message: "test".into() }.is_contract());
+        assert!(ComputeOp::Invariant { target_type: TypeId(0), message: "test".into() }.is_contract());
+        assert!(!ComputeOp::Const { value: ConstValue::I32(0) }.is_contract());
+        assert!(!ComputeOp::Return.is_contract());
+        assert!(!ComputeOp::Call { target: FunctionId(0) }.is_contract());
+    }
+
+    #[test]
+    fn compute_node_op_is_contract() {
+        let precond = ComputeNodeOp::Core(ComputeOp::Precondition { message: "test".into() });
+        assert!(precond.is_contract());
+
+        let add = ComputeNodeOp::Core(ComputeOp::BinaryArith { op: ArithOp::Add });
+        assert!(!add.is_contract());
+
+        let struct_get = ComputeNodeOp::Structured(StructuredOp::ArrayGet);
+        assert!(!struct_get.is_contract());
+    }
+
+    #[test]
     fn compute_node_op_tier() {
         assert_eq!(
             ComputeNodeOp::Core(ComputeOp::Alloc).tier(),
