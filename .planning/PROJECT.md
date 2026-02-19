@@ -8,19 +8,22 @@ An AI-native programming system where programs are persistent dual-layer graphs 
 
 AI agents can build, modify, verify, and execute programs from natural-language goals with full graph-level awareness.
 
-## Current Milestone: v1.2 Autonomous Program Synthesis
+## Milestone Status
 
-**Goal:** Enable autonomous end-to-end program construction from open-ended user prompts (for example, "create a simple calculator") instead of the current hello-world command path.
+**Latest shipped milestone:** v1.2 Autonomous Program Synthesis (2026-02-19)
 
-**Target features:**
+**Delivered capability:**
 - Structured planner contract for turning natural-language goals into executable graph-edit plans
 - Generic executor loop that can apply arbitrary mutation batches, verify, and retry
 - Compile/run feedback integration for self-repair
-- Acceptance benchmarks proving non-trivial autonomous program creation attempts
+- Acceptance benchmarks proving non-trivial autonomous program creation attempts with operator timeline visibility
 
-**Milestone pivot rationale (2026-02-19):**
-- v1.1 dashboard work shipped Phase 10 successfully, but current agent behavior is constrained to a fixed hello-world command set.
-- Product priority is now aligned to the core language promise: autonomous program creation.
+**Archive references:**
+- `.planning/milestones/v1.2-ROADMAP.md`
+- `.planning/milestones/v1.2-REQUIREMENTS.md`
+- `.planning/milestones/v1.2-phases/`
+
+**Next focus:** Define the next milestone requirements and roadmap.
 
 ## Requirements
 
@@ -29,12 +32,12 @@ AI agents can build, modify, verify, and execute programs from natural-language 
 - v1.0 baseline platform completed and archived in `.planning/archive/milestones/v1.0-milestone/`
 - Core tool API exists for agent/program/lock/mutation/verification operations
 - v1.1 Phase 10 dashboard shell shipped and documented
+- v1.2 autonomous planner/executor/repair milestone shipped and archived in `.planning/milestones/`
 
 ### Active
 
-- v1.2 autonomy requirements in `.planning/REQUIREMENTS.md`
-- v1.2 phase roadmap in `.planning/ROADMAP.md`
-- Phase 14 planning target: planner contract and action protocol
+- Next milestone requirements (to be defined)
+- Next milestone roadmap (to be defined)
 
 ### Deferred
 
@@ -42,8 +45,8 @@ AI agents can build, modify, verify, and execute programs from natural-language 
 
 ### Out of Scope
 
-- Fully unsupervised long-running goals with no operator control in v1.2
-- Multi-tenant auth/RBAC and cloud-distributed orchestration in v1.2
+- Fully unsupervised long-running goals with no operator control until explicitly prioritized
+- Multi-tenant auth/RBAC and cloud-distributed orchestration until explicitly prioritized
 - Arbitrary host shell/code execution directly from model output
 
 ## Constraints
@@ -62,6 +65,7 @@ AI agents can build, modify, verify, and execute programs from natural-language 
 | Introduce a strict planner output schema | Prevent brittle free-form text parsing and enable deterministic execution routing | Accepted |
 | Continue phase numbering from 14 | Preserve roadmap continuity across milestones | Accepted |
 | Include calculator benchmark as hard acceptance criteria | Directly validate the user-facing capability gap that triggered this milestone | Accepted |
+| Archive v1.2 planning artifacts as milestone history | Keep active planning context lightweight while preserving full execution evidence | Accepted |
 
 ---
-*Last updated: 2026-02-19 after milestone pivot to v1.2*
+*Last updated: 2026-02-19 after v1.2 milestone completion*

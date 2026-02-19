@@ -5,14 +5,14 @@
 See: `.planning/PROJECT.md` (updated 2026-02-19)
 
 **Core value:** AI agents can build, modify, verify, and execute programs from natural-language goals with full graph-level awareness
-**Current focus:** v1.2 autonomous program synthesis acceptance/visibility delivery completed; preparing milestone closeout
+**Current focus:** v1.2 milestone shipped and archived; preparing next milestone definition
 
 ## Current Position
 
-Phase: 17 - Acceptance Benchmarks and Attempt Visibility
-Plan: 03/03 complete
-Status: Phase 17 execution complete with verification passed (AUT-09, AUT-10, AUT-11)
-Last activity: 2026-02-19 - Executed plans 17-01 through 17-03, verified benchmarks/timeline contract, and produced phase summaries
+Phase: Milestone Closeout
+Plan: Complete
+Status: v1.2 milestone shipped and archived (roadmap, requirements, and phase execution history)
+Last activity: 2026-02-19 - Completed v1.2 milestone closeout and archived planning artifacts under `.planning/milestones/`
 
 Progress: [##########] 100%
 
@@ -62,7 +62,7 @@ Progress: [##########] 100%
 
 ### Pending Todos
 
-- Milestone closeout: run full milestone audit/transition workflow and archive v1.2 planning artifacts
+- None.
 
 ### Blockers/Concerns
 
@@ -77,5 +77,5 @@ Progress: [##########] 100%
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed phase 17 execution and verification artifacts (`17-01`/`17-02`/`17-03` + `17-VERIFICATION.md`)
-Resume file: None
+Stopped at: Completed milestone closeout for v1.2 and archived planning artifacts (`v1.2-ROADMAP`, `v1.2-REQUIREMENTS`, `v1.2-phases`)
+Resume file: Start next milestone planning workflow

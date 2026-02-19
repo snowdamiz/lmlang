@@ -7,6 +7,16 @@
 - Outcome: Baseline platform implemented across 9 phases
 - Archive: `.planning/archive/milestones/v1.0-milestone/`
 
+### v1.2 Autonomous Program Synthesis
+- Duration: 2026-02-19 to 2026-02-19
+- Status: Shipped 2026-02-19
+- Scope: 5 phases (10, 14-17), 16 plans
+- Outcome: Autonomous natural-language program synthesis pipeline delivered with planner contract, generic executor, diagnostics-driven repair loop, and benchmark timeline visibility.
+- Archives:
+  - `.planning/milestones/v1.2-ROADMAP.md`
+  - `.planning/milestones/v1.2-REQUIREMENTS.md`
+  - `.planning/milestones/v1.2-phases/`
+
 ## Deferred
 
 ### v1.1 Agent Control Dashboard
@@ -17,7 +27,4 @@
 
 ## Current
 
-### v1.2 Autonomous Program Synthesis
-- Started: 2026-02-19
-- Status: Requirements scoped, roadmap drafted
-- Goal: Let agents autonomously attempt real program creation from natural-language goals using structured planning and execution loops
+- No active milestone; next milestone planning is pending.
