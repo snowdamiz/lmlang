@@ -4,6 +4,7 @@
 //! API domain. Types use serde derives for JSON serialization/deserialization.
 
 pub mod common;
+pub mod compile;
 pub mod diagnostics;
 pub mod history;
 pub mod mutations;

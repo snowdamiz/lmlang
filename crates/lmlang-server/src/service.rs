@@ -1069,6 +1069,51 @@ impl ProgramService {
     }
 
     // -----------------------------------------------------------------------
+    // Compile method (EXEC-03/04)
+    // -----------------------------------------------------------------------
+
+    /// Compiles the current program graph to a native executable.
+    ///
+    /// Parses the opt_level string from the HTTP request, builds CompileOptions,
+    /// and delegates to `lmlang_codegen::compile()`. TypeCheckFailed maps to 422,
+    /// other errors to 500.
+    pub fn compile(
+        &self,
+        request: &crate::schema::compile::CompileRequest,
+    ) -> Result<crate::schema::compile::CompileResponse, ApiError> {
+        let opt_level = parse_opt_level(&request.opt_level)?;
+
+        let options = lmlang_codegen::CompileOptions {
+            output_dir: request
+                .output_dir
+                .as_ref()
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::path::PathBuf::from("./build")),
+            opt_level,
+            target_triple: request.target_triple.clone(),
+            debug_symbols: request.debug_symbols,
+            entry_function: request.entry_function.clone(),
+        };
+
+        let result = lmlang_codegen::compile(&self.graph, &options)
+            .map_err(|e| match e {
+                lmlang_codegen::error::CodegenError::TypeCheckFailed(errors) => {
+                    let diags: Vec<crate::schema::diagnostics::DiagnosticError> =
+                        errors.into_iter().map(crate::schema::diagnostics::DiagnosticError::from).collect();
+                    ApiError::ValidationFailed(diags)
+                }
+                other => ApiError::InternalError(other.to_string()),
+            })?;
+
+        Ok(crate::schema::compile::CompileResponse {
+            binary_path: result.binary_path.to_string_lossy().to_string(),
+            target_triple: result.target_triple,
+            binary_size: result.binary_size,
+            compilation_time_ms: result.compilation_time_ms,
+        })
+    }
+
+    // -----------------------------------------------------------------------
     // Undo methods (STORE-03)
     // -----------------------------------------------------------------------
 
@@ -1262,6 +1307,20 @@ fn json_to_value(json: &serde_json::Value, type_hint: Option<TypeId>) -> Value {
             Value::Array(values)
         }
         serde_json::Value::Object(_) => Value::Unit, // Objects not directly supported
+    }
+}
+
+/// Parse an optimization level string to `lmlang_codegen::OptLevel`.
+fn parse_opt_level(s: &str) -> Result<lmlang_codegen::OptLevel, ApiError> {
+    match s {
+        "O0" | "o0" => Ok(lmlang_codegen::OptLevel::O0),
+        "O1" | "o1" => Ok(lmlang_codegen::OptLevel::O1),
+        "O2" | "o2" => Ok(lmlang_codegen::OptLevel::O2),
+        "O3" | "o3" => Ok(lmlang_codegen::OptLevel::O3),
+        _ => Err(ApiError::BadRequest(format!(
+            "invalid optimization level '{}', expected O0/O1/O2/O3",
+            s
+        ))),
     }
 }
 

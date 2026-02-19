@@ -68,6 +68,11 @@ pub fn build_router(state: AppState) -> Router {
             "/programs/{id}/simulate",
             post(handlers::simulate::simulate),
         )
+        // Compile (EXEC-03/04)
+        .route(
+            "/programs/{id}/compile",
+            post(handlers::compile::compile_program),
+        )
         // History (STORE-03)
         .route(
             "/programs/{id}/history",
