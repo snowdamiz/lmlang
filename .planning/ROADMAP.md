@@ -117,12 +117,12 @@ Plans:
   3. Data structures can have invariant contracts checked at module boundaries
   4. Property-based tests are auto-generated from contracts and verify graph behavior across randomized input ranges
   5. After editing a single function in a multi-function program, only that function and its dependents recompile (not the entire program)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 06-01: TBD
-- [ ] 06-02: TBD
-- [ ] 06-03: TBD
+- [ ] 06-01-PLAN.md — Contract node types (Precondition/Postcondition/Invariant), interpreter contract checking, codegen filtering, contract-aware hashing
+- [ ] 06-02-PLAN.md — Property-based testing harness with random input generation and API endpoint
+- [ ] 06-03-PLAN.md — Incremental compilation with dirty tracking, per-function object caching, and dirty query API
 
 ### Phase 7: Multi-Agent Concurrency
 **Goal**: Multiple AI agents can simultaneously read and edit the program graph with consistency guarantees preventing corruption
