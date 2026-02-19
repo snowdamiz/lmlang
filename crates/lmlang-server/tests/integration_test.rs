@@ -2649,3 +2649,228 @@ async fn phase14_explicit_command_prompt_keeps_deterministic_hello_world_path() 
         chat
     );
 }
+
+// ===========================================================================
+// PHASE 15: Generic graph build executor
+// ===========================================================================
+
+async fn register_mock_planner_agent(app: &Router, base_url: &str, name: &str) -> String {
+    let (status, register) = post_json(
+        app,
+        "/agents/register",
+        json!({
+            "name": name,
+            "provider": "openai_compatible",
+            "model": "planner-test",
+            "api_base_url": base_url,
+            "api_key": "test-key"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "register failed: {:?}", register);
+    register["agent_id"].as_str().unwrap().to_string()
+}
+
+async fn assign_agent_to_program(app: &Router, program_id: i64, agent_id: &str) {
+    let (status, assign) = post_json(
+        app,
+        &format!("/programs/{}/agents/{}/assign", program_id, agent_id),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "assign failed: {:?}", assign);
+}
+
+async fn wait_for_run_status(app: &Router, program_id: i64, agent_id: &str, status: &str) -> serde_json::Value {
+    for _ in 0..40 {
+        let (_, detail) = get_json(app, &format!("/programs/{}/agents/{}", program_id, agent_id)).await;
+        if detail["session"]["run_status"] == json!(status) {
+            return detail;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    panic!("timed out waiting for run_status={}", status);
+}
+
+#[tokio::test]
+async fn phase15_autonomous_runner_executes_planner_actions_and_records_completed_stop_reason() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "build calculator foundation",
+        "actions": [
+            {
+                "type": "mutate_batch",
+                "request": {
+                    "mutations": [
+                        {
+                            "type": "AddFunction",
+                            "name": "calc_add",
+                            "module": 0,
+                            "params": [["lhs", 3], ["rhs", 3]],
+                            "return_type": 3,
+                            "visibility": "Public"
+                        }
+                    ],
+                    "dry_run": false
+                }
+            },
+            {
+                "type": "verify",
+                "request": { "scope": "Full" }
+            }
+        ]
+    }"#;
+    let (base_url, requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id = register_mock_planner_agent(&app, &base_url, "phase15-success-agent").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "build calculator foundation from planner actions" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+
+    let detail = wait_for_run_status(&app, pid, &agent_id, "idle").await;
+    assert_eq!(detail["session"]["stop_reason"]["code"], json!("completed"));
+    assert_eq!(detail["session"]["execution"]["attempt"], json!(1));
+    assert_eq!(detail["session"]["execution"]["max_attempts"], json!(3));
+    assert!(
+        detail["session"]["execution"]["action_count"]
+            .as_u64()
+            .unwrap_or_default()
+            >= 2
+    );
+    let actions = detail["session"]["execution"]["actions"].as_array().unwrap();
+    assert!(
+        actions.iter().any(|row| row["kind"] == json!("mutate_batch")),
+        "expected mutate_batch execution row: {:?}",
+        detail["session"]["execution"]
+    );
+    assert!(
+        actions
+            .iter()
+            .any(|row| row["kind"] == json!("verify") || row["kind"] == json!("verify_gate")),
+        "expected verify execution row: {:?}",
+        detail["session"]["execution"]
+    );
+
+    let (status, chat) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/chat", pid, agent_id),
+        json!({ "message": "create hello world program" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "chat failed: {:?}", chat);
+    assert_eq!(chat["execution"]["stop_reason"]["code"], json!("completed"));
+
+    let requests_guard = requests.lock().unwrap();
+    assert!(!requests_guard.is_empty(), "mock planner received no requests");
+    drop(requests_guard);
+    server.abort();
+}
+
+#[tokio::test]
+async fn phase15_autonomous_runner_retries_retryable_action_failures_until_budget_exhaustion() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "restore missing checkpoint repeatedly",
+        "actions": [
+            {
+                "type": "history",
+                "request": {
+                    "operation": "restore_checkpoint",
+                    "checkpoint": "missing-phase15-checkpoint"
+                }
+            }
+        ]
+    }"#;
+    let (base_url, requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id = register_mock_planner_agent(&app, &base_url, "phase15-retry-agent").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "restore missing checkpoint repeatedly" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+
+    let detail = wait_for_run_status(&app, pid, &agent_id, "stopped").await;
+    assert_eq!(
+        detail["session"]["stop_reason"]["code"],
+        json!("retry_budget_exhausted")
+    );
+    assert_eq!(detail["session"]["execution"]["attempt"], json!(3));
+    assert_eq!(detail["session"]["execution"]["max_attempts"], json!(3));
+    assert_eq!(
+        detail["session"]["execution"]["stop_reason"]["code"],
+        json!("retry_budget_exhausted")
+    );
+
+    let requests_guard = requests.lock().unwrap();
+    assert!(
+        requests_guard.len() >= 3,
+        "expected planner to be invoked for retry attempts"
+    );
+    drop(requests_guard);
+    server.abort();
+}
+
+#[tokio::test]
+async fn phase15_dashboard_chat_surfaces_execution_metadata_after_autonomous_stop() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "unsupported build request",
+        "actions": [],
+        "failure": {
+            "code": "unsupported_goal",
+            "message": "This test planner marks the goal unsupported.",
+            "retryable": false
+        }
+    }"#;
+    let (base_url, _requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id = register_mock_planner_agent(&app, &base_url, "phase15-dashboard-agent").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "unsupported planner goal" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+    let _ = wait_for_run_status(&app, pid, &agent_id, "stopped").await;
+
+    let (status, chat) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "build unsupported planner goal",
+            "selected_program_id": pid,
+            "selected_agent_id": agent_id,
+            "selected_project_agent_id": agent_id
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "dashboard chat failed: {:?}", chat);
+    assert_eq!(
+        chat["execution"]["stop_reason"]["code"],
+        json!("planner_rejected_non_retryable")
+    );
+    assert_eq!(chat["execution"]["max_attempts"], json!(3));
+    assert_eq!(chat["planner"]["status"], json!("failed"));
+
+    server.abort();
+}
