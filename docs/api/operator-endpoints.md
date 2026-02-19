@@ -304,10 +304,91 @@ Failure response shape (invalid planner JSON):
 }
 ```
 
+## Autonomous execution metadata (`AUT-06`)
+
+When autonomous runs complete or stop, agent and dashboard responses include machine-readable execution metadata:
+
+- `session.stop_reason`: terminal code/message for the last run
+- `session.execution`: compact summary of the latest attempt (`attempt`, `max_attempts`, action rows)
+- `chat.execution` and `dashboard/ai/chat.execution`: same compact attempt summary on chat surfaces
+
+Representative shape:
+
+```json
+{
+  "session": {
+    "run_status": "stopped",
+    "stop_reason": {
+      "code": "retry_budget_exhausted",
+      "message": "retry budget exhausted after action failure: ..."
+    },
+    "execution": {
+      "attempt": 3,
+      "max_attempts": 3,
+      "planner_status": "accepted",
+      "action_count": 2,
+      "succeeded_actions": 1,
+      "actions": [
+        {
+          "action_index": 0,
+          "kind": "simulate",
+          "status": "failed",
+          "summary": "simulate action failed",
+          "error_code": "not_found"
+        },
+        {
+          "action_index": 1,
+          "kind": "verify_gate",
+          "status": "failed",
+          "summary": "post-execution verify failed with 1 diagnostic(s)",
+          "error_code": "validation_failed"
+        }
+      ],
+      "stop_reason": {
+        "code": "retry_budget_exhausted",
+        "message": "retry budget exhausted after verify gate failure (attempt 3/3)"
+      }
+    }
+  }
+}
+```
+
+### Bounded loop model (`AUT-05`)
+
+Autonomous runtime follows:
+
+`plan -> apply actions -> verify gate -> replan (if retryable and budget remains)`
+
+Retry budget defaults to `3` attempts and can be configured with:
+
+- `LMLANG_AUTONOMY_MAX_ATTEMPTS`
+
+### Stop reason taxonomy
+
+Terminal `stop_reason.code` values:
+
+- `completed`
+- `planner_rejected_non_retryable`
+- `planner_rejected_retry_budget_exhausted`
+- `action_failed_retryable`
+- `action_failed_non_retryable`
+- `verify_failed`
+- `retry_budget_exhausted`
+- `operator_stopped`
+- `runner_internal_error`
+
+### Troubleshooting quick map
+
+- `planner_rejected_non_retryable`: prompt/goal unsupported by planner contract; revise goal scope
+- `planner_rejected_retry_budget_exhausted`: planner stayed retryable but never produced executable actions
+- `action_failed_non_retryable`: action payload invalid or structurally impossible without plan change
+- `retry_budget_exhausted`: repeated retryable planner/action/verify failures consumed budget
+- `runner_internal_error`: server-side execution/setup issue (inspect logs + details payload)
+
 Autonomous run behavior:
 - Starting a build run (`POST /programs/{id}/agents/{agent_id}/start`) spawns a background loop.
 - The loop can execute known build commands (`create hello world program`, `compile program`, `run program`) without waiting for a chat turn.
-- For non-hello-world goals, the loop now evaluates planner outcomes and records structured acceptance/failure notes.
+- For non-hello-world goals, the loop executes validated planner actions via the generic executor and records typed per-attempt evidence.
 
 ## Observe integration
 
