@@ -135,10 +135,7 @@ mod tests {
             LmType::Struct(StructDef {
                 name: "Point".into(),
                 type_id: TypeId(100),
-                fields: IndexMap::from([
-                    ("x".into(), TypeId(5)),
-                    ("y".into(), TypeId(5)),
-                ]),
+                fields: IndexMap::from([("x".into(), TypeId(5)), ("y".into(), TypeId(5))]),
                 module,
                 visibility: Visibility::Public,
             }),
@@ -197,10 +194,7 @@ mod tests {
         let ty = LmType::Struct(StructDef {
             name: "Pair".into(),
             type_id: TypeId(50),
-            fields: IndexMap::from([
-                ("first".into(), TypeId(1)),
-                ("second".into(), TypeId(2)),
-            ]),
+            fields: IndexMap::from([("first".into(), TypeId(1)), ("second".into(), TypeId(2))]),
             module: ModuleId(0),
             visibility: Visibility::Private,
         });

@@ -1,52 +1,94 @@
 # Operator Endpoint Reference
 
-This document maps the Phase 10 `Operate` dashboard actions to existing HTTP endpoints.
+This document maps the unified `/dashboard` workflow to HTTP endpoints.
 
 ## Scope
 
-Phase 10 is endpoint-first and reuses existing APIs.
-No new backend endpoints were introduced for:
-- run lifecycle controls
-- timeline event streaming
+This reference focuses on dashboard control-loop endpoints for:
+- chat-first orchestration,
+- project creation and selection,
+- provider/model/API credential configuration,
+- project-agent assignment,
+- start/stop build runs,
+- agent chat,
+- observe/query flow.
 
-Those are deferred to later phases.
+## Base URL
 
-## Base assumptions
+- `http://localhost:3000`
 
-- Server default base URL: `http://localhost:3000`
-- Dashboard route: `/programs/{id}/dashboard`
-- Most program-scoped endpoints require `{id}` to match active program loaded via `/programs/{id}/load`
+## Dashboard entrypoints
 
-## Header behavior
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/dashboard` | Top-level dashboard shell |
+| POST | `/dashboard/ai/chat` | Chat-first orchestration endpoint |
+| GET | `/dashboard/app.js` | Dashboard client script |
+| GET | `/dashboard/styles.css` | Dashboard CSS |
+| GET | `/programs/{id}/dashboard` | Dashboard shell with initial selected project |
 
-Some operations use selected agent identity:
+## Project management
 
-- Header: `X-Agent-Id: <uuid>`
-- Required for:
-  - `POST /programs/{id}/locks/acquire`
-  - `POST /programs/{id}/locks/release`
-- Optional for:
-  - `POST /programs/{id}/mutations`
+Most operators should use:
 
-If header is missing where required, server returns an error and dashboard status becomes `blocked`.
+`POST /dashboard/ai/chat`
 
-## Endpoint matrix
+Request:
 
-| Area | Method | Path | Operate action |
-|------|--------|------|----------------|
-| Agents | POST | `/agents/register` | Register agent |
-| Agents | GET | `/agents` | Refresh/list agents |
-| Agents | DELETE | `/agents/{agent_id}` | Deregister selected agent |
-| Locks | POST | `/programs/{id}/locks/acquire` | Acquire locks |
-| Locks | POST | `/programs/{id}/locks/release` | Release locks |
-| Locks | GET | `/programs/{id}/locks` | List lock status |
-| Mutations | POST | `/programs/{id}/mutations` | Dry-run or commit mutation batch |
-| Verify | POST | `/programs/{id}/verify` | Verify local/full scope |
-| Simulate | POST | `/programs/{id}/simulate` | Interpret function with inputs |
-| Compile | POST | `/programs/{id}/compile` | Compile active program |
-| History | GET | `/programs/{id}/history` | Fetch edit history |
+```json
+{
+  "message": "create project hello-world",
+  "selected_program_id": null,
+  "selected_agent_id": null,
+  "selected_project_agent_id": null
+}
+```
 
-## Agents
+Response:
+
+```json
+{
+  "success": true,
+  "reply": "...",
+  "selected_program_id": 1,
+  "selected_agent_id": "uuid",
+  "selected_project_agent_id": "uuid",
+  "actions": ["..."],
+  "transcript": []
+}
+```
+
+Supported orchestration prompts include:
+- `create project <name>`
+- `register agent <name> provider openrouter model <model> api key <key>`
+- `assign agent`
+- `start build <goal>`
+- `stop build`
+- `create hello world program`
+- `compile program`
+- `run program`
+
+## List projects
+
+`GET /programs`
+
+## Create project
+
+`POST /programs`
+
+Request:
+
+```json
+{
+  "name": "demo"
+}
+```
+
+## Load selected project
+
+`POST /programs/{id}/load`
+
+## Agent registration and provider config
 
 ## Register agent
 
@@ -56,299 +98,144 @@ Request:
 
 ```json
 {
-  "name": "dashboard-operator"
+  "name": "builder-01",
+  "provider": "openrouter",
+  "model": "openai/gpt-4o-mini",
+  "api_base_url": "https://openrouter.ai/api/v1",
+  "api_key": "sk-or-...",
+  "system_prompt": "You are a focused build assistant."
 }
 ```
 
-Response:
-
-```json
-{
-  "agent_id": "uuid",
-  "name": "dashboard-operator",
-  "registered_at": "unix-seconds-string"
-}
-```
+Supported provider values:
+- `openrouter`
+- `openai_compatible`
 
 ## List agents
 
 `GET /agents`
 
-Response:
+## Get one agent
 
-```json
-{
-  "agents": [
-    {
-      "agent_id": "uuid",
-      "name": "dashboard-operator"
-    }
-  ]
-}
-```
+`GET /agents/{agent_id}`
 
-## Deregister agent
+## Update agent provider config
 
-`DELETE /agents/{agent_id}`
-
-Response:
-
-```json
-{
-  "success": true,
-  "released_locks": [1, 2]
-}
-```
-
-## Locks
-
-## Acquire locks
-
-`POST /programs/{id}/locks/acquire`
-
-Headers:
-
-```text
-X-Agent-Id: <uuid>
-```
+`POST /agents/{agent_id}/config`
 
 Request:
 
 ```json
 {
-  "function_ids": [1, 2],
-  "mode": "write",
-  "description": "prepare mutation"
+  "provider": "openai_compatible",
+  "model": "gpt-4.1-mini",
+  "api_base_url": "https://api.openai.com/v1",
+  "api_key": "sk-...",
+  "system_prompt": "Be concise."
 }
 ```
 
-Response:
+Notes:
+- API keys are persisted in SQLite (`agent_configs`) and survive server restarts.
+- API key is never returned in responses.
+- For `openrouter`, if `api_base_url` is empty, server defaults to `https://openrouter.ai/api/v1`.
 
-```json
-{
-  "grants": [
-    {
-      "function_id": 1,
-      "mode": "write",
-      "expires_at": "timestamp"
-    }
-  ]
-}
-```
+## Project-agent assignment and control
 
-## Release locks
+## List assigned agents for project
 
-`POST /programs/{id}/locks/release`
+`GET /programs/{id}/agents`
 
-Headers:
+## Assign agent to project
 
-```text
-X-Agent-Id: <uuid>
-```
+`POST /programs/{id}/agents/{agent_id}/assign`
+
+## Get assigned agent detail and transcript
+
+`GET /programs/{id}/agents/{agent_id}`
+
+## Start build run
+
+`POST /programs/{id}/agents/{agent_id}/start`
 
 Request:
 
 ```json
 {
-  "function_ids": [1, 2]
+  "goal": "build parser"
 }
 ```
 
-Response:
+## Stop build run
 
-```json
-{
-  "released": [1, 2]
-}
-```
-
-## Lock status
-
-`GET /programs/{id}/locks`
-
-Response:
-
-```json
-{
-  "locks": [
-    {
-      "function_id": 1,
-      "state": "write",
-      "holders": ["uuid"],
-      "holder_description": "prepare mutation",
-      "expires_at": "timestamp"
-    }
-  ]
-}
-```
-
-## Mutations
-
-## Dry-run or commit
-
-`POST /programs/{id}/mutations`
-
-Headers (optional):
-
-```text
-X-Agent-Id: <uuid>
-```
+`POST /programs/{id}/agents/{agent_id}/stop`
 
 Request:
 
 ```json
 {
-  "mutations": [
-    {
-      "type": "AddFunction",
-      "name": "from_dashboard",
-      "module": 0,
-      "params": [],
-      "return_type": 7,
-      "visibility": "Public"
-    }
-  ],
-  "dry_run": true
+  "reason": "manual stop"
 }
 ```
 
-Response:
+## Chat with assigned agent
 
-```json
-{
-  "valid": true,
-  "created": [],
-  "errors": [],
-  "warnings": [],
-  "committed": false
-}
-```
-
-Set `dry_run: false` to commit.
-
-## Verify
-
-`POST /programs/{id}/verify`
+`POST /programs/{id}/agents/{agent_id}/chat`
 
 Request:
 
 ```json
 {
-  "scope": "local",
-  "affected_nodes": [1, 2]
+  "message": "create hello world program"
 }
 ```
 
-Response:
+Command-style prompts:
+- `create hello world program`: creates/loads `hello_world`, inserts missing `Return`, verifies full graph.
+- `compile program`: compiles with `entry_function = "hello_world"`.
+- `run program`: compiles (if needed) and executes produced binary.
+
+Non-command prompts:
+- If provider config is complete (`provider` + `model` + `api_key`), server calls configured OpenAI-compatible `/chat/completions` endpoint.
+- If provider config is absent, server returns local fallback guidance text.
+
+Autonomous run behavior:
+- Starting a build run (`POST /programs/{id}/agents/{agent_id}/start`) spawns a background loop.
+- The loop can execute known build commands (`create hello world program`, `compile program`, `run program`) without waiting for a chat turn.
+- If the provider response asks for clarification, the loop records the question, applies a default assumption, and continues autonomously.
+
+## Observe integration
+
+The dashboard links selected projects to existing observability endpoints:
+- `GET /programs/{id}/observability`
+- `GET /programs/{id}/observability/graph`
+- `POST /programs/{id}/observability/query`
+
+## Error patterns
+
+Common error responses include:
+- project not found,
+- agent not found,
+- agent not assigned to project,
+- incomplete provider config for external chat,
+- empty goal/message.
+
+Response envelope:
 
 ```json
 {
-  "valid": true,
-  "errors": [],
-  "warnings": []
+  "success": false,
+  "error": {
+    "code": "BAD_REQUEST",
+    "message": "..."
+  }
 }
 ```
 
-## Simulate
+## Implementation pointers
 
-`POST /programs/{id}/simulate`
-
-Request:
-
-```json
-{
-  "function_id": 1,
-  "inputs": [],
-  "trace_enabled": true
-}
-```
-
-Response (shape):
-
-```json
-{
-  "success": true,
-  "result": null,
-  "trace": [],
-  "error": null,
-  "io_log": []
-}
-```
-
-## Compile
-
-`POST /programs/{id}/compile`
-
-Request:
-
-```json
-{
-  "opt_level": "O0",
-  "debug_symbols": false
-}
-```
-
-Response:
-
-```json
-{
-  "binary_path": "./build/...",
-  "target_triple": "...",
-  "binary_size": 0,
-  "compilation_time_ms": 0
-}
-```
-
-## History
-
-`GET /programs/{id}/history`
-
-Response:
-
-```json
-{
-  "entries": [],
-  "total": 0
-}
-```
-
-## Common error conditions
-
-## Active program mismatch
-
-Typical message:
-- `program {id} is not the active program (active: {active_id})`
-
-Action:
-- call `POST /programs/{id}/load` before program-scoped operations.
-
-## Missing agent header
-
-Typical message:
-- missing/invalid `X-Agent-Id`
-
-Action:
-- register/select agent in dashboard and retry lock-sensitive action.
-
-## Lock or conflict failure
-
-Typical outcomes:
-- lock-required failure for mutation
-- conflict details for expected hash mismatch
-
-Action:
-- reacquire locks, refresh context, optionally dry-run before commit.
-
-## Links to implementation
-
-- Router wiring: `crates/lmlang-server/src/router.rs`
-- Lock handler (header extraction): `crates/lmlang-server/src/handlers/locks.rs`
-- Mutation handler (optional agent header): `crates/lmlang-server/src/handlers/mutations.rs`
-- Dashboard client endpoint map: `crates/lmlang-server/static/dashboard/app.js`
-
-## Deferred endpoint work (not in Phase 10)
-
-Deferred to Phase 11/12:
-- run pause/resume/stop endpoints
-- structured timeline event API
-- approval/rejection mutation workflow endpoints (if needed)
+- Router: `crates/lmlang-server/src/router.rs`
+- Agent handlers: `crates/lmlang-server/src/handlers/agents.rs`
+- Project-agent chat handler: `crates/lmlang-server/src/handlers/agent_control.rs`
+- Runtime manager: `crates/lmlang-server/src/project_agent.rs`
+- Dashboard client: `crates/lmlang-server/static/dashboard/app.js`

@@ -1,3 +1,3 @@
-pub mod typecheck;
-pub mod interpreter;
 pub mod contracts;
+pub mod interpreter;
+pub mod typecheck;

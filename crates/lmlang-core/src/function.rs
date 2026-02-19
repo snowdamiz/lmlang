@@ -155,10 +155,7 @@ mod tests {
             FunctionId(1),
             "add".into(),
             ModuleId(0),
-            vec![
-                ("a".into(), TypeId::I32),
-                ("b".into(), TypeId::I32),
-            ],
+            vec![("a".into(), TypeId::I32), ("b".into(), TypeId::I32)],
             TypeId::I32,
         );
 
@@ -213,13 +210,11 @@ mod tests {
 
     #[test]
     fn serde_roundtrip_function_def_with_captures() {
-        let captures = vec![
-            Capture {
-                name: "counter".into(),
-                captured_type: TypeId::I64,
-                mode: CaptureMode::ByMutRef,
-            },
-        ];
+        let captures = vec![Capture {
+            name: "counter".into(),
+            captured_type: TypeId::I64,
+            mode: CaptureMode::ByMutRef,
+        }];
 
         let f = FunctionDef::closure(
             FunctionId(5),

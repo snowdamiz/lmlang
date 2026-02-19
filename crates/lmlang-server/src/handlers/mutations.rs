@@ -80,7 +80,8 @@ pub async fn propose_edit(
 
     // Keep graph verified after agent commits.
     if response.committed && !req.dry_run {
-        let verify = crate::concurrency::verify::run_incremental_verification(service.graph(), &affected);
+        let verify =
+            crate::concurrency::verify::run_incremental_verification(service.graph(), &affected);
         if !verify.valid {
             let _ = service.undo();
             return Ok(Json(ProposeEditResponse {

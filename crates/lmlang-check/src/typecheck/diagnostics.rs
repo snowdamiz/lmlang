@@ -49,9 +49,7 @@ pub enum TypeError {
     },
 
     /// A node received the wrong number of data inputs.
-    #[error(
-        "unexpected input count: node {node} expects {expected} inputs, got {actual}"
-    )]
+    #[error("unexpected input count: node {node} expects {expected} inputs, got {actual}")]
     WrongInputCount {
         /// The node with the wrong input count.
         node: NodeId,
@@ -72,9 +70,7 @@ pub enum TypeError {
 
     /// A non-numeric type was used where an arithmetic operation requires a
     /// numeric type.
-    #[error(
-        "non-numeric type {type_id} used in arithmetic operation at node {node}"
-    )]
+    #[error("non-numeric type {type_id} used in arithmetic operation at node {node}")]
     NonNumericArithmetic {
         /// The node performing the arithmetic operation.
         node: NodeId,

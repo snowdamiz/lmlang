@@ -1,202 +1,171 @@
 # Dashboard Operator Guide
 
-This guide describes how to use the unified dashboard at `/programs/{id}/dashboard`.
+This guide describes the unified dashboard entrypoint at `/dashboard`.
 
-## Purpose
+## What changed
 
-The dashboard combines:
-- `Operate`: endpoint-first controls for agent and graph orchestration actions.
-- `Observe`: the existing observability UI reused in-context for graph/query inspection.
+You no longer need a pre-existing project URL to use the dashboard.
 
-Phase 10 intentionally uses existing API contracts only. Run lifecycle APIs (pause/resume/stop) are deferred to later phases.
+Start at:
+
+`http://localhost:3000/dashboard`
+
+From there, you can:
+1. Use one chat box for project + agent + build orchestration.
+2. Configure AI providers (OpenRouter/OpenAI-compatible) via chat prompts.
+3. Create, compile, and run programs via chat prompts.
 
 ## Prerequisites
 
 1. Start the server:
 
 ```bash
-cargo run -p lmlang-server
+cargo start-server
 ```
 
-2. Create/load a program (replace IDs as needed):
+2. Open the dashboard:
 
-```bash
-curl -sX POST localhost:3000/programs \
-  -H 'content-type: application/json' \
-  -d '{"name":"dashboard-demo"}'
+`http://localhost:3000/dashboard`
 
-curl -sX POST localhost:3000/programs/1/load \
-  -H 'content-type: application/json' \
-  -d '{}'
-```
+3. On first open, complete the setup wizard:
+- choose provider (`OpenRouter` or `OpenAI-compatible`)
+- enter model
+- enter API key
 
-3. Open:
+## Dashboard areas
 
-`http://localhost:3000/programs/1/dashboard`
+## Projects panel
 
-## Dashboard Layout
+Use this panel to:
+- create a new project by name,
+- refresh project list,
+- select the active project,
+- open selected project in Observe.
 
-## Header and context strip
+When you select a project, the dashboard automatically loads it with:
+- `POST /programs/{id}/load`
 
-The header shows:
-- Program id badge
-- Selected agent badge
-- Current status badge (`idle`, `running`, `blocked`, `error`)
-- Workflow template badge
+## Agents panel
 
-The context strip summarizes:
-- active program id
-- endpoint-first mode
-- Observe reuse path
+Use this panel to:
+- register global agents,
+- configure provider/model/base URL/API key for each registered agent,
+- refresh global agent list,
+- assign an agent to the selected project,
+- inspect assigned agents and their run status.
 
-## Operate tab
+Assignment is project-scoped and uses:
+- `POST /programs/{id}/agents/{agent_id}/assign`
 
-Operate contains five panels:
+Provider config uses:
+- `POST /agents/{agent_id}/config`
 
-1. Agents & Session State
-2. Run Setup
-3. Actions
-4. Timeline / History Preview
-5. Request / Response Output
+## Build Control + Chat panel
 
-## Observe tab
+Primary control loop:
+- Send orchestration prompts (project, agent, assignment, start/stop) through chat.
+- Send build prompts through chat:
+  - `create hello world program`
+  - `compile program`
+  - `run program`
+- For non-command prompts, configured provider/model/API key is used.
 
-Observe embeds `/programs/{id}/observability` and keeps the same program context.
+These actions use:
+- `POST /programs/{id}/agents/{agent_id}/start`
+- `POST /programs/{id}/agents/{agent_id}/stop`
+- `POST /programs/{id}/agents/{agent_id}/chat`
 
-Use either:
-- tab switch to Observe, or
-- `Open current program in Observe` link from Operate output.
+## End-to-end workflow
 
-## Core workflow
+1. In chat, send: `create project hello-world`.
+2. In chat, send: `register agent builder provider openrouter model openai/gpt-4o-mini api key <your-key>`.
+3. In chat, send: `assign agent`.
+4. In chat, send: `start build hello world bootstrap`.
+5. In chat, send: `create hello world program`.
+6. In chat, send: `compile program`.
+7. In chat, send: `run program`.
+8. Open Observe and run query: `hello world`.
+9. In chat, send: `stop build` when done.
 
-## 1) Register/select an agent
+## Status badges
 
-In **Agents & Session State**:
-- enter optional name
-- click `Register Agent`
-- select the agent card
+Header badges show:
+- active project,
+- active selected assigned agent,
+- current run state.
 
-`Deregister Selected` removes the agent and releases held locks.
-
-## 2) Configure run setup
-
-In **Run Setup**:
-- choose workflow template (`Execute Phase`, `Plan Phase`, `Verify Work`)
-- enter task prompt
-- click `Save Run Setup`
-- optional: click `Preview Run Context`
-
-This context is attached to output snapshots for action traceability.
-
-## 3) Execute endpoint-first actions
-
-In **Actions** use existing APIs:
-
-### Locks
-- Provide function IDs and lock mode
-- `Acquire` calls `/programs/{id}/locks/acquire`
-- `Release` calls `/programs/{id}/locks/release`
-- `List` calls `/programs/{id}/locks`
-
-Lock actions require a selected agent and send `X-Agent-Id`.
-
-### Mutations
-- Paste mutation JSON array
-- `Dry Run` calls `/programs/{id}/mutations` with `dry_run: true`
-- `Commit` calls `/programs/{id}/mutations` with `dry_run: false`
-
-If an agent is selected, mutation requests include `X-Agent-Id`.
-
-### Verify / Simulate / Compile / History
-- `Verify` -> `/programs/{id}/verify`
-- `Simulate` -> `/programs/{id}/simulate`
-- `Compile` -> `/programs/{id}/compile`
-- `History` -> `/programs/{id}/history`
-
-## 4) Inspect timeline and output
-
-Each action records:
-- timestamped timeline entry
-- endpoint target
-- status outcome
-- detail text
-
-Output panel captures:
-- request payload (including run setup snapshot)
-- response payload (success/error)
-
-## 5) Switch to Observe
-
-Use tab switch or output link to inspect graph state after operations.
-
-Tab switches preserve:
-- selected agent
-- run setup context
-- dashboard session state
-
-## Status model
-
-Status values are derived from outcomes:
-- `idle`: no active operation or last operation succeeded
-- `running`: action in progress
-- `blocked`: lock/conflict/missing-agent related failure
-- `error`: non-blocking failure state for other errors
+Common run states:
+- `idle`: assigned, not actively building.
+- `running`: build run started.
+- `stopped`: run explicitly stopped.
 
 ## Troubleshooting
 
-## "program is not the active program"
+## Cannot assign agent
 
-Cause:
-- current program in URL does not match active loaded program.
+Likely causes:
+- no project selected,
+- no registered agents,
+- invalid/removed agent id.
 
-Fix:
-- call `POST /programs/{id}/load` for the intended program.
+Actions:
+- select a project,
+- register/refresh agents,
+- retry assignment.
 
-## Lock actions blocked
+## Cannot start build
 
-Cause:
-- no selected agent, or lock conflict.
+Likely causes:
+- no assigned agent selected,
+- empty goal,
+- selected project does not exist anymore.
 
-Fix:
-- select/register agent first
-- inspect lock status via `List`
-- release conflicting locks if needed
+Actions:
+- select assigned agent,
+- provide goal,
+- refresh projects and reselect.
 
-## Mutation rejected with lock/conflict details
+## Chat fails
 
-Cause:
-- missing write lock, hash conflict, or validation failure.
+Likely causes:
+- no project/agent selected,
+- empty message,
+- agent not assigned to selected project.
 
-Fix:
-- acquire required write locks
-- retry mutation with updated context
-- use dry-run first to inspect diagnostics
+Actions:
+- select project and assigned agent,
+- ensure non-empty chat message,
+- reassign agent if needed.
 
-## Observe not loading in tab
+## Observe link unavailable
 
-Cause:
-- observability route unavailable or server issue.
+Likely cause:
+- no project selected.
 
-Fix:
-- verify `/programs/{id}/observability` loads directly
-- use open-in-new-tab fallback link
+Action:
+- select a project first; link updates automatically.
 
-## Recommended operator sequence
+## Hello world scaffold fails
 
-1. Register/select agent
-2. Save run setup
-3. Acquire needed locks
-4. Run mutation dry-run
-5. Commit mutation
-6. Verify and/or simulate
-7. Compile when ready
-8. Review history and Observe graph state
+Likely causes:
+- project not selected,
+- project not loaded,
+- temporary verification/query failure.
 
-## Deferred capabilities
+Actions:
+- reselect project,
+- resend chat command `create hello world program`,
+- refresh and open Observe to confirm graph state.
 
-Phase 10 intentionally defers:
-- explicit run lifecycle controls (pause/resume/stop)
-- rich event timeline API
-- approval/rejection diff gates
+## API note
 
-These are targeted in Phase 11 and Phase 12.
+- Build runs now include an autonomous background loop after `start build`.
+- The loop progresses command execution without requiring an additional chat turn.
+- If provider output asks a blocking clarification question, the loop logs it and applies a default assumption so execution continues.
+- Agent API keys are persisted in SQLite and survive server restarts.
+
+## Related docs
+
+- API map: `docs/api/operator-endpoints.md`
+- Server routing: `crates/lmlang-server/src/router.rs`
+- Dashboard client: `crates/lmlang-server/static/dashboard/app.js`

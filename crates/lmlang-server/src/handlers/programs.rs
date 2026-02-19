@@ -4,9 +4,7 @@ use axum::extract::{Path, State};
 use axum::Json;
 
 use crate::error::ApiError;
-use crate::schema::programs::{
-    CreateProgramRequest, CreateProgramResponse, ProgramListResponse,
-};
+use crate::schema::programs::{CreateProgramRequest, CreateProgramResponse, ProgramListResponse};
 use crate::state::AppState;
 
 /// Lists all programs.
@@ -29,10 +27,7 @@ pub async fn create_program(
 ) -> Result<Json<CreateProgramResponse>, ApiError> {
     let mut service = state.service.lock().await;
     let id = service.create_program(&req.name)?;
-    Ok(Json(CreateProgramResponse {
-        id,
-        name: req.name,
-    }))
+    Ok(Json(CreateProgramResponse { id, name: req.name }))
 }
 
 /// Deletes a program by ID.

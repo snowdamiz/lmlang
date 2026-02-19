@@ -279,9 +279,7 @@ mod tests {
             .add_core_op(ComputeOp::Parameter { index: 0 }, fn_c)
             .unwrap();
         let retc = graph.add_core_op(ComputeOp::Return, fn_c).unwrap();
-        graph
-            .add_data_edge(pc, retc, 0, 0, TypeId::I32)
-            .unwrap();
+        graph.add_data_edge(pc, retc, 0, 0, TypeId::I32).unwrap();
 
         // Function B: calls C
         let fn_b = graph
@@ -300,9 +298,7 @@ mod tests {
             .add_core_op(ComputeOp::Call { target: fn_c }, fn_b)
             .unwrap();
         let retb = graph.add_core_op(ComputeOp::Return, fn_b).unwrap();
-        graph
-            .add_data_edge(pb, call_c, 0, 0, TypeId::I32)
-            .unwrap();
+        graph.add_data_edge(pb, call_c, 0, 0, TypeId::I32).unwrap();
         graph
             .add_data_edge(call_c, retb, 0, 0, TypeId::I32)
             .unwrap();
@@ -324,9 +320,7 @@ mod tests {
             .add_core_op(ComputeOp::Call { target: fn_b }, fn_a)
             .unwrap();
         let reta = graph.add_core_op(ComputeOp::Return, fn_a).unwrap();
-        graph
-            .add_data_edge(pa, call_b, 0, 0, TypeId::I32)
-            .unwrap();
+        graph.add_data_edge(pa, call_b, 0, 0, TypeId::I32).unwrap();
         graph
             .add_data_edge(call_b, reta, 0, 0, TypeId::I32)
             .unwrap();
@@ -588,14 +582,8 @@ mod tests {
         let loaded = IncrementalState::load(&state_path).unwrap();
 
         assert_eq!(loaded.last_compiled_hashes().len(), 2);
-        assert_eq!(
-            loaded.last_compiled_hashes()[&FunctionId(0)],
-            [42u8; 32]
-        );
-        assert_eq!(
-            loaded.last_compiled_hashes()[&FunctionId(1)],
-            [99u8; 32]
-        );
+        assert_eq!(loaded.last_compiled_hashes()[&FunctionId(0)], [42u8; 32]);
+        assert_eq!(loaded.last_compiled_hashes()[&FunctionId(1)], [99u8; 32]);
         assert_eq!(loaded.settings_hash, state.settings_hash);
     }
 

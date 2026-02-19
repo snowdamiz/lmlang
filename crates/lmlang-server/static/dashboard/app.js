@@ -1,804 +1,817 @@
 (() => {
-  const programId = Number(document.body.dataset.programId);
-
-  const ENDPOINTS = {
-    REGISTER_AGENT: "/agents/register",
-    LIST_AGENTS: "/agents",
-    DEREGISTER_AGENT: (agentId) => `/agents/${agentId}`,
-    LOCKS: (pid) => `/programs/${pid}/locks`,
-    LOCK_ACQUIRE: (pid) => `/programs/${pid}/locks/acquire`,
-    LOCK_RELEASE: (pid) => `/programs/${pid}/locks/release`,
-    MUTATIONS: (pid) => `/programs/${pid}/mutations`,
-    VERIFY: (pid) => `/programs/${pid}/verify`,
-    SIMULATE: (pid) => `/programs/${pid}/simulate`,
-    COMPILE: (pid) => `/programs/${pid}/compile`,
-    HISTORY: (pid) => `/programs/${pid}/history`,
-    OBSERVE: (pid) => `/programs/${pid}/observability`,
-  };
+  const initialProgramIdRaw = document.body.dataset.initialProgramId || "";
+  const initialProgramId = Number(initialProgramIdRaw);
+  const SETUP_STORAGE_KEY = "lmlang.dashboard.first_time_setup.v1";
 
   const state = {
-    activeTab: "operate",
-    selectedAgentId: null,
-    runSetup: {
-      program: String(programId),
-      template: "execute-phase",
-      prompt: "",
-    },
+    programs: [],
     agents: [],
-    agentStatuses: {},
-    timeline: [],
-    lastOutput: null,
-    inFlightCount: 0,
+    projectAgents: [],
+    selectedProgramId: Number.isFinite(initialProgramId) && initialProgramId > 0 ? initialProgramId : null,
+    selectedAgentId: null,
+    selectedProjectAgentId: null,
+    transcript: [],
   };
 
   const el = {
-    tabButtons: Array.from(document.querySelectorAll(".tab-btn")),
-    panels: Array.from(document.querySelectorAll(".panel")),
-    sharedStatusPanel: document.getElementById("sharedStatusPanel"),
-    statusBadge: document.getElementById("statusBadge"),
-    agentBadge: document.getElementById("agentBadge"),
-    templateBadge: document.getElementById("templateBadge"),
-    contextProgramId: document.getElementById("contextProgramId"),
-    observeMount: document.getElementById("observeMount"),
-    openObserveLink: document.getElementById("openObserveLink"),
-    operateAgentListMount: document.getElementById("operateAgentListMount"),
-    operateRunSetupMount: document.getElementById("operateRunSetupMount"),
-    operateActionsMount: document.getElementById("operateActionsMount"),
-    operateTimelineMount: document.getElementById("operateTimelineMount"),
-    operateOutputMount: document.getElementById("operateOutputMount"),
+    projectNameInput: document.getElementById("projectNameInput"),
+    createProjectBtn: document.getElementById("createProjectBtn"),
+    refreshProjectsBtn: document.getElementById("refreshProjectsBtn"),
+    createHelloWorldBtn: document.getElementById("createHelloWorldBtn"),
+    projectList: document.getElementById("projectList"),
+    observeLink: document.getElementById("observeLink"),
+
+    agentNameInput: document.getElementById("agentNameInput"),
+    registerAgentBtn: document.getElementById("registerAgentBtn"),
+    refreshAgentsBtn: document.getElementById("refreshAgentsBtn"),
+    agentProviderSelect: document.getElementById("agentProviderSelect"),
+    agentModelInput: document.getElementById("agentModelInput"),
+    agentBaseUrlInput: document.getElementById("agentBaseUrlInput"),
+    agentApiKeyInput: document.getElementById("agentApiKeyInput"),
+    agentSystemPromptInput: document.getElementById("agentSystemPromptInput"),
+    saveAgentConfigBtn: document.getElementById("saveAgentConfigBtn"),
+    agentAssignSelect: document.getElementById("agentAssignSelect"),
+    assignAgentBtn: document.getElementById("assignAgentBtn"),
+    projectAgentList: document.getElementById("projectAgentList"),
+
+    setupWizard: document.getElementById("setupWizard"),
+    setupAgentNameInput: document.getElementById("setupAgentNameInput"),
+    setupProviderSelect: document.getElementById("setupProviderSelect"),
+    setupModelInput: document.getElementById("setupModelInput"),
+    setupApiKeyInput: document.getElementById("setupApiKeyInput"),
+    setupBaseUrlInput: document.getElementById("setupBaseUrlInput"),
+    setupCompleteBtn: document.getElementById("setupCompleteBtn"),
+    setupSkipBtn: document.getElementById("setupSkipBtn"),
+
+    goalInput: document.getElementById("goalInput"),
+    startBuildBtn: document.getElementById("startBuildBtn"),
+    stopBuildBtn: document.getElementById("stopBuildBtn"),
+    chatLog: document.getElementById("chatLog"),
+    chatInput: document.getElementById("chatInput"),
+    sendChatBtn: document.getElementById("sendChatBtn"),
+
+    activeProjectBadge: document.getElementById("activeProjectBadge"),
+    activeAgentBadge: document.getElementById("activeAgentBadge"),
+    runStatusBadge: document.getElementById("runStatusBadge"),
+    statusBar: document.getElementById("statusBar"),
   };
 
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+  function setStatus(message, tone = "idle") {
+    el.statusBar.textContent = message;
+    el.statusBar.dataset.state = tone;
   }
 
-  function statusToneFromError(statusCode, errorText) {
-    const lower = String(errorText || "").toLowerCase();
-    if (statusCode === 409 || statusCode === 423 || lower.includes("lock") || lower.includes("conflict")) {
-      return "blocked";
+  function safeStorageGet(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
     }
-    return "error";
   }
 
-  function getAgentStatus(agentId) {
-    return state.agentStatuses[agentId] || "idle";
+  function safeStorageSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // no-op
+    }
   }
 
-  function setAgentStatus(agentId, status) {
-    if (!agentId) {
+  function isSetupComplete() {
+    return safeStorageGet(SETUP_STORAGE_KEY) === "1";
+  }
+
+  function markSetupComplete() {
+    safeStorageSet(SETUP_STORAGE_KEY, "1");
+  }
+
+  function hasConfiguredAgent() {
+    return state.agents.some((agent) => {
+      const llm = agent.llm || {};
+      return Boolean(llm.provider && llm.model && llm.api_key_configured);
+    });
+  }
+
+  function showSetupWizard() {
+    if (el.setupWizard) {
+      el.setupWizard.classList.remove("hidden");
+    }
+  }
+
+  function hideSetupWizard() {
+    if (el.setupWizard) {
+      el.setupWizard.classList.add("hidden");
+    }
+  }
+
+  function maybeShowSetupWizard() {
+    if (hasConfiguredAgent()) {
+      markSetupComplete();
+      hideSetupWizard();
       return;
     }
-    state.agentStatuses[agentId] = status;
-    renderAgentsPanel();
-  }
 
-  function setGlobalStatus(message, tone = "idle") {
-    el.sharedStatusPanel.dataset.state = tone;
-    el.sharedStatusPanel.textContent = message;
-    el.statusBadge.textContent = `Status: ${tone}`;
-  }
-
-  function pushTimeline(entry) {
-    const timestamp = new Date().toISOString();
-    state.timeline.unshift({ timestamp, ...entry });
-    state.timeline = state.timeline.slice(0, 20);
-    renderTimelinePanel();
-  }
-
-  function setSelectedAgent(agentId) {
-    state.selectedAgentId = agentId;
-    el.agentBadge.textContent = agentId ? `Agent: ${agentId}` : "No agent selected";
-    renderAgentsPanel();
-  }
-
-  function updateRunSetup(next) {
-    state.runSetup = { ...state.runSetup, ...next };
-    el.templateBadge.textContent = `Template: ${state.runSetup.template}`;
-  }
-
-  function runSetupSnapshot() {
-    return {
-      program: state.runSetup.program,
-      template: state.runSetup.template,
-      prompt: state.runSetup.prompt,
-    };
-  }
-
-  function contextSummary() {
-    return {
-      selected_agent: state.selectedAgentId,
-      run_setup: runSetupSnapshot(),
-      active_tab: state.activeTab,
-    };
-  }
-
-  function safeJsonParse(raw, fieldName) {
-    try {
-      return { ok: true, value: JSON.parse(raw) };
-    } catch (_err) {
-      return { ok: false, error: `${fieldName} must be valid JSON` };
-    }
-  }
-
-  function parseCsvU32(raw) {
-    if (!raw.trim()) {
-      return [];
-    }
-    return raw
-      .split(",")
-      .map((item) => Number(item.trim()))
-      .filter((value) => Number.isInteger(value) && value >= 0);
-  }
-
-  function writeOutput(title, payload) {
-    state.lastOutput = { title, payload };
-
-    const requestBlock = escapeHtml(JSON.stringify(payload.request, null, 2));
-    const responseBlock = escapeHtml(JSON.stringify(payload.response, null, 2));
-
-    el.operateOutputMount.innerHTML = `
-      <section class="output-block">
-        <h3>${escapeHtml(title)}</h3>
-        <div class="output-grid">
-          <div>
-            <h4>Request</h4>
-            <pre>${requestBlock}</pre>
-          </div>
-          <div>
-            <h4>Response</h4>
-            <pre>${responseBlock}</pre>
-          </div>
-        </div>
-        <p class="output-hint">Use "Open in Observe" to inspect graph/query state after actions.</p>
-        <a class="output-link" href="${ENDPOINTS.OBSERVE(programId)}" target="_blank" rel="noopener noreferrer">Open current program in Observe</a>
-      </section>
-    `;
-  }
-
-  async function apiRequest({ method, url, body, agentId }) {
-    const headers = {
-      "content-type": "application/json",
-    };
-
-    if (agentId) {
-      headers["X-Agent-Id"] = agentId;
+    if (!isSetupComplete()) {
+      showSetupWizard();
+      return;
     }
 
-    const response = await fetch(url, {
+    hideSetupWizard();
+  }
+
+  function updateBadges() {
+    const selectedProject = state.programs.find((p) => p.id === state.selectedProgramId);
+    const selectedProjectAgent = state.projectAgents.find(
+      (a) => a.agent_id === state.selectedProjectAgentId
+    );
+
+    el.activeProjectBadge.textContent = selectedProject
+      ? `Project: ${selectedProject.name} (#${selectedProject.id})`
+      : "Project: none";
+
+    el.activeAgentBadge.textContent = selectedProjectAgent
+      ? `Agent: ${selectedProjectAgent.name || selectedProjectAgent.agent_id}`
+      : "Agent: none";
+
+    el.runStatusBadge.textContent = selectedProjectAgent
+      ? `Run: ${selectedProjectAgent.run_status}`
+      : "Run: idle";
+  }
+
+  async function api(method, path, body) {
+    const response = await fetch(path, {
       method,
-      headers,
+      headers: {
+        "content-type": "application/json",
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
 
     const text = await response.text();
-    let data;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch (_err) {
-      data = { raw: text };
-    }
+    const data = text ? JSON.parse(text) : null;
 
     if (!response.ok) {
-      const message = data?.error || data?.message || text || `request failed (${response.status})`;
-      const error = new Error(message);
-      error.status = response.status;
-      error.payload = data;
-      throw error;
+      const message =
+        data?.error?.message || data?.message || `request failed (${response.status})`;
+      throw new Error(message);
     }
 
     return data;
   }
 
-  async function runAction({ title, endpoint, requestBody, selectedAgentRequired = false, includeAgentHeader = false, handler }) {
-    const activeAgentId = state.selectedAgentId;
-
-    if (selectedAgentRequired && !activeAgentId) {
-      setGlobalStatus("Action blocked: select an agent first.", "blocked");
-      pushTimeline({ title, endpoint, status: "blocked", detail: "missing selected agent" });
+  function renderProjects() {
+    if (!state.programs.length) {
+      el.projectList.innerHTML = '<li class="list-item">No projects yet.</li>';
       return;
     }
 
-    state.inFlightCount += 1;
-    if (activeAgentId) {
-      setAgentStatus(activeAgentId, "running");
-    }
-    setGlobalStatus(`Running ${title}...`, "running");
-
-    try {
-      const response = await handler({
-        agentId: includeAgentHeader ? activeAgentId : null,
-      });
-
-      if (activeAgentId) {
-        setAgentStatus(activeAgentId, "idle");
-      }
-      setGlobalStatus(`${title} completed`, "idle");
-
-      pushTimeline({
-        title,
-        endpoint,
-        status: "ok",
-        detail: includeAgentHeader && activeAgentId ? `agent ${activeAgentId}` : "",
-      });
-
-      writeOutput(title, {
-        request: {
-          run_setup: runSetupSnapshot(),
-          payload: requestBody,
-        },
-        response,
-      });
-    } catch (error) {
-      const tone = statusToneFromError(error.status, error.message);
-      if (activeAgentId) {
-        setAgentStatus(activeAgentId, tone);
-      }
-
-      setGlobalStatus(`${title} failed: ${error.message}`, tone);
-      pushTimeline({
-        title,
-        endpoint,
-        status: tone,
-        detail: error.message,
-      });
-
-      writeOutput(`${title} (failed)`, {
-        request: {
-          run_setup: runSetupSnapshot(),
-          payload: requestBody,
-        },
-        response: {
-          status: error.status || 500,
-          error: error.message,
-          payload: error.payload || null,
-        },
-      });
-    } finally {
-      state.inFlightCount = Math.max(0, state.inFlightCount - 1);
-      renderTimelinePanel();
-    }
-  }
-
-  function renderAgentsPanel() {
-    const hasAgents = state.agents.length > 0;
-
-    const cards = hasAgents
-      ? state.agents
-          .map((agent) => {
-            const selected = state.selectedAgentId === agent.agent_id;
-            const status = getAgentStatus(agent.agent_id);
-            return `
-              <li class="agent-card ${selected ? "selected" : ""}">
-                <button type="button" data-agent-select="${agent.agent_id}" class="agent-select-btn">
-                  <span class="agent-name">${escapeHtml(agent.name || "unnamed-agent")}</span>
-                  <span class="agent-id">${escapeHtml(agent.agent_id)}</span>
-                  <span class="agent-status status-${status}">${status}</span>
-                </button>
-              </li>
-            `;
-          })
-          .join("")
-      : `<li class="empty-note">No agents registered yet.</li>`;
-
-    el.operateAgentListMount.innerHTML = `
-      <div class="control-row">
-        <input id="agentNameInput" placeholder="Optional agent name" />
-        <button type="button" id="registerAgentBtn">Register Agent</button>
-        <button type="button" id="refreshAgentsBtn">Refresh</button>
-        <button type="button" id="deregisterAgentBtn" ${state.selectedAgentId ? "" : "disabled"}>Deregister Selected</button>
-      </div>
-      <ul class="agent-list">${cards}</ul>
-    `;
-
-    el.operateAgentListMount.querySelectorAll("[data-agent-select]").forEach((button) => {
-      button.addEventListener("click", () => {
-        setSelectedAgent(button.dataset.agentSelect);
-      });
-    });
-
-    el.operateAgentListMount.querySelector("#registerAgentBtn")?.addEventListener("click", onRegisterAgent);
-    el.operateAgentListMount.querySelector("#refreshAgentsBtn")?.addEventListener("click", refreshAgents);
-    el.operateAgentListMount.querySelector("#deregisterAgentBtn")?.addEventListener("click", onDeregisterAgent);
-  }
-
-  function renderRunSetupPanel() {
-    const template = state.runSetup.template;
-    const prompt = state.runSetup.prompt;
-
-    el.operateRunSetupMount.innerHTML = `
-      <div class="field-grid">
-        <label class="field">
-          <span>Program</span>
-          <input id="setupProgramInput" value="${escapeHtml(state.runSetup.program)}" readonly />
-        </label>
-        <label class="field">
-          <span>Workflow Template</span>
-          <select id="setupTemplateSelect">
-            <option value="execute-phase" ${template === "execute-phase" ? "selected" : ""}>Execute Phase</option>
-            <option value="plan-phase" ${template === "plan-phase" ? "selected" : ""}>Plan Phase</option>
-            <option value="verify-work" ${template === "verify-work" ? "selected" : ""}>Verify Work</option>
-          </select>
-        </label>
-      </div>
-      <label class="field">
-        <span>Task Prompt</span>
-        <textarea id="setupPromptInput" rows="4" placeholder="Describe the run objective">${escapeHtml(prompt)}</textarea>
-      </label>
-      <div class="control-row">
-        <button type="button" id="saveSetupBtn">Save Run Setup</button>
-        <button type="button" id="previewRunContextBtn">Preview Run Context</button>
-      </div>
-    `;
-
-    el.operateRunSetupMount.querySelector("#saveSetupBtn")?.addEventListener("click", () => {
-      const nextTemplate = el.operateRunSetupMount.querySelector("#setupTemplateSelect")?.value || "execute-phase";
-      const nextPrompt = el.operateRunSetupMount.querySelector("#setupPromptInput")?.value || "";
-      updateRunSetup({ template: nextTemplate, prompt: nextPrompt });
-      setGlobalStatus("Run setup saved.", "idle");
-      pushTimeline({ title: "Run setup updated", endpoint: "local", status: "ok", detail: nextTemplate });
-    });
-
-    el.operateRunSetupMount.querySelector("#previewRunContextBtn")?.addEventListener("click", () => {
-      const nextTemplate = el.operateRunSetupMount.querySelector("#setupTemplateSelect")?.value || "execute-phase";
-      const nextPrompt = el.operateRunSetupMount.querySelector("#setupPromptInput")?.value || "";
-      updateRunSetup({ template: nextTemplate, prompt: nextPrompt });
-      writeOutput("Run context preview", {
-        request: { action: "preview-run-context" },
-        response: contextSummary(),
-      });
-      setGlobalStatus("Run context preview updated.", "idle");
-      pushTimeline({ title: "Run context preview", endpoint: "local", status: "ok", detail: nextTemplate });
-    });
-  }
-
-  function renderActionsPanel() {
-    el.operateActionsMount.innerHTML = `
-      <div class="action-grid">
-        <section class="action-card">
-          <h3>Locks</h3>
-          <p>Uses <code>${ENDPOINTS.LOCK_ACQUIRE(programId)}</code> and <code>${ENDPOINTS.LOCK_RELEASE(programId)}</code>.</p>
-          <label class="field"><span>Function IDs (comma-separated)</span><input id="lockFunctionIdsInput" value="1" /></label>
-          <label class="field"><span>Mode</span><select id="lockModeSelect"><option value="write">write</option><option value="read">read</option></select></label>
-          <label class="field"><span>Description</span><input id="lockDescriptionInput" placeholder="optional" /></label>
-          <div class="control-row">
-            <button type="button" id="acquireLocksBtn">Acquire</button>
-            <button type="button" id="releaseLocksBtn">Release</button>
-            <button type="button" id="listLocksBtn">List</button>
-          </div>
-        </section>
-
-        <section class="action-card">
-          <h3>Mutations</h3>
-          <p>Uses <code>${ENDPOINTS.MUTATIONS(programId)}</code> with dry-run and commit support.</p>
-          <label class="field"><span>Mutations JSON</span><textarea id="mutationsInput" rows="6">[{"type":"AddFunction","name":"from_dashboard","module":0,"params":[],"return_type":7,"visibility":"Public"}]</textarea></label>
-          <div class="control-row">
-            <button type="button" id="dryRunMutationBtn">Dry Run</button>
-            <button type="button" id="commitMutationBtn">Commit</button>
-          </div>
-        </section>
-
-        <section class="action-card">
-          <h3>Verify / Simulate / Compile / History</h3>
-          <label class="field"><span>Verify Scope</span><select id="verifyScopeSelect"><option value="local">local</option><option value="full">full</option></select></label>
-          <label class="field"><span>Affected Node IDs (JSON array, optional)</span><input id="verifyAffectedInput" value="[]" /></label>
-          <div class="control-row">
-            <button type="button" id="verifyBtn">Verify</button>
-            <button type="button" id="simulateBtn">Simulate</button>
-            <button type="button" id="compileBtn">Compile</button>
-            <button type="button" id="historyBtn">History</button>
-          </div>
-          <label class="field"><span>Simulate Function ID</span><input id="simulateFunctionIdInput" value="1" /></label>
-          <label class="field"><span>Simulate Inputs (JSON array)</span><input id="simulateInputsInput" value="[]" /></label>
-          <label class="field"><span>Compile Opt Level</span><select id="compileOptLevelSelect"><option>O0</option><option>O1</option><option>O2</option><option>O3</option></select></label>
-        </section>
-      </div>
-      <div class="control-row">
-        <button type="button" id="openObserveFromOperateBtn">Open in Observe</button>
-      </div>
-    `;
-
-    el.operateActionsMount.querySelector("#acquireLocksBtn")?.addEventListener("click", onAcquireLocks);
-    el.operateActionsMount.querySelector("#releaseLocksBtn")?.addEventListener("click", onReleaseLocks);
-    el.operateActionsMount.querySelector("#listLocksBtn")?.addEventListener("click", onListLocks);
-    el.operateActionsMount.querySelector("#dryRunMutationBtn")?.addEventListener("click", () => onMutations(true));
-    el.operateActionsMount.querySelector("#commitMutationBtn")?.addEventListener("click", () => onMutations(false));
-    el.operateActionsMount.querySelector("#verifyBtn")?.addEventListener("click", onVerify);
-    el.operateActionsMount.querySelector("#simulateBtn")?.addEventListener("click", onSimulate);
-    el.operateActionsMount.querySelector("#compileBtn")?.addEventListener("click", onCompile);
-    el.operateActionsMount.querySelector("#historyBtn")?.addEventListener("click", onHistory);
-
-    el.operateActionsMount.querySelector("#openObserveFromOperateBtn")?.addEventListener("click", () => {
-      activateTab("observe");
-    });
-  }
-
-  function renderTimelinePanel() {
-    if (!state.timeline.length) {
-      el.operateTimelineMount.innerHTML = `<p class="empty-note">No operations yet.</p>`;
-      return;
-    }
-
-    const rows = state.timeline
-      .map((entry) => {
+    el.projectList.innerHTML = state.programs
+      .map((program) => {
+        const selected = program.id === state.selectedProgramId ? "selected" : "";
         return `
-          <li class="timeline-row">
-            <span class="timeline-status status-${escapeHtml(entry.status)}">${escapeHtml(entry.status)}</span>
-            <div class="timeline-body">
-              <p class="timeline-title">${escapeHtml(entry.title)}</p>
-              <p class="timeline-meta">${escapeHtml(entry.endpoint)} • ${escapeHtml(entry.timestamp)}</p>
-              <p class="timeline-detail">${escapeHtml(entry.detail || "")}</p>
-            </div>
+          <li class="list-item ${selected}">
+            <p class="item-title">${program.name}</p>
+            <p class="item-meta">program_id=${program.id}</p>
+            <button type="button" data-project-id="${program.id}">Select Project</button>
           </li>
         `;
       })
       .join("");
 
-    el.operateTimelineMount.innerHTML = `<ul class="timeline-list">${rows}</ul>`;
-  }
-
-  function ensureObserveEmbedded() {
-    if (el.observeMount.querySelector("iframe")) {
-      return;
-    }
-
-    const iframe = document.createElement("iframe");
-    iframe.title = "Observe panel";
-    iframe.loading = "lazy";
-    iframe.src = ENDPOINTS.OBSERVE(programId);
-    iframe.className = "observe-frame";
-
-    iframe.addEventListener("load", () => {
-      setGlobalStatus("Observe module ready.", "idle");
-    });
-
-    iframe.addEventListener("error", () => {
-      setGlobalStatus("Observe failed to load. Open it in a new tab.", "error");
-    });
-
-    el.observeMount.appendChild(iframe);
-  }
-
-  function activateTab(tab) {
-    state.activeTab = tab;
-
-    el.tabButtons.forEach((btn) => {
-      btn.classList.toggle("is-active", btn.dataset.tab === tab);
-    });
-
-    el.panels.forEach((panel) => {
-      panel.classList.toggle("is-active", panel.dataset.panel === tab);
-    });
-
-    if (tab === "observe") {
-      ensureObserveEmbedded();
-      setGlobalStatus("Observe tab active. Existing observability route reused.", "idle");
-      pushTimeline({
-        title: "Tab switch",
-        endpoint: ENDPOINTS.OBSERVE(programId),
-        status: "ok",
-        detail: `context preserved (${state.selectedAgentId || "no-agent"}, ${state.runSetup.template})`,
+    el.projectList.querySelectorAll("[data-project-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await selectProject(Number(button.dataset.projectId));
       });
+    });
+  }
+
+  function renderAgentAssignOptions() {
+    if (!state.agents.length) {
+      el.agentAssignSelect.innerHTML = '<option value="">No registered agents</option>';
+      renderSelectedAgentConfig();
       return;
     }
 
-    setGlobalStatus("Operate tab active.", "idle");
-    pushTimeline({
-      title: "Tab switch",
-      endpoint: "operate",
-      status: "ok",
-      detail: `context preserved (${state.selectedAgentId || "no-agent"}, ${state.runSetup.template})`,
-    });
+    el.agentAssignSelect.innerHTML = state.agents
+      .map((agent) => {
+        const label = `${agent.name || "unnamed-agent"} (${agent.agent_id})`;
+        const selected = agent.agent_id === state.selectedAgentId ? "selected" : "";
+        return `<option value="${agent.agent_id}" ${selected}>${label}</option>`;
+      })
+      .join("");
+
+    if (!state.selectedAgentId) {
+      state.selectedAgentId = state.agents[0].agent_id;
+    }
+
+    renderSelectedAgentConfig();
+  }
+
+  function selectedAgent() {
+    return state.agents.find((agent) => agent.agent_id === state.selectedAgentId) || null;
+  }
+
+  function renderSelectedAgentConfig() {
+    const agent = selectedAgent();
+    if (!agent || !agent.llm) {
+      el.agentProviderSelect.value = "";
+      el.agentModelInput.value = "";
+      el.agentBaseUrlInput.value = "";
+      el.agentApiKeyInput.value = "";
+      el.agentSystemPromptInput.value = "";
+      return;
+    }
+
+    el.agentProviderSelect.value = agent.llm.provider || "";
+    el.agentModelInput.value = agent.llm.model || "";
+    el.agentBaseUrlInput.value = agent.llm.api_base_url || "";
+    el.agentApiKeyInput.value = "";
+    el.agentSystemPromptInput.value = agent.llm.system_prompt || "";
+  }
+
+  function buildConfigPayload(provider, model, baseUrl, apiKey, systemPrompt) {
+    let resolvedProvider = provider || null;
+    let resolvedBaseUrl = (baseUrl || "").trim() || null;
+
+    if (resolvedProvider === "openrouter" && !resolvedBaseUrl) {
+      resolvedBaseUrl = "https://openrouter.ai/api/v1";
+    }
+
+    if (!resolvedProvider) {
+      resolvedProvider = null;
+    }
+
+    return {
+      provider: resolvedProvider,
+      model: (model || "").trim() || null,
+      api_base_url: resolvedBaseUrl,
+      api_key: (apiKey || "").trim() || null,
+      system_prompt: (systemPrompt || "").trim() || null,
+    };
+  }
+
+  function agentConfigPayload() {
+    return buildConfigPayload(
+      el.agentProviderSelect.value,
+      el.agentModelInput.value,
+      el.agentBaseUrlInput.value,
+      el.agentApiKeyInput.value,
+      el.agentSystemPromptInput.value
+    );
+  }
+
+  function setupConfigPayload() {
+    return buildConfigPayload(
+      el.setupProviderSelect.value,
+      el.setupModelInput.value,
+      el.setupBaseUrlInput.value,
+      el.setupApiKeyInput.value,
+      null
+    );
+  }
+
+  function renderProjectAgents() {
+    if (!state.selectedProgramId) {
+      el.projectAgentList.innerHTML = '<li class="list-item">Select a project first.</li>';
+      return;
+    }
+
+    if (!state.projectAgents.length) {
+      el.projectAgentList.innerHTML = '<li class="list-item">No assigned agents for this project.</li>';
+      return;
+    }
+
+    el.projectAgentList.innerHTML = state.projectAgents
+      .map((session) => {
+        const selected = session.agent_id === state.selectedProjectAgentId ? "selected" : "";
+        return `
+          <li class="list-item ${selected}">
+            <p class="item-title">${session.name || "unnamed-agent"}</p>
+            <p class="item-meta">${session.agent_id}</p>
+            <p class="item-meta">status=${session.run_status}${session.active_goal ? ` goal=${session.active_goal}` : ""}</p>
+            <button type="button" data-project-agent-id="${session.agent_id}">Select Agent</button>
+          </li>
+        `;
+      })
+      .join("");
+
+    el.projectAgentList
+      .querySelectorAll("[data-project-agent-id]")
+      .forEach((button) => {
+        button.addEventListener("click", async () => {
+          state.selectedProjectAgentId = button.dataset.projectAgentId;
+          await refreshProjectAgentDetail();
+          renderProjectAgents();
+          updateBadges();
+        });
+      });
+  }
+
+  function renderChatLog() {
+    if (!state.transcript.length) {
+      el.chatLog.innerHTML = '<div class="chat-msg system"><p class="chat-role">system</p><p class="chat-content">No chat yet.</p></div>';
+      return;
+    }
+
+    el.chatLog.innerHTML = state.transcript
+      .map((entry) => {
+        return `
+          <div class="chat-msg ${entry.role}">
+            <p class="chat-role">${entry.role} • ${entry.timestamp}</p>
+            <p class="chat-content">${entry.content}</p>
+          </div>
+        `;
+      })
+      .join("");
+    el.chatLog.scrollTop = el.chatLog.scrollHeight;
+  }
+
+  async function refreshPrograms() {
+    const response = await api("GET", "/programs");
+    state.programs = (response.programs || []).map((program) => ({
+      id: Number(program.id),
+      name: program.name,
+    }));
+
+    if (
+      state.selectedProgramId &&
+      !state.programs.some((program) => program.id === state.selectedProgramId)
+    ) {
+      state.selectedProgramId = null;
+      state.projectAgents = [];
+      state.selectedProjectAgentId = null;
+      state.transcript = [];
+    }
+
+    renderProjects();
+    updateObserveLink();
+    updateBadges();
   }
 
   async function refreshAgents() {
-    await runAction({
-      title: "List agents",
-      endpoint: ENDPOINTS.LIST_AGENTS,
-      requestBody: null,
-      handler: async () => {
-        const response = await apiRequest({
-          method: "GET",
-          url: ENDPOINTS.LIST_AGENTS,
-        });
+    const response = await api("GET", "/agents");
+    state.agents = response.agents || [];
 
-        state.agents = response.agents || [];
-        state.agents.forEach((agent) => {
-          if (!state.agentStatuses[agent.agent_id]) {
-            state.agentStatuses[agent.agent_id] = "idle";
-          }
-        });
+    if (
+      state.selectedAgentId &&
+      !state.agents.some((agent) => agent.agent_id === state.selectedAgentId)
+    ) {
+      state.selectedAgentId = null;
+    }
 
-        if (state.selectedAgentId && !state.agents.some((agent) => agent.agent_id === state.selectedAgentId)) {
-          setSelectedAgent(null);
-        }
+    renderAgentAssignOptions();
+    renderSelectedAgentConfig();
+    maybeShowSetupWizard();
+  }
 
-        renderAgentsPanel();
-        return response;
-      },
-    });
+  async function refreshProjectAgents() {
+    if (!state.selectedProgramId) {
+      state.projectAgents = [];
+      state.selectedProjectAgentId = null;
+      state.transcript = [];
+      renderProjectAgents();
+      renderChatLog();
+      updateBadges();
+      return;
+    }
+
+    const response = await api("GET", `/programs/${state.selectedProgramId}/agents`);
+    state.projectAgents = response.agents || [];
+
+    if (
+      state.selectedProjectAgentId &&
+      !state.projectAgents.some((s) => s.agent_id === state.selectedProjectAgentId)
+    ) {
+      state.selectedProjectAgentId = null;
+      state.transcript = [];
+    }
+
+    if (!state.selectedProjectAgentId && state.projectAgents.length > 0) {
+      state.selectedProjectAgentId = state.projectAgents[0].agent_id;
+      await refreshProjectAgentDetail();
+    }
+
+    renderProjectAgents();
+    updateBadges();
+  }
+
+  async function refreshProjectAgentDetail() {
+    if (!state.selectedProgramId || !state.selectedProjectAgentId) {
+      state.transcript = [];
+      renderChatLog();
+      return;
+    }
+
+    const response = await api(
+      "GET",
+      `/programs/${state.selectedProgramId}/agents/${state.selectedProjectAgentId}`
+    );
+    state.transcript = response.transcript || [];
+
+    const idx = state.projectAgents.findIndex(
+      (session) => session.agent_id === state.selectedProjectAgentId
+    );
+    if (idx >= 0) {
+      state.projectAgents[idx] = response.session;
+    }
+
+    renderChatLog();
+    updateBadges();
+  }
+
+  async function selectProject(programId) {
+    state.selectedProgramId = programId;
+    state.selectedProjectAgentId = null;
+    state.transcript = [];
+
+    await api("POST", `/programs/${programId}/load`, {});
+    await refreshProjectAgents();
+
+    renderProjects();
+    renderProjectAgents();
+    renderChatLog();
+    updateObserveLink();
+    updateBadges();
+    setStatus(`Selected project ${programId}.`, "idle");
+  }
+
+  function updateObserveLink() {
+    if (!state.selectedProgramId) {
+      el.observeLink.href = "#";
+      el.observeLink.textContent = "Open selected project in Observe";
+      return;
+    }
+
+    el.observeLink.href = `/programs/${state.selectedProgramId}/observability`;
+    el.observeLink.textContent = `Open project ${state.selectedProgramId} in Observe`;
+  }
+
+  async function onCreateProject() {
+    const name = el.projectNameInput.value.trim();
+    if (!name) {
+      setStatus("Project name is required.", "error");
+      return;
+    }
+
+    try {
+      const response = await api("POST", "/programs", { name });
+      const programId = Number(response.id);
+      el.projectNameInput.value = "";
+      await refreshPrograms();
+      await selectProject(programId);
+      setStatus(`Created project '${name}' (${programId}).`, "idle");
+    } catch (error) {
+      setStatus(`Create project failed: ${error.message}`, "error");
+    }
   }
 
   async function onRegisterAgent() {
-    const nameInput = el.operateAgentListMount.querySelector("#agentNameInput");
-    const name = nameInput?.value?.trim() || null;
+    const name = el.agentNameInput.value.trim();
 
-    await runAction({
-      title: "Register agent",
-      endpoint: ENDPOINTS.REGISTER_AGENT,
-      requestBody: { name },
-      handler: async () => {
-        const response = await apiRequest({
-          method: "POST",
-          url: ENDPOINTS.REGISTER_AGENT,
-          body: { name },
-        });
-
-        if (response?.agent_id) {
-          state.agentStatuses[response.agent_id] = "idle";
-          setSelectedAgent(response.agent_id);
-        }
-
-        await refreshAgents();
-        return response;
-      },
-    });
+    try {
+      const response = await api("POST", "/agents/register", {
+        name: name || null,
+        ...agentConfigPayload(),
+      });
+      el.agentNameInput.value = "";
+      el.agentApiKeyInput.value = "";
+      state.selectedAgentId = response.agent_id;
+      await refreshAgents();
+      if (response?.llm?.api_key_configured && response?.llm?.model && response?.llm?.provider) {
+        markSetupComplete();
+        hideSetupWizard();
+      }
+      setStatus(`Registered agent ${response.agent_id}.`, "idle");
+    } catch (error) {
+      setStatus(`Register agent failed: ${error.message}`, "error");
+    }
   }
 
-  async function onDeregisterAgent() {
-    const agentId = state.selectedAgentId;
+  async function onSaveAgentConfig() {
+    const agentId = el.agentAssignSelect.value || state.selectedAgentId;
     if (!agentId) {
-      setGlobalStatus("Select an agent before deregistering.", "blocked");
+      setStatus("Select an agent first.", "error");
       return;
     }
 
-    await runAction({
-      title: "Deregister agent",
-      endpoint: ENDPOINTS.DEREGISTER_AGENT(agentId),
-      requestBody: null,
-      selectedAgentRequired: true,
-      handler: async () => {
-        const response = await apiRequest({
-          method: "DELETE",
-          url: ENDPOINTS.DEREGISTER_AGENT(agentId),
-        });
+    try {
+      await api("POST", `/agents/${agentId}/config`, agentConfigPayload());
+      el.agentApiKeyInput.value = "";
+      state.selectedAgentId = agentId;
+      await refreshAgents();
+      if (hasConfiguredAgent()) {
+        markSetupComplete();
+        hideSetupWizard();
+      }
+      setStatus(`Saved config for agent ${agentId}.`, "idle");
+    } catch (error) {
+      setStatus(`Save config failed: ${error.message}`, "error");
+    }
+  }
 
-        delete state.agentStatuses[agentId];
-        setSelectedAgent(null);
+  async function onCompleteSetupWizard() {
+    const model = el.setupModelInput.value.trim();
+    const apiKey = el.setupApiKeyInput.value.trim();
+
+    if (!model || !apiKey) {
+      setStatus("Setup requires model and api key.", "error");
+      return;
+    }
+
+    try {
+      const response = await api("POST", "/agents/register", {
+        name: el.setupAgentNameInput.value.trim() || "builder",
+        ...setupConfigPayload(),
+      });
+      el.setupApiKeyInput.value = "";
+      state.selectedAgentId = response.agent_id;
+      markSetupComplete();
+      hideSetupWizard();
+      await refreshAgents();
+      setStatus("First-time AI setup complete.", "idle");
+    } catch (error) {
+      setStatus(`Setup failed: ${error.message}`, "error");
+    }
+  }
+
+  function onSkipSetupWizard() {
+    markSetupComplete();
+    hideSetupWizard();
+    setStatus("Setup skipped. You can configure provider settings in Agents.", "idle");
+  }
+
+  async function onCreateHelloWorldScaffold() {
+    if (!state.selectedProgramId) {
+      setStatus("Select a project first.", "error");
+      return;
+    }
+
+    try {
+      setStatus("Creating hello world scaffold...", "running");
+
+      await api("POST", `/programs/${state.selectedProgramId}/load`, {});
+
+      const createFunctionResponse = await api(
+        "POST",
+        `/programs/${state.selectedProgramId}/mutations`,
+        {
+          mutations: [
+            {
+              type: "AddFunction",
+              name: "hello_world",
+              module: 0,
+              params: [],
+              return_type: 7,
+              visibility: "Public",
+            },
+          ],
+          dry_run: false,
+        }
+      );
+
+      let helloWorldFunctionId = null;
+      if (Array.isArray(createFunctionResponse.created)) {
+        const createdFunction = createFunctionResponse.created.find(
+          (entry) => entry.type === "Function"
+        );
+        if (createdFunction && Number.isInteger(createdFunction.id)) {
+          helloWorldFunctionId = createdFunction.id;
+        }
+      }
+
+      if (helloWorldFunctionId !== null) {
+        await api("POST", `/programs/${state.selectedProgramId}/mutations`, {
+          mutations: [
+            {
+              type: "InsertNode",
+              op: { Core: "Return" },
+              owner: helloWorldFunctionId,
+            },
+          ],
+          dry_run: false,
+        });
+      }
+
+      await api("POST", `/programs/${state.selectedProgramId}/verify`, {
+        scope: "full",
+        affected_nodes: [],
+      });
+
+      const queryPreview = await api(
+        "POST",
+        `/programs/${state.selectedProgramId}/observability/query`,
+        {
+          query: "hello world",
+          max_results: 5,
+        }
+      );
+      const results = Array.isArray(queryPreview.results) ? queryPreview.results.length : 0;
+
+      setStatus(
+        `Hello world scaffold created. Open Observe and query 'hello world' (${results} preview results).`,
+        "idle"
+      );
+    } catch (error) {
+      setStatus(`Hello world scaffold failed: ${error.message}`, "error");
+    }
+  }
+
+  async function onAssignAgent() {
+    if (!state.selectedProgramId) {
+      setStatus("Select a project first.", "error");
+      return;
+    }
+
+    const agentId = el.agentAssignSelect.value;
+    if (!agentId) {
+      setStatus("Select an agent to assign.", "error");
+      return;
+    }
+
+    try {
+      await api(
+        "POST",
+        `/programs/${state.selectedProgramId}/agents/${agentId}/assign`,
+        {}
+      );
+      state.selectedProjectAgentId = agentId;
+      await refreshProjectAgents();
+      await refreshProjectAgentDetail();
+      setStatus(`Assigned agent ${agentId} to project ${state.selectedProgramId}.`, "idle");
+    } catch (error) {
+      setStatus(`Assign agent failed: ${error.message}`, "error");
+    }
+  }
+
+  async function onStartBuild() {
+    if (!state.selectedProgramId || !state.selectedProjectAgentId) {
+      setStatus("Select a project and an assigned agent first.", "error");
+      return;
+    }
+
+    const goal = el.goalInput.value.trim();
+    if (!goal) {
+      setStatus("Build goal is required.", "error");
+      return;
+    }
+
+    try {
+      await api(
+        "POST",
+        `/programs/${state.selectedProgramId}/agents/${state.selectedProjectAgentId}/start`,
+        { goal }
+      );
+      await refreshProjectAgents();
+      await refreshProjectAgentDetail();
+      setStatus("Build started.", "running");
+    } catch (error) {
+      setStatus(`Start build failed: ${error.message}`, "error");
+    }
+  }
+
+  async function onStopBuild() {
+    if (!state.selectedProgramId || !state.selectedProjectAgentId) {
+      setStatus("Select a project and an assigned agent first.", "error");
+      return;
+    }
+
+    try {
+      await api(
+        "POST",
+        `/programs/${state.selectedProgramId}/agents/${state.selectedProjectAgentId}/stop`,
+        { reason: "Stopped from dashboard" }
+      );
+      await refreshProjectAgents();
+      await refreshProjectAgentDetail();
+      setStatus("Build stopped.", "stopped");
+    } catch (error) {
+      setStatus(`Stop build failed: ${error.message}`, "error");
+    }
+  }
+
+  async function onSendChat() {
+    const message = el.chatInput.value.trim();
+    if (!message) {
+      setStatus("Chat message is required.", "error");
+      return;
+    }
+
+    try {
+      const response = await api(
+        "POST",
+        "/dashboard/ai/chat",
+        {
+          message,
+          selected_program_id: state.selectedProgramId,
+          selected_agent_id: state.selectedAgentId,
+          selected_project_agent_id: state.selectedProjectAgentId,
+        }
+      );
+
+      el.chatInput.value = "";
+      state.selectedProgramId = Number.isInteger(response.selected_program_id)
+        ? response.selected_program_id
+        : null;
+      state.selectedAgentId = response.selected_agent_id || null;
+      state.selectedProjectAgentId = response.selected_project_agent_id || null;
+
+      await refreshPrograms();
+      await refreshAgents();
+      await refreshProjectAgents();
+
+      if (Array.isArray(response.transcript)) {
+        state.transcript = response.transcript;
+        renderChatLog();
+      }
+
+      renderProjects();
+      renderAgentAssignOptions();
+      renderProjectAgents();
+      updateBadges();
+      updateObserveLink();
+      setStatus(response.reply || "AI action completed.", "idle");
+    } catch (error) {
+      setStatus(`Chat failed: ${error.message}`, "error");
+    }
+  }
+
+  function bindEvents() {
+    el.createProjectBtn.addEventListener("click", onCreateProject);
+    el.createHelloWorldBtn.addEventListener("click", onCreateHelloWorldScaffold);
+    el.refreshProjectsBtn.addEventListener("click", async () => {
+      try {
+        await refreshPrograms();
+        setStatus("Projects refreshed.", "idle");
+      } catch (error) {
+        setStatus(`Refresh projects failed: ${error.message}`, "error");
+      }
+    });
+
+    el.registerAgentBtn.addEventListener("click", onRegisterAgent);
+    el.saveAgentConfigBtn.addEventListener("click", onSaveAgentConfig);
+    el.refreshAgentsBtn.addEventListener("click", async () => {
+      try {
         await refreshAgents();
-        return response;
-      },
+        setStatus("Agents refreshed.", "idle");
+      } catch (error) {
+        setStatus(`Refresh agents failed: ${error.message}`, "error");
+      }
     });
-  }
 
-  async function onAcquireLocks() {
-    const functionIdsRaw = el.operateActionsMount.querySelector("#lockFunctionIdsInput")?.value || "";
-    const mode = el.operateActionsMount.querySelector("#lockModeSelect")?.value || "write";
-    const description = el.operateActionsMount.querySelector("#lockDescriptionInput")?.value?.trim() || null;
-    const function_ids = parseCsvU32(functionIdsRaw);
+    el.assignAgentBtn.addEventListener("click", onAssignAgent);
+    el.startBuildBtn.addEventListener("click", onStartBuild);
+    el.stopBuildBtn.addEventListener("click", onStopBuild);
+    el.sendChatBtn.addEventListener("click", onSendChat);
 
-    await runAction({
-      title: "Acquire locks",
-      endpoint: ENDPOINTS.LOCK_ACQUIRE(programId),
-      requestBody: { function_ids, mode, description },
-      selectedAgentRequired: true,
-      includeAgentHeader: true,
-      handler: async ({ agentId }) => {
-        return apiRequest({
-          method: "POST",
-          url: ENDPOINTS.LOCK_ACQUIRE(programId),
-          body: { function_ids, mode, description },
-          agentId,
-        });
-      },
+    el.agentAssignSelect.addEventListener("change", () => {
+      state.selectedAgentId = el.agentAssignSelect.value || null;
+      renderSelectedAgentConfig();
     });
-  }
 
-  async function onReleaseLocks() {
-    const functionIdsRaw = el.operateActionsMount.querySelector("#lockFunctionIdsInput")?.value || "";
-    const function_ids = parseCsvU32(functionIdsRaw);
-
-    await runAction({
-      title: "Release locks",
-      endpoint: ENDPOINTS.LOCK_RELEASE(programId),
-      requestBody: { function_ids },
-      selectedAgentRequired: true,
-      includeAgentHeader: true,
-      handler: async ({ agentId }) => {
-        return apiRequest({
-          method: "POST",
-          url: ENDPOINTS.LOCK_RELEASE(programId),
-          body: { function_ids },
-          agentId,
-        });
-      },
+    el.agentProviderSelect.addEventListener("change", () => {
+      if (
+        el.agentProviderSelect.value === "openrouter" &&
+        !el.agentBaseUrlInput.value.trim()
+      ) {
+        el.agentBaseUrlInput.value = "https://openrouter.ai/api/v1";
+      }
     });
-  }
 
-  async function onListLocks() {
-    await runAction({
-      title: "List locks",
-      endpoint: ENDPOINTS.LOCKS(programId),
-      requestBody: null,
-      handler: async () => {
-        return apiRequest({
-          method: "GET",
-          url: ENDPOINTS.LOCKS(programId),
-        });
-      },
-    });
-  }
-
-  async function onMutations(dryRun) {
-    const raw = el.operateActionsMount.querySelector("#mutationsInput")?.value || "[]";
-    const parsed = safeJsonParse(raw, "mutations");
-    if (!parsed.ok || !Array.isArray(parsed.value)) {
-      setGlobalStatus(parsed.error || "mutations must be a JSON array", "error");
-      return;
-    }
-
-    const body = {
-      mutations: parsed.value,
-      dry_run: dryRun,
-    };
-
-    await runAction({
-      title: dryRun ? "Mutation dry-run" : "Mutation commit",
-      endpoint: ENDPOINTS.MUTATIONS(programId),
-      requestBody: body,
-      includeAgentHeader: Boolean(state.selectedAgentId),
-      handler: async ({ agentId }) => {
-        return apiRequest({
-          method: "POST",
-          url: ENDPOINTS.MUTATIONS(programId),
-          body,
-          agentId,
-        });
-      },
-    });
-  }
-
-  async function onVerify() {
-    const scope = el.operateActionsMount.querySelector("#verifyScopeSelect")?.value || "local";
-    const raw = el.operateActionsMount.querySelector("#verifyAffectedInput")?.value || "[]";
-    const parsed = safeJsonParse(raw, "affected_nodes");
-    if (!parsed.ok || !Array.isArray(parsed.value)) {
-      setGlobalStatus(parsed.error || "affected_nodes must be a JSON array", "error");
-      return;
-    }
-
-    const affectedNodes = parsed.value.filter((value) => Number.isInteger(value));
-    const body = {
-      scope,
-      affected_nodes: affectedNodes,
-    };
-
-    await runAction({
-      title: "Verify",
-      endpoint: ENDPOINTS.VERIFY(programId),
-      requestBody: body,
-      handler: async () => {
-        return apiRequest({
-          method: "POST",
-          url: ENDPOINTS.VERIFY(programId),
-          body,
-        });
-      },
-    });
-  }
-
-  async function onSimulate() {
-    const functionId = Number(el.operateActionsMount.querySelector("#simulateFunctionIdInput")?.value || "1");
-    const raw = el.operateActionsMount.querySelector("#simulateInputsInput")?.value || "[]";
-    const parsed = safeJsonParse(raw, "inputs");
-    if (!parsed.ok || !Array.isArray(parsed.value)) {
-      setGlobalStatus(parsed.error || "inputs must be a JSON array", "error");
-      return;
-    }
-
-    const body = {
-      function_id: functionId,
-      inputs: parsed.value,
-      trace_enabled: true,
-    };
-
-    await runAction({
-      title: "Simulate",
-      endpoint: ENDPOINTS.SIMULATE(programId),
-      requestBody: body,
-      handler: async () => {
-        return apiRequest({
-          method: "POST",
-          url: ENDPOINTS.SIMULATE(programId),
-          body,
-        });
-      },
-    });
-  }
-
-  async function onCompile() {
-    const optLevel = el.operateActionsMount.querySelector("#compileOptLevelSelect")?.value || "O0";
-    const body = {
-      opt_level: optLevel,
-      debug_symbols: false,
-    };
-
-    await runAction({
-      title: "Compile",
-      endpoint: ENDPOINTS.COMPILE(programId),
-      requestBody: body,
-      handler: async () => {
-        return apiRequest({
-          method: "POST",
-          url: ENDPOINTS.COMPILE(programId),
-          body,
-        });
-      },
-    });
-  }
-
-  async function onHistory() {
-    await runAction({
-      title: "History",
-      endpoint: ENDPOINTS.HISTORY(programId),
-      requestBody: null,
-      handler: async () => {
-        return apiRequest({
-          method: "GET",
-          url: ENDPOINTS.HISTORY(programId),
-        });
-      },
-    });
-  }
-
-  function bindTabNavigation() {
-    el.tabButtons.forEach((btn) => {
-      btn.addEventListener("click", () => activateTab(btn.dataset.tab));
-    });
-  }
-
-  function bootstrapOutputPanel() {
-    writeOutput("Dashboard bootstrap", {
-      request: {
-        program_id: programId,
-        template: state.runSetup.template,
-      },
-      response: {
-        context: contextSummary(),
-        observe_path: ENDPOINTS.OBSERVE(programId),
-        endpoint_hooks: {
-          agents: [ENDPOINTS.REGISTER_AGENT, ENDPOINTS.LIST_AGENTS, ENDPOINTS.DEREGISTER_AGENT("{agent_id}")],
-          locks: [ENDPOINTS.LOCKS(programId), ENDPOINTS.LOCK_ACQUIRE(programId), ENDPOINTS.LOCK_RELEASE(programId)],
-          mutations: [ENDPOINTS.MUTATIONS(programId)],
-          verify: [ENDPOINTS.VERIFY(programId)],
-          simulate: [ENDPOINTS.SIMULATE(programId)],
-          compile: [ENDPOINTS.COMPILE(programId)],
-          history: [ENDPOINTS.HISTORY(programId)],
-        },
-      },
+    el.setupCompleteBtn.addEventListener("click", onCompleteSetupWizard);
+    el.setupSkipBtn.addEventListener("click", onSkipSetupWizard);
+    el.setupProviderSelect.addEventListener("change", () => {
+      if (
+        el.setupProviderSelect.value === "openrouter" &&
+        !el.setupBaseUrlInput.value.trim()
+      ) {
+        el.setupBaseUrlInput.value = "https://openrouter.ai/api/v1";
+      }
     });
   }
 
   async function init() {
-    bindTabNavigation();
+    bindEvents();
 
-    el.contextProgramId.textContent = String(programId);
-    el.openObserveLink.href = ENDPOINTS.OBSERVE(programId);
+    try {
+      setStatus("Loading projects and agents...", "running");
+      await refreshPrograms();
+      await refreshAgents();
 
-    renderRunSetupPanel();
-    renderActionsPanel();
-    renderTimelinePanel();
-    renderAgentsPanel();
-    bootstrapOutputPanel();
+      if (state.selectedProgramId) {
+        await selectProject(state.selectedProgramId);
+      }
 
-    activateTab("operate");
-    setGlobalStatus("Dashboard initialized. Loading agents...", "running");
-    await refreshAgents();
-    setGlobalStatus("Dashboard ready.", "idle");
+      renderProjects();
+      renderAgentAssignOptions();
+      renderProjectAgents();
+      renderChatLog();
+      updateObserveLink();
+      updateBadges();
+      maybeShowSetupWizard();
+      setStatus("Dashboard ready.", "idle");
+    } catch (error) {
+      setStatus(`Initialization failed: ${error.message}`, "error");
+    }
   }
 
   init();

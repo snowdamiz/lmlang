@@ -292,9 +292,7 @@ impl<'g> Interpreter<'g> {
 
                 if self.call_stack.is_empty() {
                     // Top-level function returned -- execution complete
-                    self.state = ExecutionState::Completed {
-                        result: value,
-                    };
+                    self.state = ExecutionState::Completed { result: value };
                 } else {
                     // Store return value in caller's frame at return_target
                     if let Some((target_node, _target_port)) = frame.return_target {
@@ -350,13 +348,15 @@ impl<'g> Interpreter<'g> {
                             // Cross-module call: check invariants for each typed argument
                             for (idx, arg_value) in args.iter().enumerate() {
                                 if let Some((_, type_id)) = target_func.params.get(idx) {
-                                    let violations = crate::contracts::check::check_invariants_for_value(
-                                        self.graph, *type_id, arg_value, target,
-                                    );
+                                    let violations =
+                                        crate::contracts::check::check_invariants_for_value(
+                                            self.graph, *type_id, arg_value, target,
+                                        );
                                     match violations {
                                         Ok(v) => {
                                             if let Some(violation) = v.into_iter().next() {
-                                                self.state = ExecutionState::ContractViolation { violation };
+                                                self.state =
+                                                    ExecutionState::ContractViolation { violation };
                                                 return &self.state;
                                             }
                                         }
@@ -565,8 +565,8 @@ impl<'g> Interpreter<'g> {
             }
 
             // Check control readiness
-            let is_control_ready = !frame.control_gated.contains(&node_id)
-                || frame.control_ready.contains(&node_id);
+            let is_control_ready =
+                !frame.control_gated.contains(&node_id) || frame.control_ready.contains(&node_id);
 
             if !is_control_ready {
                 deferred.push_back(node_id);
@@ -705,11 +705,12 @@ impl<'g> Interpreter<'g> {
             }
             ComputeNodeOp::Core(ComputeOp::Parameter { index }) => {
                 // Parameter values are pre-seeded in the frame
-                let frame = self.call_stack.last().ok_or_else(|| {
-                    RuntimeError::InternalError {
+                let frame = self
+                    .call_stack
+                    .last()
+                    .ok_or_else(|| RuntimeError::InternalError {
                         message: "no call frame for Parameter".into(),
-                    }
-                })?;
+                    })?;
                 let value = frame
                     .arguments
                     .get(*index as usize)
@@ -718,11 +719,12 @@ impl<'g> Interpreter<'g> {
                 Ok(EvalResult::Value(value))
             }
             ComputeNodeOp::Core(ComputeOp::CaptureAccess { index }) => {
-                let frame = self.call_stack.last().ok_or_else(|| {
-                    RuntimeError::InternalError {
+                let frame = self
+                    .call_stack
+                    .last()
+                    .ok_or_else(|| RuntimeError::InternalError {
                         message: "no call frame for CaptureAccess".into(),
-                    }
-                })?;
+                    })?;
                 let value = frame
                     .captures
                     .get(*index as usize)
@@ -757,14 +759,12 @@ impl<'g> Interpreter<'g> {
             }
             ComputeNodeOp::Core(ComputeOp::Load) => {
                 // Port 0 is the pointer
-                let ptr = inputs
-                    .iter()
-                    .find(|(p, _)| *p == 0)
-                    .map(|(_, v)| v)
-                    .ok_or(RuntimeError::MissingValue {
+                let ptr = inputs.iter().find(|(p, _)| *p == 0).map(|(_, v)| v).ok_or(
+                    RuntimeError::MissingValue {
                         node: node_id,
                         port: 0,
-                    })?;
+                    },
+                )?;
                 match ptr {
                     Value::Pointer(addr) => {
                         if *addr >= self.memory.len() {
@@ -786,22 +786,18 @@ impl<'g> Interpreter<'g> {
             }
             ComputeNodeOp::Core(ComputeOp::Store) => {
                 // Port 0: pointer, Port 1: value
-                let ptr = inputs
-                    .iter()
-                    .find(|(p, _)| *p == 0)
-                    .map(|(_, v)| v)
-                    .ok_or(RuntimeError::MissingValue {
+                let ptr = inputs.iter().find(|(p, _)| *p == 0).map(|(_, v)| v).ok_or(
+                    RuntimeError::MissingValue {
                         node: node_id,
                         port: 0,
-                    })?;
-                let val = inputs
-                    .iter()
-                    .find(|(p, _)| *p == 1)
-                    .map(|(_, v)| v)
-                    .ok_or(RuntimeError::MissingValue {
+                    },
+                )?;
+                let val = inputs.iter().find(|(p, _)| *p == 1).map(|(_, v)| v).ok_or(
+                    RuntimeError::MissingValue {
                         node: node_id,
                         port: 1,
-                    })?;
+                    },
+                )?;
                 match ptr {
                     Value::Pointer(addr) => {
                         if *addr >= self.memory.len() {
@@ -824,22 +820,18 @@ impl<'g> Interpreter<'g> {
             }
             ComputeNodeOp::Core(ComputeOp::GetElementPtr) => {
                 // Port 0: base pointer, Port 1: index
-                let base = inputs
-                    .iter()
-                    .find(|(p, _)| *p == 0)
-                    .map(|(_, v)| v)
-                    .ok_or(RuntimeError::MissingValue {
+                let base = inputs.iter().find(|(p, _)| *p == 0).map(|(_, v)| v).ok_or(
+                    RuntimeError::MissingValue {
                         node: node_id,
                         port: 0,
-                    })?;
-                let index = inputs
-                    .iter()
-                    .find(|(p, _)| *p == 1)
-                    .map(|(_, v)| v)
-                    .ok_or(RuntimeError::MissingValue {
+                    },
+                )?;
+                let index = inputs.iter().find(|(p, _)| *p == 1).map(|(_, v)| v).ok_or(
+                    RuntimeError::MissingValue {
                         node: node_id,
                         port: 1,
-                    })?;
+                    },
+                )?;
                 match (base, index) {
                     (Value::Pointer(addr), idx) => {
                         let offset = value_to_usize(idx, node_id)?;
@@ -862,14 +854,12 @@ impl<'g> Interpreter<'g> {
             // Control flow ops -- Branch/IfElse/Loop/Match/Jump/Phi handled here
             ComputeNodeOp::Core(ComputeOp::Branch) | ComputeNodeOp::Core(ComputeOp::IfElse) => {
                 // Condition at port 0
-                let cond = inputs
-                    .iter()
-                    .find(|(p, _)| *p == 0)
-                    .map(|(_, v)| v)
-                    .ok_or(RuntimeError::MissingValue {
+                let cond = inputs.iter().find(|(p, _)| *p == 0).map(|(_, v)| v).ok_or(
+                    RuntimeError::MissingValue {
                         node: node_id,
                         port: 0,
-                    })?;
+                    },
+                )?;
                 let taken = match cond {
                     Value::Bool(b) => *b,
                     _ => {
@@ -884,18 +874,13 @@ impl<'g> Interpreter<'g> {
                 if let Some(frame) = self.call_stack.last_mut() {
                     // Store a value indicating which branch was taken
                     // true = branch_index 0, false = branch_index 1
-                    frame
-                        .node_values
-                        .insert(node_id, Value::Bool(taken));
+                    frame.node_values.insert(node_id, Value::Bool(taken));
                 }
                 Ok(EvalResult::NoValue)
             }
             ComputeNodeOp::Core(ComputeOp::Loop) => {
                 // Loop condition at port 0
-                let cond = inputs
-                    .iter()
-                    .find(|(p, _)| *p == 0)
-                    .map(|(_, v)| v);
+                let cond = inputs.iter().find(|(p, _)| *p == 0).map(|(_, v)| v);
                 if let Some(cond_val) = cond {
                     if let Some(frame) = self.call_stack.last_mut() {
                         frame.node_values.insert(node_id, cond_val.clone());
@@ -905,14 +890,12 @@ impl<'g> Interpreter<'g> {
             }
             ComputeNodeOp::Core(ComputeOp::Match) => {
                 // Discriminant at port 0
-                let disc = inputs
-                    .iter()
-                    .find(|(p, _)| *p == 0)
-                    .map(|(_, v)| v)
-                    .ok_or(RuntimeError::MissingValue {
+                let disc = inputs.iter().find(|(p, _)| *p == 0).map(|(_, v)| v).ok_or(
+                    RuntimeError::MissingValue {
                         node: node_id,
                         port: 0,
-                    })?;
+                    },
+                )?;
                 if let Some(frame) = self.call_stack.last_mut() {
                     frame.node_values.insert(node_id, disc.clone());
                 }
@@ -931,22 +914,34 @@ impl<'g> Interpreter<'g> {
                 // false -> branch_index=1 -> data port 1.
                 let node_idx: petgraph::graph::NodeIndex<u32> = node_id.into();
 
-                let frame = self.call_stack.last().ok_or_else(|| {
-                    RuntimeError::InternalError {
+                let frame = self
+                    .call_stack
+                    .last()
+                    .ok_or_else(|| RuntimeError::InternalError {
                         message: "no call frame for Phi".into(),
-                    }
-                })?;
+                    })?;
 
                 let mut selected_port: Option<u16> = None;
 
                 // Look at incoming control edges from branch nodes
-                for edge_ref in self.graph.compute().edges_directed(node_idx, Direction::Incoming) {
-                    if let FlowEdge::Control { branch_index: Some(_) } = edge_ref.weight() {
+                for edge_ref in self
+                    .graph
+                    .compute()
+                    .edges_directed(node_idx, Direction::Incoming)
+                {
+                    if let FlowEdge::Control {
+                        branch_index: Some(_),
+                    } = edge_ref.weight()
+                    {
                         let source_id = NodeId::from(edge_ref.source());
                         if let Some(branch_val) = frame.node_values.get(&source_id) {
                             match branch_val {
-                                Value::Bool(true) => { selected_port = Some(0); }
-                                Value::Bool(false) => { selected_port = Some(1); }
+                                Value::Bool(true) => {
+                                    selected_port = Some(0);
+                                }
+                                Value::Bool(false) => {
+                                    selected_port = Some(1);
+                                }
                                 _ => {}
                             }
                         }
@@ -971,14 +966,10 @@ impl<'g> Interpreter<'g> {
             }
             // Contract ops: check condition and halt with ContractViolation if false
             ComputeNodeOp::Core(
-                ComputeOp::Precondition { message }
-                | ComputeOp::Postcondition { message }
+                ComputeOp::Precondition { message } | ComputeOp::Postcondition { message },
             ) => {
                 // Port 0 is the condition (Bool)
-                let condition = inputs
-                    .iter()
-                    .find(|(p, _)| *p == 0)
-                    .map(|(_, v)| v);
+                let condition = inputs.iter().find(|(p, _)| *p == 0).map(|(_, v)| v);
                 match condition {
                     Some(Value::Bool(true)) => Ok(EvalResult::NoValue),
                     Some(Value::Bool(false)) => {
@@ -988,11 +979,12 @@ impl<'g> Interpreter<'g> {
                             }
                             _ => crate::contracts::ContractKind::Postcondition,
                         };
-                        let frame = self.call_stack.last().ok_or_else(|| {
-                            RuntimeError::InternalError {
-                                message: "no call frame for contract check".into(),
-                            }
-                        })?;
+                        let frame =
+                            self.call_stack
+                                .last()
+                                .ok_or_else(|| RuntimeError::InternalError {
+                                    message: "no call frame for contract check".into(),
+                                })?;
                         let counterexample = crate::contracts::check::collect_counterexample(
                             self.graph,
                             node_id,
@@ -1022,18 +1014,16 @@ impl<'g> Interpreter<'g> {
                 }
             }
             ComputeNodeOp::Core(ComputeOp::Invariant { message, .. }) => {
-                let condition = inputs
-                    .iter()
-                    .find(|(p, _)| *p == 0)
-                    .map(|(_, v)| v);
+                let condition = inputs.iter().find(|(p, _)| *p == 0).map(|(_, v)| v);
                 match condition {
                     Some(Value::Bool(true)) => Ok(EvalResult::NoValue),
                     Some(Value::Bool(false)) => {
-                        let frame = self.call_stack.last().ok_or_else(|| {
-                            RuntimeError::InternalError {
-                                message: "no call frame for contract check".into(),
-                            }
-                        })?;
+                        let frame =
+                            self.call_stack
+                                .last()
+                                .ok_or_else(|| RuntimeError::InternalError {
+                                    message: "no call frame for contract check".into(),
+                                })?;
                         let counterexample = crate::contracts::check::collect_counterexample(
                             self.graph,
                             node_id,
@@ -1061,12 +1051,10 @@ impl<'g> Interpreter<'g> {
             }
 
             // Delegate all other ops (arithmetic, logic, comparison, structured) to eval_op
-            _ => {
-                match eval_op(op, inputs, node_id, self.graph)? {
-                    Some(value) => Ok(EvalResult::Value(value)),
-                    None => Ok(EvalResult::NoValue),
-                }
-            }
+            _ => match eval_op(op, inputs, node_id, self.graph)? {
+                Some(value) => Ok(EvalResult::Value(value)),
+                None => Ok(EvalResult::NoValue),
+            },
         }
     }
 
@@ -1078,10 +1066,7 @@ impl<'g> Interpreter<'g> {
         let is_branch = matches!(
             op,
             ComputeNodeOp::Core(
-                ComputeOp::Branch
-                    | ComputeOp::IfElse
-                    | ComputeOp::Loop
-                    | ComputeOp::Match
+                ComputeOp::Branch | ComputeOp::IfElse | ComputeOp::Loop | ComputeOp::Match
             )
         );
 
@@ -1094,12 +1079,8 @@ impl<'g> Interpreter<'g> {
                 .compute()
                 .edges_directed(node_idx, Direction::Outgoing)
                 .filter_map(|edge_ref| match edge_ref.weight() {
-                    FlowEdge::Data { .. } => {
-                        Some((NodeId::from(edge_ref.target()), true))
-                    }
-                    FlowEdge::Control { .. } => {
-                        Some((NodeId::from(edge_ref.target()), false))
-                    }
+                    FlowEdge::Data { .. } => Some((NodeId::from(edge_ref.target()), true)),
+                    FlowEdge::Control { .. } => Some((NodeId::from(edge_ref.target()), false)),
                 })
                 .collect();
 
@@ -1136,8 +1117,8 @@ impl<'g> Interpreter<'g> {
         }
 
         // Control ready?
-        let is_control_ready = !frame.control_gated.contains(&node_id)
-            || frame.control_ready.contains(&node_id);
+        let is_control_ready =
+            !frame.control_gated.contains(&node_id) || frame.control_ready.contains(&node_id);
         if !is_control_ready {
             return;
         }
@@ -1185,19 +1166,17 @@ impl<'g> Interpreter<'g> {
                 match &branch_value {
                     Some(Value::Bool(true)) => Some(0),  // continue loop (body)
                     Some(Value::Bool(false)) => Some(1), // exit loop
-                    _ => Some(1), // default: exit
+                    _ => Some(1),                        // default: exit
                 }
             }
-            ComputeNodeOp::Core(ComputeOp::Match) => {
-                match &branch_value {
-                    Some(Value::I32(v)) => Some(*v as u16),
-                    Some(Value::I8(v)) => Some(*v as u16),
-                    Some(Value::I16(v)) => Some(*v as u16),
-                    Some(Value::I64(v)) => Some(*v as u16),
-                    Some(Value::Enum { variant, .. }) => Some(*variant as u16),
-                    _ => Some(0),
-                }
-            }
+            ComputeNodeOp::Core(ComputeOp::Match) => match &branch_value {
+                Some(Value::I32(v)) => Some(*v as u16),
+                Some(Value::I8(v)) => Some(*v as u16),
+                Some(Value::I16(v)) => Some(*v as u16),
+                Some(Value::I64(v)) => Some(*v as u16),
+                Some(Value::Enum { variant, .. }) => Some(*variant as u16),
+                _ => Some(0),
+            },
             _ => None,
         };
 
@@ -1248,8 +1227,8 @@ impl<'g> Interpreter<'g> {
         // Loop back-edge re-evaluation: when Loop takes branch 0 (continue),
         // clear the evaluated/value/readiness state of all loop body nodes so
         // they can be re-scheduled and re-evaluated on the next iteration.
-        let is_loop_continue = matches!(op, ComputeNodeOp::Core(ComputeOp::Loop))
-            && taken_branch == Some(0);
+        let is_loop_continue =
+            matches!(op, ComputeNodeOp::Core(ComputeOp::Loop)) && taken_branch == Some(0);
 
         if is_loop_continue {
             // BFS from activated branch-0 successors through control edges to
@@ -1270,7 +1249,11 @@ impl<'g> Interpreter<'g> {
             while let Some(current) = queue.pop_front() {
                 let cur_idx: petgraph::graph::NodeIndex<u32> = current.into();
                 // Follow outgoing control AND data edges to discover the full loop body
-                for edge_ref in self.graph.compute().edges_directed(cur_idx, Direction::Outgoing) {
+                for edge_ref in self
+                    .graph
+                    .compute()
+                    .edges_directed(cur_idx, Direction::Outgoing)
+                {
                     let target = NodeId::from(edge_ref.target());
                     // Don't include the Loop node itself in the body reset set
                     if target == node_id {
@@ -1490,10 +1473,7 @@ mod tests {
             .add_core_op(ComputeOp::Parameter { index: 1 }, func_id)
             .unwrap();
         let add_node = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
         let ret_node = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
@@ -1549,12 +1529,10 @@ mod tests {
         interp.run();
 
         match interp.state() {
-            ExecutionState::Completed { result } => {
-                match result {
-                    Value::I32(v) => assert_eq!(*v, 42),
-                    _ => panic!("Expected I32(42), got {:?}", result),
-                }
-            }
+            ExecutionState::Completed { result } => match result {
+                Value::I32(v) => assert_eq!(*v, 42),
+                _ => panic!("Expected I32(42), got {:?}", result),
+            },
             other => panic!("Expected Completed, got {:?}", other),
         }
     }
@@ -1567,12 +1545,10 @@ mod tests {
         interp.run();
 
         match interp.state() {
-            ExecutionState::Completed { result } => {
-                match result {
-                    Value::I32(v) => assert_eq!(*v, 42),
-                    _ => panic!("Expected I32(42), got {:?}", result),
-                }
-            }
+            ExecutionState::Completed { result } => match result {
+                Value::I32(v) => assert_eq!(*v, 42),
+                _ => panic!("Expected I32(42), got {:?}", result),
+            },
             other => panic!("Expected Completed, got {:?}", other),
         }
     }
@@ -1600,12 +1576,10 @@ mod tests {
         interp.run();
 
         match interp.state() {
-            ExecutionState::Completed { result } => {
-                match result {
-                    Value::I32(v) => assert_eq!(*v, 8),
-                    _ => panic!("Expected I32(8), got {:?}", result),
-                }
-            }
+            ExecutionState::Completed { result } => match result {
+                Value::I32(v) => assert_eq!(*v, 8),
+                _ => panic!("Expected I32(8), got {:?}", result),
+            },
             other => panic!("Expected Completed, got {:?}", other),
         }
     }
@@ -1622,10 +1596,7 @@ mod tests {
         interp.run();
 
         let trace = interp.trace().expect("trace should be Some when enabled");
-        assert!(
-            !trace.is_empty(),
-            "trace should contain at least one entry"
-        );
+        assert!(!trace.is_empty(), "trace should contain at least one entry");
     }
 
     #[test]
@@ -1679,10 +1650,7 @@ mod tests {
             Value::from_const(&ConstValue::F64(2.718)),
             Value::F64(v) if (v - 2.718).abs() < 0.001
         ));
-        assert!(matches!(
-            Value::from_const(&ConstValue::Unit),
-            Value::Unit
-        ));
+        assert!(matches!(Value::from_const(&ConstValue::Unit), Value::Unit));
     }
 
     #[test]
@@ -1749,9 +1717,7 @@ mod tests {
             .unwrap();
 
         // callee: Return node returning x
-        let callee_ret = graph
-            .add_core_op(ComputeOp::Return, callee_id)
-            .unwrap();
+        let callee_ret = graph.add_core_op(ComputeOp::Return, callee_id).unwrap();
         graph
             .add_data_edge(callee_param, callee_ret, 0, 0, TypeId::I32)
             .unwrap();
@@ -1779,19 +1745,14 @@ mod tests {
 
         // caller: Call callee with -1
         let caller_call = graph
-            .add_core_op(
-                ComputeOp::Call { target: callee_id },
-                caller_id,
-            )
+            .add_core_op(ComputeOp::Call { target: callee_id }, caller_id)
             .unwrap();
         graph
             .add_data_edge(caller_const, caller_call, 0, 0, TypeId::I32)
             .unwrap();
 
         // caller: Return the call result
-        let caller_ret = graph
-            .add_core_op(ComputeOp::Return, caller_id)
-            .unwrap();
+        let caller_ret = graph.add_core_op(ComputeOp::Return, caller_id).unwrap();
         graph
             .add_data_edge(caller_call, caller_ret, 0, 0, TypeId::I32)
             .unwrap();

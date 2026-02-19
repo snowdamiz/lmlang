@@ -5,8 +5,8 @@
 
 use serde::Serialize;
 
-use crate::error::ApiErrorDetail;
 use super::diagnostics::DiagnosticWarning;
+use crate::error::ApiErrorDetail;
 
 /// Standard API response envelope.
 ///

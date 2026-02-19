@@ -87,9 +87,7 @@ pub fn validate_data_edge(
                 .find(|(p, _)| *p == target_port)
                 .map(|(_, t)| *t)
             {
-                if value_type != expected
-                    && !can_coerce(value_type, expected, registry)
-                {
+                if value_type != expected && !can_coerce(value_type, expected, registry) {
                     let suggestion = if type_is_numeric(value_type) && type_is_numeric(expected) {
                         Some(FixSuggestion::InsertCast {
                             from: value_type,
@@ -159,9 +157,7 @@ pub fn validate_graph(graph: &ProgramGraph) -> Vec<TypeError> {
                         .find(|(p, _)| *p == port)
                         .map(|(_, t)| *t)
                     {
-                        if actual_type != expected
-                            && !can_coerce(actual_type, expected, registry)
-                        {
+                        if actual_type != expected && !can_coerce(actual_type, expected, registry) {
                             // Find the source node for this edge
                             let source_node = find_source_node(graph, node_id, port);
                             let source_port = find_source_port(graph, node_id, port);
@@ -220,11 +216,7 @@ fn incoming_data_types(graph: &ProgramGraph, node_id: NodeId) -> Vec<(u16, TypeI
 }
 
 /// Find the source node for a data edge targeting a specific port.
-fn find_source_node(
-    graph: &ProgramGraph,
-    target_node: NodeId,
-    target_port: u16,
-) -> Option<NodeId> {
+fn find_source_node(graph: &ProgramGraph, target_node: NodeId, target_port: u16) -> Option<NodeId> {
     let node_idx: petgraph::graph::NodeIndex<u32> = target_node.into();
     graph
         .compute()
@@ -238,11 +230,7 @@ fn find_source_node(
 }
 
 /// Find the source port for a data edge targeting a specific port.
-fn find_source_port(
-    graph: &ProgramGraph,
-    target_node: NodeId,
-    target_port: u16,
-) -> Option<u16> {
+fn find_source_port(graph: &ProgramGraph, target_node: NodeId, target_port: u16) -> Option<u16> {
     let node_idx: petgraph::graph::NodeIndex<u32> = target_node.into();
     graph
         .compute()
@@ -375,10 +363,7 @@ mod tests {
             .add_core_op(ComputeOp::Parameter { index: 1 }, func_id)
             .unwrap();
         let add_node = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
 
         graph
@@ -406,10 +391,7 @@ mod tests {
             .add_core_op(ComputeOp::Parameter { index: 1 }, func_id)
             .unwrap();
         let add_node = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
 
         // First edge
@@ -438,10 +420,7 @@ mod tests {
             )
             .unwrap();
         let add_node = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
 
         // Add i32 edge first
@@ -477,10 +456,7 @@ mod tests {
             )
             .unwrap();
         let add_node = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
 
         // Add i32 edge first
@@ -514,10 +490,7 @@ mod tests {
             )
             .unwrap();
         let add_node = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
 
         // Add i64 edge first so the resolved common type is i64
@@ -542,10 +515,7 @@ mod tests {
             .unwrap();
 
         let add_node2 = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
 
         graph
@@ -597,16 +567,10 @@ mod tests {
             .unwrap();
 
         let add1 = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
         let add2 = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
 
         // Both add nodes get mismatched i32 + f64
@@ -639,15 +603,19 @@ mod tests {
 
         // Create a BinaryArith node with 0 inputs
         let _add_node = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
 
         let errors = validate_graph(&graph);
         assert!(
-            errors.iter().any(|e| matches!(e, TypeError::WrongInputCount { expected: 2, actual: 0, .. })),
+            errors.iter().any(|e| matches!(
+                e,
+                TypeError::WrongInputCount {
+                    expected: 2,
+                    actual: 0,
+                    ..
+                }
+            )),
             "Expected WrongInputCount error, got: {:?}",
             errors
         );
@@ -676,10 +644,7 @@ mod tests {
             .add_core_op(ComputeOp::Parameter { index: 1 }, func1)
             .unwrap();
         let add = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func1,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func1)
             .unwrap();
         let ret1 = graph.add_core_op(ComputeOp::Return, func1).unwrap();
 
@@ -739,10 +704,7 @@ mod tests {
             )
             .unwrap();
         let add_node = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
 
         graph
@@ -753,7 +715,12 @@ mod tests {
             .unwrap();
 
         let errors = validate_graph(&graph);
-        assert_eq!(errors.len(), 1, "Expected exactly 1 error, got: {:?}", errors);
+        assert_eq!(
+            errors.len(),
+            1,
+            "Expected exactly 1 error, got: {:?}",
+            errors
+        );
     }
 
     #[test]
@@ -793,10 +760,7 @@ mod tests {
 
         for _ in 0..3 {
             let add = graph
-                .add_core_op(
-                    ComputeOp::BinaryArith { op: ArithOp::Add },
-                    func_id,
-                )
+                .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
                 .unwrap();
             graph
                 .add_data_edge(const_i32, add, 0, 0, TypeId::I32)
@@ -830,10 +794,7 @@ mod tests {
                 lmlang_core::LmType::Struct(StructDef {
                     name: "Point".into(),
                     type_id: TypeId(0),
-                    fields: IndexMap::from([
-                        ("x".into(), TypeId::F64),
-                        ("y".into(), TypeId::F64),
-                    ]),
+                    fields: IndexMap::from([("x".into(), TypeId::F64), ("y".into(), TypeId::F64)]),
                     module: root,
                     visibility: Visibility::Public,
                 }),
@@ -847,10 +808,7 @@ mod tests {
                 lmlang_core::LmType::Struct(StructDef {
                     name: "Coordinate".into(),
                     type_id: TypeId(0),
-                    fields: IndexMap::from([
-                        ("x".into(), TypeId::F64),
-                        ("y".into(), TypeId::F64),
-                    ]),
+                    fields: IndexMap::from([("x".into(), TypeId::F64), ("y".into(), TypeId::F64)]),
                     module: root,
                     visibility: Visibility::Public,
                 }),
@@ -935,10 +893,7 @@ mod tests {
             )
             .unwrap();
         let add_node = graph
-            .add_core_op(
-                ComputeOp::BinaryArith { op: ArithOp::Add },
-                func_id,
-            )
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
             .unwrap();
 
         graph
@@ -968,7 +923,13 @@ mod tests {
             )
             .unwrap();
         let caller = graph2
-            .add_function("caller".into(), root2, vec![], TypeId::UNIT, Visibility::Public)
+            .add_function(
+                "caller".into(),
+                root2,
+                vec![],
+                TypeId::UNIT,
+                Visibility::Public,
+            )
             .unwrap();
 
         let const_i64_2 = graph2
@@ -990,7 +951,9 @@ mod tests {
         // Validate: I64 value going to a port that expects I32 (narrowing)
         let errors = validate_graph(&graph2);
         assert!(
-            errors.iter().any(|e| matches!(e, TypeError::TypeMismatch { .. })),
+            errors
+                .iter()
+                .any(|e| matches!(e, TypeError::TypeMismatch { .. })),
             "Expected type mismatch for I64 -> I32 narrowing, got: {:?}",
             errors
         );
@@ -1011,7 +974,13 @@ mod tests {
             )
             .unwrap();
         let caller = graph
-            .add_function("caller".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+            .add_function(
+                "caller".into(),
+                root,
+                vec![],
+                TypeId::UNIT,
+                Visibility::Public,
+            )
             .unwrap();
 
         let const_val = graph

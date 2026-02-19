@@ -31,6 +31,19 @@ fn test_app() -> Router {
     build_router(state)
 }
 
+/// Creates a router backed by an on-disk SQLite database path.
+fn test_app_with_db(db_path: &str) -> Router {
+    let state = AppState::new(db_path).expect("failed to create AppState");
+    build_router(state)
+}
+
+fn temp_db_path(prefix: &str) -> String {
+    std::env::temp_dir()
+        .join(format!("{}_{}.db", prefix, uuid::Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string()
+}
+
 /// Sends a POST request with a JSON body and returns (status, json).
 async fn post_json(
     app: &Router,
@@ -1748,65 +1761,543 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
     let app = test_app();
     let pid = setup_program(&app).await;
 
+    let (status, root_html) = get_text(&app, "/dashboard").await;
+    assert_eq!(status, StatusCode::OK, "top-level dashboard not served");
+    assert!(root_html.contains("Unified Dashboard"));
+    assert!(root_html.contains("Create Project"));
+    assert!(root_html.contains("Create Hello World Scaffold"));
+    assert!(root_html.contains("Assign To Project"));
+    assert!(root_html.contains("OpenRouter"));
+    assert!(root_html.contains("Save Agent Config"));
+    assert!(root_html.contains("First-Time AI Setup"));
+    assert!(root_html.contains("Complete Setup"));
+    assert!(root_html.contains("Start Build"));
+    assert!(root_html.contains("Send"));
+    assert!(root_html.contains("data-initial-program-id=\"\""));
+
     let (status, html) = get_text(&app, &format!("/programs/{}/dashboard", pid)).await;
     assert_eq!(status, StatusCode::OK, "dashboard index not served");
-    assert!(html.contains("Operate + Observe"));
-    assert!(html.contains("data-tab=\"operate\""));
-    assert!(html.contains("data-tab=\"observe\""));
-    assert!(html.contains("id=\"operateAgentListMount\""));
-    assert!(html.contains("id=\"operateRunSetupMount\""));
-    assert!(html.contains("id=\"operateActionsMount\""));
-    assert!(html.contains("id=\"operateTimelineMount\""));
-    assert!(html.contains("id=\"operateOutputMount\""));
-    assert!(html.contains("id=\"observeMount\""));
-    assert!(html.contains(&format!("/programs/{}/dashboard/app.js", pid)));
-    assert!(html.contains(&format!("/programs/{}/dashboard/styles.css", pid)));
+    assert!(html.contains("Unified Dashboard"));
+    assert!(html.contains(&format!("data-initial-program-id=\"{}\"", pid)));
+    assert!(html.contains("projectList"));
+    assert!(html.contains("projectAgentList"));
+    assert!(html.contains("chatLog"));
 
-    let (status, js) = get_text(&app, &format!("/programs/{}/dashboard/app.js", pid)).await;
+    let (status, js) = get_text(&app, "/dashboard/app.js").await;
     assert_eq!(status, StatusCode::OK, "dashboard app.js not served");
-    assert!(js.contains("activateTab"));
-    assert!(js.contains("ensureObserveEmbedded"));
+    assert!(js.contains("/programs"));
+    assert!(js.contains("/mutations"));
+    assert!(js.contains("/verify"));
+    assert!(js.contains("/observability/query"));
+    assert!(js.contains("/dashboard/ai/chat"));
+    assert!(js.contains("lmlang.dashboard.first_time_setup.v1"));
+    assert!(js.contains("hello_world"));
+    assert!(js.contains("/agents/register"));
+    assert!(js.contains("/agents/${agentId}/config"));
+    assert!(js.contains("/agents/${state.selectedProjectAgentId}/start"));
+    assert!(js.contains("/agents/${state.selectedProjectAgentId}/stop"));
+    assert!(js.contains("/dashboard/ai/chat"));
     assert!(js.contains("/observability"));
+    assert!(js.contains("Create project failed"));
+    assert!(js.contains("Start build failed"));
 
-    let (status, css) = get_text(&app, &format!("/programs/{}/dashboard/styles.css", pid)).await;
+    let (status, css) = get_text(&app, "/dashboard/styles.css").await;
     assert_eq!(status, StatusCode::OK, "dashboard styles.css not served");
-    assert!(css.contains(".dashboard-shell"));
-    assert!(css.contains(".tab-btn"));
-    assert!(css.contains(".observe-frame"));
+    assert!(css.contains(".page-shell"));
+    assert!(css.contains(".workspace"));
+    assert!(css.contains(".panel-chat"));
+    assert!(css.contains(".chat-log"));
 }
 
 #[tokio::test]
-async fn phase10_dashboard_operate_static_contract_has_endpoint_first_hooks() {
+async fn phase10_dashboard_project_agent_lifecycle_endpoints_work() {
     let app = test_app();
     let pid = setup_program(&app).await;
 
-    let (status, js) = get_text(&app, &format!("/programs/{}/dashboard/app.js", pid)).await;
-    assert_eq!(status, StatusCode::OK, "dashboard app.js not served");
+    let (status, register) =
+        post_json(&app, "/agents/register", json!({ "name": "builder" })).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "register agent failed: {:?}",
+        register
+    );
+    let agent_id = register["agent_id"]
+        .as_str()
+        .expect("agent_id must be a string UUID");
 
-    assert!(js.contains("/agents/register"));
-    assert!(js.contains("/agents"));
-    assert!(js.contains("/locks/acquire"));
-    assert!(js.contains("/locks/release"));
-    assert!(js.contains("/locks"));
-    assert!(js.contains("/mutations"));
-    assert!(js.contains("/verify"));
-    assert!(js.contains("/simulate"));
-    assert!(js.contains("/compile"));
-    assert!(js.contains("/history"));
-    assert!(js.contains("X-Agent-Id"));
-    assert!(js.contains("dry_run"));
-    assert!(js.contains("Workflow Template"));
-    assert!(js.contains("Task Prompt"));
-    assert!(js.contains("idle"));
-    assert!(js.contains("running"));
-    assert!(js.contains("blocked"));
-    assert!(js.contains("error"));
+    let (status, assign) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/assign", pid, agent_id),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "assign failed: {:?}", assign);
+    assert_eq!(assign["success"], json!(true));
+    assert_eq!(assign["session"]["run_status"], json!("idle"));
 
-    let (status, html) = get_text(&app, &format!("/programs/{}/dashboard", pid)).await;
-    assert_eq!(status, StatusCode::OK, "dashboard html not served");
-    assert!(html.contains("Operate + Observe"));
-    assert!(html.contains("id=\"operateActionsMount\""));
-    assert!(html.contains("id=\"operateRunSetupMount\""));
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "build parser" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+    assert_eq!(start["session"]["run_status"], json!("running"));
+    assert_eq!(start["session"]["active_goal"], json!("build parser"));
+
+    let (status, chat_create) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/chat", pid, agent_id),
+        json!({ "message": "create hello world program" }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "chat create hello world failed: {:?}",
+        chat_create
+    );
+    assert_eq!(chat_create["success"], json!(true));
+    assert!(chat_create["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Action result:"));
+    assert!(chat_create["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Hello world scaffold ready"));
+    let create_transcript = chat_create["transcript"].as_array().unwrap();
+    assert!(create_transcript.len() >= 3);
+    assert!(create_transcript.iter().any(|entry| {
+        entry["content"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Action result:")
+    }));
+
+    let (status, chat_compile) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/chat", pid, agent_id),
+        json!({ "message": "compile program" }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "chat compile failed: {:?}",
+        chat_compile
+    );
+    assert!(chat_compile["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Action result:"));
+    assert!(chat_compile["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Compiled hello_world"));
+
+    let (status, chat_run) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/chat", pid, agent_id),
+        json!({ "message": "run program" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "chat run failed: {:?}", chat_run);
+    assert!(chat_run["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Action result:"));
+    assert!(chat_run["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Program executed"));
+
+    let (status, stop) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/stop", pid, agent_id),
+        json!({ "reason": "manual stop" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "stop failed: {:?}", stop);
+    assert_eq!(stop["session"]["run_status"], json!("stopped"));
+
+    let (status, detail) = get_json(&app, &format!("/programs/{}/agents/{}", pid, agent_id)).await;
+    assert_eq!(status, StatusCode::OK, "detail failed: {:?}", detail);
+    assert_eq!(detail["session"]["run_status"], json!("stopped"));
+    assert!(detail["transcript"].as_array().unwrap().len() >= 8);
+
+    let (status, listing) = get_json(&app, &format!("/programs/{}/agents", pid)).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "list project agents failed: {:?}",
+        listing
+    );
+    assert_eq!(listing["program_id"], json!(pid));
+    assert_eq!(listing["agents"].as_array().unwrap().len(), 1);
+
+    let (status, query) = post_json(
+        &app,
+        &format!("/programs/{}/observability/query", pid),
+        json!({
+            "query": "hello world",
+            "max_results": 5
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "observability query failed: {:?}",
+        query
+    );
+    assert!(query["results"].is_array());
+}
+
+#[tokio::test]
+async fn phase10_agent_llm_config_endpoints_work() {
+    let app = test_app();
+
+    let (status, register) = post_json(
+        &app,
+        "/agents/register",
+        json!({
+            "name": "builder",
+            "provider": "openrouter",
+            "model": "openai/gpt-4o-mini",
+            "api_base_url": "https://openrouter.ai/api/v1",
+            "api_key": "test-key",
+            "system_prompt": "You are a build assistant."
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "register with config failed: {:?}",
+        register
+    );
+    let agent_id = register["agent_id"].as_str().unwrap();
+    assert_eq!(register["llm"]["provider"], json!("openrouter"));
+    assert_eq!(register["llm"]["model"], json!("openai/gpt-4o-mini"));
+    assert_eq!(
+        register["llm"]["api_base_url"],
+        json!("https://openrouter.ai/api/v1")
+    );
+    assert_eq!(register["llm"]["api_key_configured"], json!(true));
+
+    let (status, detail) = get_json(&app, &format!("/agents/{}", agent_id)).await;
+    assert_eq!(status, StatusCode::OK, "get agent failed: {:?}", detail);
+    assert_eq!(detail["agent"]["llm"]["provider"], json!("openrouter"));
+
+    let (status, update) = post_json(
+        &app,
+        &format!("/agents/{}/config", agent_id),
+        json!({
+            "provider": "openai_compatible",
+            "model": "gpt-4.1-mini",
+            "api_base_url": "https://api.openai.com/v1",
+            "api_key": "other-test-key",
+            "system_prompt": "be concise"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "update config failed: {:?}", update);
+    assert_eq!(update["success"], json!(true));
+    assert_eq!(
+        update["agent"]["llm"]["provider"],
+        json!("openai_compatible")
+    );
+    assert_eq!(
+        update["agent"]["llm"]["api_base_url"],
+        json!("https://api.openai.com/v1")
+    );
+    assert_eq!(update["agent"]["llm"]["api_key_configured"], json!(true));
+}
+
+#[tokio::test]
+async fn phase10_agent_llm_config_persists_across_restart() {
+    let db_path = temp_db_path("lmlang_agent_config_persist");
+    let app = test_app_with_db(&db_path);
+
+    let (status, register) = post_json(
+        &app,
+        "/agents/register",
+        json!({
+            "name": "persisted-builder",
+            "provider": "openrouter",
+            "model": "openai/gpt-4o-mini",
+            "api_base_url": "https://openrouter.ai/api/v1",
+            "api_key": "persisted-test-key",
+            "system_prompt": "Persist me."
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "register with persistence failed: {:?}",
+        register
+    );
+    let agent_id = register["agent_id"].as_str().unwrap().to_string();
+    drop(app);
+
+    let app_restarted = test_app_with_db(&db_path);
+    let (status, listing) = get_json(&app_restarted, "/agents").await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "list after restart failed: {:?}",
+        listing
+    );
+
+    let agent = listing["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["agent_id"] == json!(agent_id))
+        .expect("persisted agent should exist after restart");
+    assert_eq!(agent["name"], json!("persisted-builder"));
+    assert_eq!(agent["llm"]["provider"], json!("openrouter"));
+    assert_eq!(agent["llm"]["api_key_configured"], json!(true));
+
+    let _ = std::fs::remove_file(&db_path);
+    let _ = std::fs::remove_file(format!("{}-shm", &db_path));
+    let _ = std::fs::remove_file(format!("{}-wal", &db_path));
+}
+
+#[tokio::test]
+async fn phase10_start_build_runs_autonomous_hello_world_scaffold() {
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    let (status, register) =
+        post_json(&app, "/agents/register", json!({ "name": "auto-builder" })).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "register agent failed: {:?}",
+        register
+    );
+    let agent_id = register["agent_id"].as_str().unwrap();
+
+    let (status, assign) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/assign", pid, agent_id),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "assign failed: {:?}", assign);
+
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "hello world scaffold" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+
+    let mut autonomous_hit = false;
+    for _ in 0..30 {
+        let (status, detail) =
+            get_json(&app, &format!("/programs/{}/agents/{}", pid, agent_id)).await;
+        assert_eq!(status, StatusCode::OK, "detail failed: {:?}", detail);
+
+        if detail["transcript"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| {
+                entry["content"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("Autonomous step `create hello world program` complete")
+            })
+        {
+            autonomous_hit = true;
+            break;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    assert!(
+        autonomous_hit,
+        "expected autonomous loop to scaffold hello world without chat turn"
+    );
+
+    let mut reached_idle = false;
+    for _ in 0..12 {
+        let (_, detail) = get_json(&app, &format!("/programs/{}/agents/{}", pid, agent_id)).await;
+        if detail["session"]["run_status"] == json!("idle") {
+            reached_idle = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    assert!(
+        reached_idle,
+        "autonomous run should settle to idle once hello world scaffold goal is satisfied"
+    );
+}
+
+#[tokio::test]
+async fn phase10_dashboard_ai_chat_orchestrates_end_to_end() {
+    let app = test_app();
+
+    let (status, create_project) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "create project hello-world"
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create project via ai chat failed: {:?}",
+        create_project
+    );
+    let program_id = create_project["selected_program_id"].as_i64().unwrap();
+
+    let (status, register_agent) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "register agent builder provider openrouter model openai/gpt-4o-mini api key test-key",
+            "selected_program_id": program_id
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "register agent via ai chat failed: {:?}",
+        register_agent
+    );
+    let agent_id = register_agent["selected_agent_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let (status, assign) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "assign agent",
+            "selected_program_id": program_id,
+            "selected_agent_id": agent_id
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "assign via ai chat failed: {:?}",
+        assign
+    );
+    assert_eq!(
+        assign["selected_project_agent_id"].as_str().unwrap(),
+        agent_id
+    );
+
+    let (status, start) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "start build hello world bootstrap",
+            "selected_program_id": program_id,
+            "selected_agent_id": agent_id,
+            "selected_project_agent_id": agent_id
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "start via ai chat failed: {:?}",
+        start
+    );
+
+    let (status, create_hw) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "create hello world program",
+            "selected_program_id": program_id,
+            "selected_agent_id": agent_id,
+            "selected_project_agent_id": agent_id
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "create hello world via ai chat failed: {:?}",
+        create_hw
+    );
+    assert!(create_hw["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Hello world scaffold ready"));
+
+    let (status, compile) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "compile program",
+            "selected_program_id": program_id,
+            "selected_agent_id": agent_id,
+            "selected_project_agent_id": agent_id
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "compile via ai chat failed: {:?}",
+        compile
+    );
+    assert!(compile["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Compiled hello_world"));
+
+    let (status, run) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "run program",
+            "selected_program_id": program_id,
+            "selected_agent_id": agent_id,
+            "selected_project_agent_id": agent_id
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "run via ai chat failed: {:?}", run);
+    assert!(run["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Program executed"));
+    assert!(run["transcript"].is_array());
+
+    let (status, query) = post_json(
+        &app,
+        &format!("/programs/{}/observability/query", program_id),
+        json!({
+            "query": "hello world",
+            "max_results": 5
+        }),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "observability query failed: {:?}",
+        query
+    );
+    assert!(query["results"].is_array());
 }
 
 #[tokio::test]
@@ -1814,17 +2305,24 @@ async fn phase10_dashboard_and_observe_routes_coexist_with_reuse_contract() {
     let app = test_app();
     let pid = setup_program(&app).await;
 
-    let (status, dashboard_html) = get_text(&app, &format!("/programs/{}/dashboard", pid)).await;
-    assert_eq!(status, StatusCode::OK, "dashboard route should be available");
-    assert!(dashboard_html.contains("/observability"));
-    assert!(dashboard_html.contains("Operate + Observe"));
+    let (status, dashboard_html) = get_text(&app, "/dashboard").await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "dashboard route should be available"
+    );
+    assert!(dashboard_html.contains("Unified Dashboard"));
+    assert!(dashboard_html.contains("/dashboard/app.js"));
 
     let (status, observe_html) = get_text(&app, &format!("/programs/{}/observability", pid)).await;
-    assert_eq!(status, StatusCode::OK, "observe route should remain available");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "observe route should remain available"
+    );
     assert!(observe_html.contains("lmlang Observability"));
 
-    let (status, js) = get_text(&app, &format!("/programs/{}/dashboard/app.js", pid)).await;
+    let (status, js) = get_text(&app, "/dashboard/app.js").await;
     assert_eq!(status, StatusCode::OK, "dashboard js should be available");
-    assert!(js.contains("context preserved"));
-    assert!(js.contains("Open current program in Observe"));
+    assert!(js.contains("/programs/${state.selectedProgramId}/observability"));
 }

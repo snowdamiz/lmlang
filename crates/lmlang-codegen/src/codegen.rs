@@ -88,7 +88,8 @@ pub fn compile_function<'ctx>(
     builder.position_at_end(entry_bb);
 
     // 3. Collect and sort function nodes (filter out contract nodes -- dev-only)
-    let func_nodes: Vec<NodeId> = graph.function_nodes(func_id)
+    let func_nodes: Vec<NodeId> = graph
+        .function_nodes(func_id)
         .into_iter()
         .filter(|node_id| {
             if let Some(node) = graph.get_compute_node(*node_id) {
@@ -320,10 +321,8 @@ fn emit_checked_int_arith<'ctx>(
     let int_type = lhs.get_type();
 
     // Build the intrinsic function type: { iN, i1 } fn(iN, iN)
-    let overflow_struct = context.struct_type(
-        &[int_type.into(), context.bool_type().into()],
-        false,
-    );
+    let overflow_struct =
+        context.struct_type(&[int_type.into(), context.bool_type().into()], false);
     let intrinsic_fn_type = overflow_struct.fn_type(&[int_type.into(), int_type.into()], false);
 
     // Get or declare the intrinsic
@@ -398,15 +397,13 @@ fn emit_node<'ctx>(
 
             // ----- Parameters -----
             ComputeOp::Parameter { index } => {
-                let param = function
-                    .get_nth_param(*index)
-                    .ok_or_else(|| {
-                        CodegenError::InvalidGraph(format!(
-                            "parameter index {} out of range for function with {} params",
-                            index,
-                            function.count_params()
-                        ))
-                    })?;
+                let param = function.get_nth_param(*index).ok_or_else(|| {
+                    CodegenError::InvalidGraph(format!(
+                        "parameter index {} out of range for function with {} params",
+                        index,
+                        function.count_params()
+                    ))
+                })?;
                 values.insert(node_id, param);
             }
 
@@ -470,33 +467,64 @@ fn emit_node<'ctx>(
 
             // ----- Return -----
             ComputeOp::Return => {
-                let func_def = graph.get_function(
-                    graph.get_compute_node(node_id).unwrap().owner
-                ).ok_or_else(|| CodegenError::InvalidGraph("return node has no owner function".into()))?;
+                let func_def = graph
+                    .get_function(graph.get_compute_node(node_id).unwrap().owner)
+                    .ok_or_else(|| {
+                        CodegenError::InvalidGraph("return node has no owner function".into())
+                    })?;
 
                 if func_def.return_type == TypeId::UNIT {
-                    builder.build_return(None)
+                    builder
+                        .build_return(None)
                         .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
                 } else {
                     let ret_val = get_input(graph, node_id, 0, values)?;
-                    builder.build_return(Some(&ret_val))
+                    builder
+                        .build_return(Some(&ret_val))
                         .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
                 }
             }
 
             // ----- Control Flow: IfElse -----
             ComputeOp::IfElse => {
-                emit_if_else(context, module, builder, graph, function, node_id, values, basic_blocks)?;
+                emit_if_else(
+                    context,
+                    module,
+                    builder,
+                    graph,
+                    function,
+                    node_id,
+                    values,
+                    basic_blocks,
+                )?;
             }
 
             // ----- Control Flow: Loop -----
             ComputeOp::Loop => {
-                emit_loop(context, module, builder, graph, function, node_id, values, basic_blocks)?;
+                emit_loop(
+                    context,
+                    module,
+                    builder,
+                    graph,
+                    function,
+                    node_id,
+                    values,
+                    basic_blocks,
+                )?;
             }
 
             // ----- Control Flow: Match -----
             ComputeOp::Match => {
-                emit_match(context, module, builder, graph, function, node_id, values, basic_blocks)?;
+                emit_match(
+                    context,
+                    module,
+                    builder,
+                    graph,
+                    function,
+                    node_id,
+                    values,
+                    basic_blocks,
+                )?;
             }
 
             // ----- Control Flow: Branch -----
@@ -560,7 +588,15 @@ fn emit_node<'ctx>(
 
             // ----- Control Flow: Phi -----
             ComputeOp::Phi => {
-                emit_phi(context, builder, graph, function, node_id, values, basic_blocks)?;
+                emit_phi(
+                    context,
+                    builder,
+                    graph,
+                    function,
+                    node_id,
+                    values,
+                    basic_blocks,
+                )?;
             }
 
             // ----- Memory: Alloc -----
@@ -595,7 +631,11 @@ fn emit_node<'ctx>(
                 let loaded_type_id = get_output_type(graph, node_id, 0)?;
                 let loaded_type = lm_type_to_llvm(context, loaded_type_id, registry)?;
                 let val = builder
-                    .build_load(loaded_type, ptr.into_pointer_value(), &format!("load_{}", node_id))
+                    .build_load(
+                        loaded_type,
+                        ptr.into_pointer_value(),
+                        &format!("load_{}", node_id),
+                    )
                     .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
                 values.insert(node_id, val);
             }
@@ -686,8 +726,7 @@ fn emit_node<'ctx>(
                 }
 
                 // Determine function type from the output edge
-                let ret_type_id = get_output_type(graph, node_id, 0)
-                    .unwrap_or(TypeId::UNIT);
+                let ret_type_id = get_output_type(graph, node_id, 0).unwrap_or(TypeId::UNIT);
 
                 let ret_llvm = if ret_type_id == TypeId::UNIT {
                     None
@@ -765,10 +804,18 @@ fn emit_node<'ctx>(
             }
 
             // ----- Closures: MakeClosure -----
-            ComputeOp::MakeClosure { function: closure_fn_id } => {
+            ComputeOp::MakeClosure {
+                function: closure_fn_id,
+            } => {
                 emit_make_closure(
-                    context, module, builder, graph, function, node_id,
-                    *closure_fn_id, values,
+                    context,
+                    module,
+                    builder,
+                    graph,
+                    function,
+                    node_id,
+                    *closure_fn_id,
+                    values,
                 )?;
             }
 
@@ -886,11 +933,7 @@ fn emit_node<'ctx>(
                 // Check if index is a constant
                 if let Some(const_val) = index_int.get_zero_extended_constant() {
                     let val = builder
-                        .build_extract_value(
-                            arr.into_array_value(),
-                            const_val as u32,
-                            "aget",
-                        )
+                        .build_extract_value(arr.into_array_value(), const_val as u32, "aget")
                         .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
                     values.insert(node_id, val);
                 } else {
@@ -902,27 +945,22 @@ fn emit_node<'ctx>(
 
                     // Bounds check
                     runtime::emit_bounds_guard(
-                        builder, context, module, function,
-                        index_int, length, node_id.0,
+                        builder, context, module, function, index_int, length, node_id.0,
                     )?;
 
                     // Alloca the array, GEP, load
                     let alloca = builder
                         .build_alloca(arr_type, "arr_tmp")
                         .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
-                    builder.build_store(alloca, arr_val)
+                    builder
+                        .build_store(alloca, arr_val)
                         .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
 
                     let elem_type = arr_type.get_element_type();
                     let zero = context.i32_type().const_zero();
                     let gep = unsafe {
                         builder
-                            .build_in_bounds_gep(
-                                arr_type,
-                                alloca,
-                                &[zero, index_int],
-                                "aget_gep",
-                            )
+                            .build_in_bounds_gep(arr_type, alloca, &[zero, index_int], "aget_gep")
                             .map_err(|e| CodegenError::LlvmError(e.to_string()))?
                     };
 
@@ -958,28 +996,24 @@ fn emit_node<'ctx>(
                     let length = context.i32_type().const_int(arr_len as u64, false);
 
                     runtime::emit_bounds_guard(
-                        builder, context, module, function,
-                        index_int, length, node_id.0,
+                        builder, context, module, function, index_int, length, node_id.0,
                     )?;
 
                     let alloca = builder
                         .build_alloca(arr_type, "arr_set_tmp")
                         .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
-                    builder.build_store(alloca, arr_val)
+                    builder
+                        .build_store(alloca, arr_val)
                         .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
 
                     let zero = context.i32_type().const_zero();
                     let gep = unsafe {
                         builder
-                            .build_in_bounds_gep(
-                                arr_type,
-                                alloca,
-                                &[zero, index_int],
-                                "aset_gep",
-                            )
+                            .build_in_bounds_gep(arr_type, alloca, &[zero, index_int], "aset_gep")
                             .map_err(|e| CodegenError::LlvmError(e.to_string()))?
                     };
-                    builder.build_store(gep, new_val)
+                    builder
+                        .build_store(gep, new_val)
                         .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
 
                     let reloaded = builder
@@ -998,7 +1032,10 @@ fn emit_node<'ctx>(
             }
 
             // ----- EnumCreate -----
-            StructuredOp::EnumCreate { type_id, variant_index } => {
+            StructuredOp::EnumCreate {
+                type_id,
+                variant_index,
+            } => {
                 let enum_llvm_type = lm_type_to_llvm(context, *type_id, registry)?;
                 let enum_struct = enum_llvm_type.into_struct_type();
 
@@ -1020,7 +1057,8 @@ fn emit_node<'ctx>(
                         let payload_alloca = builder
                             .build_alloca(payload.get_type(), "payload_tmp")
                             .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
-                        builder.build_store(payload_alloca, payload)
+                        builder
+                            .build_store(payload_alloca, payload)
                             .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
 
                         let payload_field_type = enum_struct.get_field_type_at_index(1).unwrap();
@@ -1064,7 +1102,8 @@ fn emit_node<'ctx>(
                     let raw_alloca = builder
                         .build_alloca(raw_payload.get_type(), "payload_raw_alloca")
                         .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
-                    builder.build_store(raw_alloca, raw_payload)
+                    builder
+                        .build_store(raw_alloca, raw_payload)
                         .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
 
                     let val = builder
@@ -1134,34 +1173,24 @@ fn emit_binary_arith<'ctx>(
         let rhs_int = rhs.into_int_value();
 
         match op {
-            ArithOp::Add => {
-                emit_checked_int_arith(
-                    context, module, builder, function, lhs_int, rhs_int, "sadd", node_id,
-                )
-            }
-            ArithOp::Sub => {
-                emit_checked_int_arith(
-                    context, module, builder, function, lhs_int, rhs_int, "ssub", node_id,
-                )
-            }
-            ArithOp::Mul => {
-                emit_checked_int_arith(
-                    context, module, builder, function, lhs_int, rhs_int, "smul", node_id,
-                )
-            }
+            ArithOp::Add => emit_checked_int_arith(
+                context, module, builder, function, lhs_int, rhs_int, "sadd", node_id,
+            ),
+            ArithOp::Sub => emit_checked_int_arith(
+                context, module, builder, function, lhs_int, rhs_int, "ssub", node_id,
+            ),
+            ArithOp::Mul => emit_checked_int_arith(
+                context, module, builder, function, lhs_int, rhs_int, "smul", node_id,
+            ),
             ArithOp::Div => {
-                runtime::emit_div_guard(
-                    builder, context, module, function, rhs_int, node_id.0,
-                )?;
+                runtime::emit_div_guard(builder, context, module, function, rhs_int, node_id.0)?;
                 let val = builder
                     .build_int_signed_div(lhs_int, rhs_int, "sdiv")
                     .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
                 Ok(val.into())
             }
             ArithOp::Rem => {
-                runtime::emit_div_guard(
-                    builder, context, module, function, rhs_int, node_id.0,
-                )?;
+                runtime::emit_div_guard(builder, context, module, function, rhs_int, node_id.0)?;
                 let val = builder
                     .build_int_signed_rem(lhs_int, rhs_int, "srem")
                     .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
@@ -1393,8 +1422,12 @@ fn emit_if_else<'ctx>(
         if let FlowEdge::Control { branch_index } = edge.weight() {
             let target_nid = NodeId::from(edge.target());
             match branch_index {
-                Some(0) => { basic_blocks.insert(target_nid, then_bb); }
-                Some(1) => { basic_blocks.insert(target_nid, else_bb); }
+                Some(0) => {
+                    basic_blocks.insert(target_nid, then_bb);
+                }
+                Some(1) => {
+                    basic_blocks.insert(target_nid, else_bb);
+                }
                 _ => {}
             }
         }
@@ -1449,7 +1482,9 @@ fn emit_loop<'ctx>(
         if let FlowEdge::Control { branch_index } = edge.weight() {
             let target_nid = NodeId::from(edge.target());
             match branch_index {
-                Some(0) => { basic_blocks.insert(target_nid, body_bb); }
+                Some(0) => {
+                    basic_blocks.insert(target_nid, body_bb);
+                }
                 _ => {}
             }
         }
@@ -1491,14 +1526,10 @@ fn emit_match<'ctx>(
         if let FlowEdge::Control { branch_index } = edge.weight() {
             if let Some(arm_idx) = branch_index {
                 let target_nid = NodeId::from(edge.target());
-                let arm_bb = context.append_basic_block(
-                    function,
-                    &format!("match_arm_{}_{}", node_id, arm_idx),
-                );
+                let arm_bb = context
+                    .append_basic_block(function, &format!("match_arm_{}_{}", node_id, arm_idx));
                 basic_blocks.insert(target_nid, arm_bb);
-                let case_val = disc_int
-                    .get_type()
-                    .const_int(*arm_idx as u64, false);
+                let case_val = disc_int.get_type().const_int(*arm_idx as u64, false);
                 cases.push((case_val, arm_bb));
             }
         }
@@ -1646,7 +1677,8 @@ fn emit_make_closure<'ctx>(
         let field_ptr = builder
             .build_struct_gep(env_struct_type, env_alloca, i as u32, &format!("cap_{}", i))
             .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
-        builder.build_store(field_ptr, capture_val)
+        builder
+            .build_store(field_ptr, capture_val)
             .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
     }
 
@@ -1771,9 +1803,7 @@ fn emit_cast<'ctx>(
         let src_float = src.into_float_value();
         let target_float_type = target_type.into_float_type();
 
-        if src_float.get_type() == context.f32_type()
-            && target_float_type == context.f64_type()
-        {
+        if src_float.get_type() == context.f32_type() && target_float_type == context.f64_type() {
             let val = builder
                 .build_float_ext(src_float, target_float_type, "fpext")
                 .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
@@ -1838,7 +1868,13 @@ mod tests {
             params.iter().map(|(n, t)| (n.to_string(), *t)).collect();
 
         let func_id = graph
-            .add_function("test_fn".into(), root, param_pairs, return_type, Visibility::Public)
+            .add_function(
+                "test_fn".into(),
+                root,
+                param_pairs,
+                return_type,
+                Visibility::Public,
+            )
             .unwrap();
 
         build_fn(&mut graph, func_id);
@@ -1851,7 +1887,11 @@ mod tests {
 
         let func_def = graph.get_function(func_id).unwrap().clone();
         let result = compile_function(&context, &module, &builder, &graph, func_id, &func_def);
-        assert!(result.is_ok(), "compile_function failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "compile_function failed: {:?}",
+            result.err()
+        );
 
         let verify = module.verify();
         assert!(verify.is_ok(), "Module verification failed: {:?}", verify);
@@ -1862,7 +1902,12 @@ mod tests {
         compile_and_verify(
             |graph, func_id| {
                 let c = graph
-                    .add_core_op(ComputeOp::Const { value: ConstValue::I32(42) }, func_id)
+                    .add_core_op(
+                        ComputeOp::Const {
+                            value: ConstValue::I32(42),
+                        },
+                        func_id,
+                    )
                     .unwrap();
                 let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
                 graph.add_data_edge(c, ret, 0, 0, TypeId::I32).unwrap();
@@ -1970,15 +2015,28 @@ mod tests {
         let root = graph.modules.root_id();
         let func_id = graph
             .add_function(
-                "f".into(), root,
+                "f".into(),
+                root,
                 vec![("a".into(), TypeId::I32)],
-                TypeId::I32, Visibility::Public,
+                TypeId::I32,
+                Visibility::Public,
             )
             .unwrap();
 
-        let p = graph.add_core_op(ComputeOp::Parameter { index: 0 }, func_id).unwrap();
-        let c = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(1) }, func_id).unwrap();
-        let add = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id).unwrap();
+        let p = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+            .unwrap();
+        let c = graph
+            .add_core_op(
+                ComputeOp::Const {
+                    value: ConstValue::I32(1),
+                },
+                func_id,
+            )
+            .unwrap();
+        let add = graph
+            .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
+            .unwrap();
         let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
         graph.add_data_edge(p, add, 0, 0, TypeId::I32).unwrap();
@@ -2032,7 +2090,9 @@ mod tests {
                 let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
                 graph.add_data_edge(a, and_op, 0, 0, TypeId::BOOL).unwrap();
                 graph.add_data_edge(b, and_op, 0, 1, TypeId::BOOL).unwrap();
-                graph.add_data_edge(and_op, ret, 0, 0, TypeId::BOOL).unwrap();
+                graph
+                    .add_data_edge(and_op, ret, 0, 0, TypeId::BOOL)
+                    .unwrap();
             },
             vec![("a", TypeId::BOOL), ("b", TypeId::BOOL)],
             TypeId::BOOL,
@@ -2090,8 +2150,12 @@ mod tests {
                 let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
                 // Alloc outputs a pointer
-                graph.add_data_edge(alloc, store, 0, 0, ptr_type_id).unwrap();
-                graph.add_data_edge(param, store, 0, 1, TypeId::I32).unwrap();
+                graph
+                    .add_data_edge(alloc, store, 0, 0, ptr_type_id)
+                    .unwrap();
+                graph
+                    .add_data_edge(param, store, 0, 1, TypeId::I32)
+                    .unwrap();
                 graph.add_data_edge(alloc, load, 0, 0, ptr_type_id).unwrap();
                 // Load outputs an i32
                 graph.add_data_edge(load, ret, 0, 0, TypeId::I32).unwrap();
@@ -2169,7 +2233,11 @@ mod tests {
         let caller_def = graph.get_function(caller_id).unwrap().clone();
         compile_function(&context, &module, &builder, &graph, caller_id, &caller_def).unwrap();
 
-        assert!(module.verify().is_ok(), "Module verification failed: {:?}", module.verify());
+        assert!(
+            module.verify().is_ok(),
+            "Module verification failed: {:?}",
+            module.verify()
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2179,8 +2247,8 @@ mod tests {
     #[test]
     fn test_struct_create_and_get() {
         use indexmap::IndexMap;
-        use lmlang_core::types::{StructDef, Visibility as LmVisibility};
         use lmlang_core::id::ModuleId;
+        use lmlang_core::types::{StructDef, Visibility as LmVisibility};
 
         let mut graph = ProgramGraph::new("test");
         let root = graph.modules.root_id();
@@ -2193,10 +2261,7 @@ mod tests {
                 lmlang_core::types::LmType::Struct(StructDef {
                     name: "Point".into(),
                     type_id: TypeId(0),
-                    fields: IndexMap::from([
-                        ("x".into(), TypeId::I32),
-                        ("y".into(), TypeId::I32),
-                    ]),
+                    fields: IndexMap::from([("x".into(), TypeId::I32), ("y".into(), TypeId::I32)]),
                     module: ModuleId(0),
                     visibility: LmVisibility::Public,
                 }),
@@ -2240,9 +2305,15 @@ mod tests {
 
         let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
-        graph.add_data_edge(param_a, create, 0, 0, TypeId::I32).unwrap();
-        graph.add_data_edge(param_b, create, 0, 1, TypeId::I32).unwrap();
-        graph.add_data_edge(create, get_x, 0, 0, point_type_id).unwrap();
+        graph
+            .add_data_edge(param_a, create, 0, 0, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(param_b, create, 0, 1, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(create, get_x, 0, 0, point_type_id)
+            .unwrap();
         graph.add_data_edge(get_x, ret, 0, 0, TypeId::I32).unwrap();
 
         let context = Context::create();
@@ -2253,7 +2324,11 @@ mod tests {
         let func_def = graph.get_function(func_id).unwrap().clone();
         compile_function(&context, &module, &builder, &graph, func_id, &func_def).unwrap();
 
-        assert!(module.verify().is_ok(), "Module verification failed: {:?}", module.verify());
+        assert!(
+            module.verify().is_ok(),
+            "Module verification failed: {:?}",
+            module.verify()
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2414,7 +2489,9 @@ mod tests {
                     .unwrap();
                 let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
                 let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
-                graph.add_data_edge(param, print, 0, 0, TypeId::I32).unwrap();
+                graph
+                    .add_data_edge(param, print, 0, 0, TypeId::I32)
+                    .unwrap();
                 // Control edge from print -> ret ensures print is emitted before return
                 graph.add_control_edge(print, ret, None).unwrap();
             },
@@ -2429,7 +2506,13 @@ mod tests {
 
     #[test]
     fn test_all_arith_ops() {
-        for arith_op in [ArithOp::Add, ArithOp::Sub, ArithOp::Mul, ArithOp::Div, ArithOp::Rem] {
+        for arith_op in [
+            ArithOp::Add,
+            ArithOp::Sub,
+            ArithOp::Mul,
+            ArithOp::Div,
+            ArithOp::Rem,
+        ] {
             compile_and_verify(
                 |graph, func_id| {
                     let a = graph
@@ -2444,7 +2527,9 @@ mod tests {
                     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
                     graph.add_data_edge(a, op_node, 0, 0, TypeId::I32).unwrap();
                     graph.add_data_edge(b, op_node, 0, 1, TypeId::I32).unwrap();
-                    graph.add_data_edge(op_node, ret, 0, 0, TypeId::I32).unwrap();
+                    graph
+                        .add_data_edge(op_node, ret, 0, 0, TypeId::I32)
+                        .unwrap();
                 },
                 vec![("a", TypeId::I32), ("b", TypeId::I32)],
                 TypeId::I32,
@@ -2458,7 +2543,14 @@ mod tests {
 
     #[test]
     fn test_all_cmp_ops() {
-        for cmp_op in [CmpOp::Eq, CmpOp::Ne, CmpOp::Lt, CmpOp::Le, CmpOp::Gt, CmpOp::Ge] {
+        for cmp_op in [
+            CmpOp::Eq,
+            CmpOp::Ne,
+            CmpOp::Lt,
+            CmpOp::Le,
+            CmpOp::Gt,
+            CmpOp::Ge,
+        ] {
             compile_and_verify(
                 |graph, func_id| {
                     let a = graph
@@ -2473,7 +2565,9 @@ mod tests {
                     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
                     graph.add_data_edge(a, cmp_node, 0, 0, TypeId::I32).unwrap();
                     graph.add_data_edge(b, cmp_node, 0, 1, TypeId::I32).unwrap();
-                    graph.add_data_edge(cmp_node, ret, 0, 0, TypeId::BOOL).unwrap();
+                    graph
+                        .add_data_edge(cmp_node, ret, 0, 0, TypeId::BOOL)
+                        .unwrap();
                 },
                 vec![("a", TypeId::I32), ("b", TypeId::I32)],
                 TypeId::BOOL,

@@ -44,9 +44,11 @@ pub async fn acquire_locks(
     let grants = match req.mode.to_lowercase().as_str() {
         "write" => {
             if function_ids.len() > 1 {
-                state
-                    .lock_manager
-                    .batch_acquire_write(&agent_id, &function_ids, req.description.clone())?
+                state.lock_manager.batch_acquire_write(
+                    &agent_id,
+                    &function_ids,
+                    req.description.clone(),
+                )?
             } else {
                 let mut grants = Vec::new();
                 for func_id in function_ids {
@@ -115,7 +117,9 @@ pub async fn release_locks(
 
     let mut released = Vec::new();
     for function_id in req.function_ids {
-        state.lock_manager.release(&agent_id, FunctionId(function_id))?;
+        state
+            .lock_manager
+            .release(&agent_id, FunctionId(function_id))?;
         released.push(function_id);
     }
 

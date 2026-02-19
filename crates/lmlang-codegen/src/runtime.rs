@@ -5,12 +5,12 @@
 //! Also provides guard helpers for division-by-zero, overflow, and
 //! bounds checking, plus Print op support via typed printf calls.
 
+use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::values::{BasicMetadataValueEnum, FunctionValue, IntValue};
-use inkwell::builder::Builder;
-use inkwell::IntPredicate;
 use inkwell::AddressSpace;
+use inkwell::IntPredicate;
 
 use crate::error::CodegenError;
 
@@ -196,11 +196,23 @@ fn emit_runtime_error_fn<'ctx>(context: &'ctx Context, module: &Module<'ctx>) {
             error_kind,
             default_bb,
             &[
-                (i32_type.const_int(error_kind::DIVIDE_BY_ZERO, false), div_zero_bb),
-                (i32_type.const_int(error_kind::INTEGER_OVERFLOW, false), overflow_bb),
+                (
+                    i32_type.const_int(error_kind::DIVIDE_BY_ZERO, false),
+                    div_zero_bb,
+                ),
+                (
+                    i32_type.const_int(error_kind::INTEGER_OVERFLOW, false),
+                    overflow_bb,
+                ),
                 (i32_type.const_int(error_kind::OUT_OF_BOUNDS, false), oob_bb),
-                (i32_type.const_int(error_kind::NULL_POINTER, false), null_ptr_bb),
-                (i32_type.const_int(error_kind::TYPE_MISMATCH, false), type_mismatch_bb),
+                (
+                    i32_type.const_int(error_kind::NULL_POINTER, false),
+                    null_ptr_bb,
+                ),
+                (
+                    i32_type.const_int(error_kind::TYPE_MISMATCH, false),
+                    type_mismatch_bb,
+                ),
             ],
         )
         .unwrap();
@@ -227,11 +239,7 @@ fn emit_runtime_error_fn<'ctx>(context: &'ctx Context, module: &Module<'ctx>) {
         builder
             .build_call(
                 fprintf_fn,
-                &[
-                    stderr_val.into(),
-                    msg_ptr.into(),
-                    node_id.into(),
-                ],
+                &[stderr_val.into(), msg_ptr.into(), node_id.into()],
                 "",
             )
             .unwrap();
@@ -435,9 +443,7 @@ pub fn emit_print_value<'ctx>(
             builder
                 .build_call(
                     printf_fn,
-                    &[BasicMetadataValueEnum::from(
-                        str_ptr.into_pointer_value(),
-                    )],
+                    &[BasicMetadataValueEnum::from(str_ptr.into_pointer_value())],
                     "",
                 )
                 .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
@@ -483,15 +489,14 @@ pub fn emit_print_value<'ctx>(
                 .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
             // printf requires double for %f, so extend f32 to f64
             let float_val = value.into_float_value();
-            let double_val =
-                if float_val.get_type() == context.f32_type() {
-                    builder
-                        .build_float_ext(float_val, context.f64_type(), "fpext")
-                        .map_err(|e| CodegenError::LlvmError(e.to_string()))?
-                        .into()
-                } else {
-                    value
-                };
+            let double_val = if float_val.get_type() == context.f32_type() {
+                builder
+                    .build_float_ext(float_val, context.f64_type(), "fpext")
+                    .map_err(|e| CodegenError::LlvmError(e.to_string()))?
+                    .into()
+            } else {
+                value
+            };
             builder
                 .build_call(
                     printf_fn,
@@ -535,7 +540,11 @@ mod tests {
         assert!(module.get_function("lmlang_runtime_error").is_some());
 
         // Verify the module is valid LLVM IR
-        assert!(module.verify().is_ok(), "Module verification failed: {:?}", module.verify());
+        assert!(
+            module.verify().is_ok(),
+            "Module verification failed: {:?}",
+            module.verify()
+        );
     }
 
     #[test]
@@ -575,7 +584,11 @@ mod tests {
             .build_return(Some(&i32_type.const_int(0, false)))
             .unwrap();
 
-        assert!(module.verify().is_ok(), "Module verification failed: {:?}", module.verify());
+        assert!(
+            module.verify().is_ok(),
+            "Module verification failed: {:?}",
+            module.verify()
+        );
     }
 
     #[test]
@@ -600,7 +613,11 @@ mod tests {
             .build_return(Some(&i32_type.const_int(0, false)))
             .unwrap();
 
-        assert!(module.verify().is_ok(), "Module verification failed: {:?}", module.verify());
+        assert!(
+            module.verify().is_ok(),
+            "Module verification failed: {:?}",
+            module.verify()
+        );
     }
 
     #[test]
@@ -625,7 +642,11 @@ mod tests {
             .build_return(Some(&i32_type.const_int(0, false)))
             .unwrap();
 
-        assert!(module.verify().is_ok(), "Module verification failed: {:?}", module.verify());
+        assert!(
+            module.verify().is_ok(),
+            "Module verification failed: {:?}",
+            module.verify()
+        );
     }
 
     #[test]
@@ -654,7 +675,11 @@ mod tests {
 
         builder.build_return(None).unwrap();
 
-        assert!(module.verify().is_ok(), "Module verification failed: {:?}", module.verify());
+        assert!(
+            module.verify().is_ok(),
+            "Module verification failed: {:?}",
+            module.verify()
+        );
     }
 
     #[test]
@@ -683,7 +708,11 @@ mod tests {
 
         builder.build_return(None).unwrap();
 
-        assert!(module.verify().is_ok(), "Module verification failed: {:?}", module.verify());
+        assert!(
+            module.verify().is_ok(),
+            "Module verification failed: {:?}",
+            module.verify()
+        );
     }
 
     #[test]
@@ -712,6 +741,10 @@ mod tests {
 
         builder.build_return(None).unwrap();
 
-        assert!(module.verify().is_ok(), "Module verification failed: {:?}", module.verify());
+        assert!(
+            module.verify().is_ok(),
+            "Module verification failed: {:?}",
+            module.verify()
+        );
     }
 }

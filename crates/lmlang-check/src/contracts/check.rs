@@ -29,9 +29,18 @@ pub fn find_contract_nodes(
         .filter(|node_id| {
             if let Some(node) = graph.get_compute_node(*node_id) {
                 match (&node.op, kind) {
-                    (lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Precondition { .. }), ContractKind::Precondition) => true,
-                    (lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Postcondition { .. }), ContractKind::Postcondition) => true,
-                    (lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Invariant { .. }), ContractKind::Invariant) => true,
+                    (
+                        lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Precondition { .. }),
+                        ContractKind::Precondition,
+                    ) => true,
+                    (
+                        lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Postcondition { .. }),
+                        ContractKind::Postcondition,
+                    ) => true,
+                    (
+                        lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Invariant { .. }),
+                        ContractKind::Invariant,
+                    ) => true,
                     _ => false,
                 }
             } else {
@@ -57,7 +66,10 @@ pub fn evaluate_contract_condition(
     // Find the node connected to port 0 of the contract node
     let node_idx: petgraph::graph::NodeIndex<u32> = contract_node_id.into();
 
-    for edge_ref in graph.compute().edges_directed(node_idx, Direction::Incoming) {
+    for edge_ref in graph
+        .compute()
+        .edges_directed(node_idx, Direction::Incoming)
+    {
         if let FlowEdge::Data { target_port: 0, .. } = edge_ref.weight() {
             let source_id = NodeId::from(edge_ref.source());
             if let Some(value) = node_values.get(&source_id) {
@@ -97,7 +109,10 @@ pub fn collect_counterexample(
     let mut counterexample = Vec::new();
 
     // Walk backward through all incoming data edges to collect node values
-    for edge_ref in graph.compute().edges_directed(node_idx, Direction::Incoming) {
+    for edge_ref in graph
+        .compute()
+        .edges_directed(node_idx, Direction::Incoming)
+    {
         if edge_ref.weight().is_data() {
             let source_id = NodeId::from(edge_ref.source());
             if let Some(value) = node_values.get(&source_id) {
@@ -226,21 +241,22 @@ pub fn check_invariants_for_value(
     source_func: FunctionId,
 ) -> Result<Vec<ContractViolation>, RuntimeError> {
     // Find all Invariant nodes in the source function with matching target_type
-    let contract_nodes: Vec<NodeId> = find_contract_nodes(graph, source_func, ContractKind::Invariant)
-        .into_iter()
-        .filter(|node_id| {
-            if let Some(node) = graph.get_compute_node(*node_id) {
-                match &node.op {
-                    ComputeNodeOp::Core(ComputeOp::Invariant { target_type, .. }) => {
-                        *target_type == type_id
+    let contract_nodes: Vec<NodeId> =
+        find_contract_nodes(graph, source_func, ContractKind::Invariant)
+            .into_iter()
+            .filter(|node_id| {
+                if let Some(node) = graph.get_compute_node(*node_id) {
+                    match &node.op {
+                        ComputeNodeOp::Core(ComputeOp::Invariant { target_type, .. }) => {
+                            *target_type == type_id
+                        }
+                        _ => false,
                     }
-                    _ => false,
+                } else {
+                    false
                 }
-            } else {
-                false
-            }
-        })
-        .collect();
+            })
+            .collect();
 
     let mut violations = Vec::new();
 
@@ -301,7 +317,10 @@ pub fn evaluate_invariant_for_value(
 
     // Now check port 0 of the contract node (same logic as evaluate_contract_condition)
     let node_idx: petgraph::graph::NodeIndex<u32> = contract_node_id.into();
-    for edge_ref in graph.compute().edges_directed(node_idx, Direction::Incoming) {
+    for edge_ref in graph
+        .compute()
+        .edges_directed(node_idx, Direction::Incoming)
+    {
         if let FlowEdge::Data { target_port: 0, .. } = edge_ref.weight() {
             let source_id = NodeId::from(edge_ref.source());
             if let Some(value) = local_values.get(&source_id) {
@@ -314,7 +333,10 @@ pub fn evaluate_invariant_for_value(
                     }),
                 };
             } else {
-                return Err(RuntimeError::MissingValue { node: source_id, port: 0 });
+                return Err(RuntimeError::MissingValue {
+                    node: source_id,
+                    port: 0,
+                });
             }
         }
     }
@@ -337,11 +359,11 @@ fn evaluate_subgraph_node(
         return Ok(());
     }
 
-    let node = graph.get_compute_node(node_id).ok_or_else(|| {
-        RuntimeError::InternalError {
+    let node = graph
+        .get_compute_node(node_id)
+        .ok_or_else(|| RuntimeError::InternalError {
             message: format!("invariant subgraph node {} not found", node_id),
-        }
-    })?;
+        })?;
     let op = node.op.clone();
 
     match &op {
@@ -382,7 +404,9 @@ fn evaluate_subgraph_node(
             // Evaluate using the existing eval_op for arithmetic/comparison/etc.
             use crate::interpreter::eval::eval_op;
             match eval_op(&op, &inputs, node_id, graph)? {
-                Some(value) => { local_values.insert(node_id, value); }
+                Some(value) => {
+                    local_values.insert(node_id, value);
+                }
                 None => {} // Ops like contract nodes produce no value
             }
         }
@@ -432,8 +456,12 @@ mod tests {
         let cmp_node = graph
             .add_core_op(ComputeOp::Compare { op: CmpOp::Ge }, func_id)
             .unwrap();
-        graph.add_data_edge(param_a, cmp_node, 0, 0, TypeId::I32).unwrap();
-        graph.add_data_edge(const_zero, cmp_node, 0, 1, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_a, cmp_node, 0, 0, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(const_zero, cmp_node, 0, 1, TypeId::I32)
+            .unwrap();
 
         // Precondition node
         let precond_node = graph
@@ -444,11 +472,15 @@ mod tests {
                 func_id,
             )
             .unwrap();
-        graph.add_data_edge(cmp_node, precond_node, 0, 0, TypeId::BOOL).unwrap();
+        graph
+            .add_data_edge(cmp_node, precond_node, 0, 0, TypeId::BOOL)
+            .unwrap();
 
         // Return node (just return a)
         let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
-        graph.add_data_edge(param_a, ret, 0, 0, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_a, ret, 0, 0, TypeId::I32)
+            .unwrap();
 
         (graph, func_id, param_a, cmp_node, precond_node)
     }
@@ -474,7 +506,9 @@ mod tests {
 
         // Return node
         let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
-        graph.add_data_edge(param_a, ret, 0, 0, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_a, ret, 0, 0, TypeId::I32)
+            .unwrap();
 
         // Const 0
         let const_zero = graph
@@ -490,8 +524,12 @@ mod tests {
         let cmp_node = graph
             .add_core_op(ComputeOp::Compare { op: CmpOp::Gt }, func_id)
             .unwrap();
-        graph.add_data_edge(param_a, cmp_node, 0, 0, TypeId::I32).unwrap();
-        graph.add_data_edge(const_zero, cmp_node, 0, 1, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_a, cmp_node, 0, 0, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(const_zero, cmp_node, 0, 1, TypeId::I32)
+            .unwrap();
 
         // Postcondition node
         let postcond_node = graph
@@ -502,8 +540,12 @@ mod tests {
                 func_id,
             )
             .unwrap();
-        graph.add_data_edge(cmp_node, postcond_node, 0, 0, TypeId::BOOL).unwrap();
-        graph.add_data_edge(param_a, postcond_node, 0, 1, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(cmp_node, postcond_node, 0, 0, TypeId::BOOL)
+            .unwrap();
+        graph
+            .add_data_edge(param_a, postcond_node, 0, 1, TypeId::I32)
+            .unwrap();
 
         (graph, func_id, param_a, cmp_node, postcond_node)
     }
@@ -532,8 +574,8 @@ mod tests {
         node_values.insert(param_a, Value::I32(5));
         node_values.insert(cmp_node, Value::Bool(true));
 
-        let violations = check_preconditions(&graph, func_id, &[Value::I32(5)], &node_values)
-            .unwrap();
+        let violations =
+            check_preconditions(&graph, func_id, &[Value::I32(5)], &node_values).unwrap();
         assert!(violations.is_empty(), "Expected no violations");
     }
 
@@ -546,8 +588,8 @@ mod tests {
         node_values.insert(param_a, Value::I32(-1));
         node_values.insert(cmp_node, Value::Bool(false));
 
-        let violations = check_preconditions(&graph, func_id, &[Value::I32(-1)], &node_values)
-            .unwrap();
+        let violations =
+            check_preconditions(&graph, func_id, &[Value::I32(-1)], &node_values).unwrap();
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].kind, ContractKind::Precondition);
         assert_eq!(violations[0].contract_node, precond_node);
@@ -609,13 +651,16 @@ mod tests {
         node_values.insert(param_a, Value::I32(-5));
         node_values.insert(cmp_node, Value::Bool(false));
 
-        let violations = check_preconditions(&graph, func_id, &[Value::I32(-5)], &node_values)
-            .unwrap();
+        let violations =
+            check_preconditions(&graph, func_id, &[Value::I32(-5)], &node_values).unwrap();
         assert_eq!(violations.len(), 1);
 
         // Counterexample should contain the cmp_node value
         let counterexample = &violations[0].counterexample;
-        assert!(!counterexample.is_empty(), "Counterexample should not be empty");
+        assert!(
+            !counterexample.is_empty(),
+            "Counterexample should not be empty"
+        );
         // The counterexample should be sorted by NodeId
         for i in 1..counterexample.len() {
             assert!(counterexample[i].0 .0 >= counterexample[i - 1].0 .0);
@@ -655,8 +700,12 @@ mod tests {
         let pre_cmp = graph
             .add_core_op(ComputeOp::Compare { op: CmpOp::Ge }, func_id)
             .unwrap();
-        graph.add_data_edge(param_a, pre_cmp, 0, 0, TypeId::I32).unwrap();
-        graph.add_data_edge(const_zero, pre_cmp, 0, 1, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_a, pre_cmp, 0, 0, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(const_zero, pre_cmp, 0, 1, TypeId::I32)
+            .unwrap();
 
         let precond = graph
             .add_core_op(
@@ -666,14 +715,20 @@ mod tests {
                 func_id,
             )
             .unwrap();
-        graph.add_data_edge(pre_cmp, precond, 0, 0, TypeId::BOOL).unwrap();
+        graph
+            .add_data_edge(pre_cmp, precond, 0, 0, TypeId::BOOL)
+            .unwrap();
 
         // Postcondition: result >= 0
         let post_cmp = graph
             .add_core_op(ComputeOp::Compare { op: CmpOp::Ge }, func_id)
             .unwrap();
-        graph.add_data_edge(param_a, post_cmp, 0, 0, TypeId::I32).unwrap();
-        graph.add_data_edge(const_zero, post_cmp, 0, 1, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_a, post_cmp, 0, 0, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(const_zero, post_cmp, 0, 1, TypeId::I32)
+            .unwrap();
 
         let postcond = graph
             .add_core_op(
@@ -683,12 +738,18 @@ mod tests {
                 func_id,
             )
             .unwrap();
-        graph.add_data_edge(post_cmp, postcond, 0, 0, TypeId::BOOL).unwrap();
-        graph.add_data_edge(param_a, postcond, 0, 1, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(post_cmp, postcond, 0, 0, TypeId::BOOL)
+            .unwrap();
+        graph
+            .add_data_edge(param_a, postcond, 0, 1, TypeId::I32)
+            .unwrap();
 
         // Return node
         let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
-        graph.add_data_edge(param_a, ret, 0, 0, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_a, ret, 0, 0, TypeId::I32)
+            .unwrap();
 
         // Simulate: a = 5, all conditions are true
         let mut node_values = HashMap::new();
@@ -696,8 +757,8 @@ mod tests {
         node_values.insert(pre_cmp, Value::Bool(true));
         node_values.insert(post_cmp, Value::Bool(true));
 
-        let pre_violations = check_preconditions(&graph, func_id, &[Value::I32(5)], &node_values)
-            .unwrap();
+        let pre_violations =
+            check_preconditions(&graph, func_id, &[Value::I32(5)], &node_values).unwrap();
         assert!(pre_violations.is_empty());
 
         let post_violations = check_postconditions(
@@ -746,8 +807,12 @@ mod tests {
         let cmp_node = graph
             .add_core_op(ComputeOp::Compare { op: CmpOp::Ge }, func_id)
             .unwrap();
-        graph.add_data_edge(param_x, cmp_node, 0, 0, TypeId::I32).unwrap();
-        graph.add_data_edge(const_zero, cmp_node, 0, 1, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_x, cmp_node, 0, 0, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(const_zero, cmp_node, 0, 1, TypeId::I32)
+            .unwrap();
 
         // Invariant node targeting I32
         let inv_node = graph
@@ -759,11 +824,15 @@ mod tests {
                 func_id,
             )
             .unwrap();
-        graph.add_data_edge(cmp_node, inv_node, 0, 0, TypeId::BOOL).unwrap();
+        graph
+            .add_data_edge(cmp_node, inv_node, 0, 0, TypeId::BOOL)
+            .unwrap();
 
         // Return node
         let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
-        graph.add_data_edge(param_x, ret, 0, 0, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_x, ret, 0, 0, TypeId::I32)
+            .unwrap();
 
         (graph, func_id, inv_node)
     }
@@ -788,13 +857,8 @@ mod tests {
     fn test_check_invariants_for_value_with_mini_eval() {
         let (graph, func_id, _) = build_invariant_graph();
         // x = -1 should produce 1 violation
-        let violations = check_invariants_for_value(
-            &graph,
-            TypeId::I32,
-            &Value::I32(-1),
-            func_id,
-        )
-        .unwrap();
+        let violations =
+            check_invariants_for_value(&graph, TypeId::I32, &Value::I32(-1), func_id).unwrap();
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].kind, ContractKind::Invariant);
         assert_eq!(violations[0].message, "x must be non-negative");

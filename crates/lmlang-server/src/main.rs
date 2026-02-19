@@ -11,13 +11,10 @@ use lmlang_server::state::AppState;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let db_path = std::env::var("LMLANG_DB_PATH")
-        .unwrap_or_else(|_| "lmlang.db".to_string());
-    let port = std::env::var("LMLANG_PORT")
-        .unwrap_or_else(|_| "3000".to_string());
+    let db_path = std::env::var("LMLANG_DB_PATH").unwrap_or_else(|_| "lmlang.db".to_string());
+    let port = std::env::var("LMLANG_PORT").unwrap_or_else(|_| "3000".to_string());
 
-    let state = AppState::new(&db_path)
-        .expect("Failed to initialize application state");
+    let state = AppState::new(&db_path).expect("Failed to initialize application state");
 
     let app = build_router(state);
 

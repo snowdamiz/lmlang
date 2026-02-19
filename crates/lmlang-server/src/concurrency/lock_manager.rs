@@ -368,11 +368,7 @@ impl LockManager {
     }
 
     /// Releases a lock held by the given agent on the given function.
-    pub fn release(
-        &self,
-        agent_id: &AgentId,
-        func_id: FunctionId,
-    ) -> Result<(), LockError> {
+    pub fn release(&self, agent_id: &AgentId, func_id: FunctionId) -> Result<(), LockError> {
         let mut entry = match self.function_locks.get_mut(&func_id) {
             Some(e) => e,
             None => {
@@ -569,11 +565,7 @@ impl LockManager {
                 tick.tick().await;
                 let released = manager.sweep_expired_locks();
                 if !released.is_empty() {
-                    tracing::info!(
-                        "Swept {} expired lock(s): {:?}",
-                        released.len(),
-                        released
-                    );
+                    tracing::info!("Swept {} expired lock(s): {:?}", released.len(), released);
                 }
             }
         });

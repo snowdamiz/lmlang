@@ -40,8 +40,8 @@ use lmlang_core::node::ComputeNode;
 pub fn hash_node_content(node: &ComputeNode) -> blake3::Hash {
     let mut hasher = blake3::Hasher::new();
     // Serialize the op -- deterministic because ComputeNodeOp uses no HashMap
-    let op_bytes = serde_json::to_vec(&node.op)
-        .expect("ComputeNodeOp serialization should never fail");
+    let op_bytes =
+        serde_json::to_vec(&node.op).expect("ComputeNodeOp serialization should never fail");
     hasher.update(&op_bytes);
     // Hash the owner function ID
     hasher.update(&node.owner.0.to_le_bytes());
@@ -56,9 +56,7 @@ pub fn hash_node_content(node: &ComputeNode) -> blake3::Hash {
 fn edge_sort_key(target_id: NodeId, edge: &FlowEdge) -> (u8, u16, u32) {
     match edge {
         FlowEdge::Data { target_port, .. } => (0, *target_port, target_id.0),
-        FlowEdge::Control { branch_index } => {
-            (1, branch_index.unwrap_or(u16::MAX), target_id.0)
-        }
+        FlowEdge::Control { branch_index } => (1, branch_index.unwrap_or(u16::MAX), target_id.0),
     }
 }
 
@@ -85,8 +83,8 @@ pub fn hash_node_with_edges(
 
     // Hash each edge: serialized edge data + target node's hash
     for (_, edge, target_hash) in sorted {
-        let edge_bytes = serde_json::to_vec(edge)
-            .expect("FlowEdge serialization should never fail");
+        let edge_bytes =
+            serde_json::to_vec(edge).expect("FlowEdge serialization should never fail");
         hasher.update(&edge_bytes);
         hasher.update(target_hash.as_bytes());
     }
@@ -112,8 +110,7 @@ pub fn hash_function(graph: &ProgramGraph, func_id: FunctionId) -> blake3::Hash 
     func_nodes.sort_by_key(|n| n.0);
 
     // Build a set of node IDs in this function for membership checks
-    let func_node_set: std::collections::HashSet<NodeId> =
-        func_nodes.iter().copied().collect();
+    let func_node_set: std::collections::HashSet<NodeId> = func_nodes.iter().copied().collect();
 
     // Pass 1: compute content hashes for all nodes
     let mut content_hashes: HashMap<NodeId, blake3::Hash> = HashMap::new();
@@ -130,7 +127,10 @@ pub fn hash_function(graph: &ProgramGraph, func_id: FunctionId) -> blake3::Hash 
 
         // Collect outgoing edges from this node
         let mut outgoing: Vec<(NodeId, FlowEdge, blake3::Hash)> = Vec::new();
-        for edge_ref in graph.compute().edges_directed(node_idx, Direction::Outgoing) {
+        for edge_ref in graph
+            .compute()
+            .edges_directed(node_idx, Direction::Outgoing)
+        {
             let target_id = NodeId::from(edge_ref.target());
             let edge = edge_ref.weight().clone();
 
@@ -168,7 +168,8 @@ pub fn hash_function(graph: &ProgramGraph, func_id: FunctionId) -> blake3::Hash 
 /// Same logic as [`hash_function`] but filters out nodes where `op.is_contract()`.
 pub fn hash_function_for_compilation(graph: &ProgramGraph, func_id: FunctionId) -> blake3::Hash {
     // Get all non-contract nodes owned by this function, sorted by NodeId
-    let mut func_nodes: Vec<NodeId> = graph.function_nodes(func_id)
+    let mut func_nodes: Vec<NodeId> = graph
+        .function_nodes(func_id)
         .into_iter()
         .filter(|node_id| {
             if let Some(node) = graph.get_compute_node(*node_id) {
@@ -180,8 +181,7 @@ pub fn hash_function_for_compilation(graph: &ProgramGraph, func_id: FunctionId) 
         .collect();
     func_nodes.sort_by_key(|n| n.0);
 
-    let func_node_set: std::collections::HashSet<NodeId> =
-        func_nodes.iter().copied().collect();
+    let func_node_set: std::collections::HashSet<NodeId> = func_nodes.iter().copied().collect();
 
     // Pass 1: compute content hashes for all non-contract nodes
     let mut content_hashes: HashMap<NodeId, blake3::Hash> = HashMap::new();
@@ -197,7 +197,10 @@ pub fn hash_function_for_compilation(graph: &ProgramGraph, func_id: FunctionId) 
         let node_idx: NodeIndex<u32> = node_id.into();
 
         let mut outgoing: Vec<(NodeId, FlowEdge, blake3::Hash)> = Vec::new();
-        for edge_ref in graph.compute().edges_directed(node_idx, Direction::Outgoing) {
+        for edge_ref in graph
+            .compute()
+            .edges_directed(node_idx, Direction::Outgoing)
+        {
             let target_id = NodeId::from(edge_ref.target());
 
             // Skip edges to contract nodes
@@ -235,7 +238,9 @@ pub fn hash_function_for_compilation(graph: &ProgramGraph, func_id: FunctionId) 
 ///
 /// Returns a map from FunctionId to the function's compilation hash.
 /// Contract changes do not affect these hashes.
-pub fn hash_all_functions_for_compilation(graph: &ProgramGraph) -> HashMap<FunctionId, blake3::Hash> {
+pub fn hash_all_functions_for_compilation(
+    graph: &ProgramGraph,
+) -> HashMap<FunctionId, blake3::Hash> {
     let mut func_ids: Vec<FunctionId> = graph.functions().keys().copied().collect();
     func_ids.sort_by_key(|f| f.0);
 
@@ -277,10 +282,7 @@ mod tests {
 
     #[test]
     fn test_node_content_hash_deterministic() {
-        let node = ComputeNode::core(
-            ComputeOp::BinaryArith { op: ArithOp::Add },
-            FunctionId(0),
-        );
+        let node = ComputeNode::core(ComputeOp::BinaryArith { op: ArithOp::Add }, FunctionId(0));
         let hash1 = hash_node_content(&node);
         let hash2 = hash_node_content(&node);
         assert_eq!(hash1, hash2, "Same node must produce same hash");
@@ -288,14 +290,10 @@ mod tests {
 
     #[test]
     fn test_node_content_hash_changes_on_op_change() {
-        let node_add = ComputeNode::core(
-            ComputeOp::BinaryArith { op: ArithOp::Add },
-            FunctionId(0),
-        );
-        let node_sub = ComputeNode::core(
-            ComputeOp::BinaryArith { op: ArithOp::Sub },
-            FunctionId(0),
-        );
+        let node_add =
+            ComputeNode::core(ComputeOp::BinaryArith { op: ArithOp::Add }, FunctionId(0));
+        let node_sub =
+            ComputeNode::core(ComputeOp::BinaryArith { op: ArithOp::Sub }, FunctionId(0));
         let hash_add = hash_node_content(&node_add);
         let hash_sub = hash_node_content(&node_sub);
         assert_ne!(
@@ -306,14 +304,10 @@ mod tests {
 
     #[test]
     fn test_node_content_hash_changes_on_owner_change() {
-        let node_fn0 = ComputeNode::core(
-            ComputeOp::BinaryArith { op: ArithOp::Add },
-            FunctionId(0),
-        );
-        let node_fn1 = ComputeNode::core(
-            ComputeOp::BinaryArith { op: ArithOp::Add },
-            FunctionId(1),
-        );
+        let node_fn0 =
+            ComputeNode::core(ComputeOp::BinaryArith { op: ArithOp::Add }, FunctionId(0));
+        let node_fn1 =
+            ComputeNode::core(ComputeOp::BinaryArith { op: ArithOp::Add }, FunctionId(1));
         let hash_fn0 = hash_node_content(&node_fn0);
         let hash_fn1 = hash_node_content(&node_fn1);
         assert_ne!(
@@ -328,10 +322,7 @@ mod tests {
 
     #[test]
     fn test_node_with_edges_changes_on_edge_add() {
-        let node = ComputeNode::core(
-            ComputeOp::BinaryArith { op: ArithOp::Add },
-            FunctionId(0),
-        );
+        let node = ComputeNode::core(ComputeOp::BinaryArith { op: ArithOp::Add }, FunctionId(0));
         let hash_no_edges = hash_node_with_edges(&node, &[]);
 
         let target_hash = hash_node_content(&ComputeNode::core(
@@ -343,10 +334,7 @@ mod tests {
             target_port: 0,
             value_type: TypeId::I32,
         };
-        let hash_with_edge = hash_node_with_edges(
-            &node,
-            &[(NodeId(1), edge, target_hash)],
-        );
+        let hash_with_edge = hash_node_with_edges(&node, &[(NodeId(1), edge, target_hash)]);
 
         assert_ne!(
             hash_no_edges, hash_with_edge,
@@ -356,10 +344,7 @@ mod tests {
 
     #[test]
     fn test_node_with_edges_changes_on_target_hash_change() {
-        let node = ComputeNode::core(
-            ComputeOp::BinaryArith { op: ArithOp::Add },
-            FunctionId(0),
-        );
+        let node = ComputeNode::core(ComputeOp::BinaryArith { op: ArithOp::Add }, FunctionId(0));
         let edge = FlowEdge::Data {
             source_port: 0,
             target_port: 0,
@@ -369,14 +354,8 @@ mod tests {
         let target_hash_a = blake3::hash(b"target_a");
         let target_hash_b = blake3::hash(b"target_b");
 
-        let hash_a = hash_node_with_edges(
-            &node,
-            &[(NodeId(1), edge.clone(), target_hash_a)],
-        );
-        let hash_b = hash_node_with_edges(
-            &node,
-            &[(NodeId(1), edge, target_hash_b)],
-        );
+        let hash_a = hash_node_with_edges(&node, &[(NodeId(1), edge.clone(), target_hash_a)]);
+        let hash_b = hash_node_with_edges(&node, &[(NodeId(1), edge, target_hash_b)]);
 
         assert_ne!(
             hash_a, hash_b,
@@ -418,18 +397,14 @@ mod tests {
             .add_core_op(ComputeOp::Parameter { index: 0 }, fn_a)
             .unwrap();
         let ret_a = graph.add_core_op(ComputeOp::Return, fn_a).unwrap();
-        graph
-            .add_data_edge(pa, ret_a, 0, 0, TypeId::I32)
-            .unwrap();
+        graph.add_data_edge(pa, ret_a, 0, 0, TypeId::I32).unwrap();
 
         // fn_b body: param -> return
         let pb = graph
             .add_core_op(ComputeOp::Parameter { index: 0 }, fn_b)
             .unwrap();
         let ret_b = graph.add_core_op(ComputeOp::Return, fn_b).unwrap();
-        graph
-            .add_data_edge(pb, ret_b, 0, 0, TypeId::I32)
-            .unwrap();
+        graph.add_data_edge(pb, ret_b, 0, 0, TypeId::I32).unwrap();
 
         (graph, fn_a, fn_b)
     }

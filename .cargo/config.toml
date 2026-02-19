@@ -1,2 +1,5 @@
+[alias]
+start-server = "!bash ./scripts/start-server.sh"
+
 [env]
 LLVM_SYS_211_PREFIX = "/opt/homebrew/opt/llvm"

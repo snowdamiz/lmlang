@@ -149,10 +149,7 @@ impl ModuleTree {
     ///
     /// Returns an empty slice if the module has no children or does not exist.
     pub fn children(&self, id: ModuleId) -> &[ModuleId] {
-        self.children
-            .get(&id)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
+        self.children.get(&id).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
     /// Registers a function in a module.
@@ -173,11 +170,7 @@ impl ModuleTree {
     /// Registers a type definition in a module.
     ///
     /// Returns [`CoreError::ModuleNotFound`] if the module does not exist.
-    pub fn add_type_def(
-        &mut self,
-        module: ModuleId,
-        type_id: TypeId,
-    ) -> Result<(), CoreError> {
+    pub fn add_type_def(&mut self, module: ModuleId, type_id: TypeId) -> Result<(), CoreError> {
         if !self.modules.contains_key(&module) {
             return Err(CoreError::ModuleNotFound { id: module });
         }
@@ -323,10 +316,7 @@ mod tests {
         let root = tree.root_id();
 
         tree.add_type_def(root, TypeId(100)).unwrap();
-        assert_eq!(
-            tree.type_defs.get(&root).unwrap(),
-            &[TypeId(100)]
-        );
+        assert_eq!(tree.type_defs.get(&root).unwrap(), &[TypeId(100)]);
     }
 
     #[test]

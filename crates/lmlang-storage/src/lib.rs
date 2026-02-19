@@ -22,22 +22,22 @@
 //! - [`schema`]: SQL schema constants and migration setup
 //! - [`sqlite`]: SqliteStore implementation
 
-pub mod error;
-pub mod types;
-pub mod traits;
 pub mod convert;
-pub mod hash;
 pub mod dirty;
+pub mod error;
+pub mod hash;
 pub mod memory;
 pub mod schema;
 pub mod sqlite;
+pub mod traits;
+pub mod types;
 
 // Re-export key types for ergonomic use.
+pub use dirty::{compute_dirty_set, DirtySet};
 pub use error::StorageError;
-pub use types::{ProgramId, ProgramSummary};
-pub use traits::GraphStore;
-pub use hash::{hash_node_content, hash_node_with_edges, hash_function, hash_all_functions};
-pub use hash::{hash_function_for_compilation, hash_all_functions_for_compilation};
-pub use dirty::{DirtySet, compute_dirty_set};
+pub use hash::{hash_all_functions, hash_function, hash_node_content, hash_node_with_edges};
+pub use hash::{hash_all_functions_for_compilation, hash_function_for_compilation};
 pub use memory::InMemoryStore;
 pub use sqlite::SqliteStore;
+pub use traits::GraphStore;
+pub use types::{ProgramId, ProgramSummary};

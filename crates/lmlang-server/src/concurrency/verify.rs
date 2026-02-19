@@ -48,10 +48,7 @@ pub fn find_verification_scope(
 }
 
 /// Validates only functions inside the scope.
-pub fn validate_functions(
-    graph: &ProgramGraph,
-    scope: &[FunctionId],
-) -> Vec<TypeError> {
+pub fn validate_functions(graph: &ProgramGraph, scope: &[FunctionId]) -> Vec<TypeError> {
     if scope.is_empty() {
         return Vec::new();
     }

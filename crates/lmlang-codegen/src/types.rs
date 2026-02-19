@@ -89,13 +89,14 @@ pub fn lm_type_to_llvm<'ctx>(
                     .into())
             } else {
                 // All unit variants -- just the discriminant
-                Ok(context
-                    .struct_type(&[discriminant_ty.into()], false)
-                    .into())
+                Ok(context.struct_type(&[discriminant_ty.into()], false).into())
             }
         }
         LmType::Pointer { .. } => Ok(context.ptr_type(AddressSpace::default()).into()),
-        LmType::Function { params, return_type } => {
+        LmType::Function {
+            params,
+            return_type,
+        } => {
             // Function types are represented as function pointers
             let param_types: Vec<inkwell::types::BasicMetadataTypeEnum<'ctx>> = params
                 .iter()
@@ -179,9 +180,7 @@ mod tests {
     use indexmap::IndexMap;
     use lmlang_core::id::ModuleId;
     use lmlang_core::type_id::TypeRegistry;
-    use lmlang_core::types::{
-        EnumDef, EnumVariant, LmType, StructDef, Visibility,
-    };
+    use lmlang_core::types::{EnumDef, EnumVariant, LmType, StructDef, Visibility};
 
     #[test]
     fn scalar_bool_maps_to_i1() {
@@ -293,10 +292,7 @@ mod tests {
                 LmType::Struct(StructDef {
                     name: "Point".into(),
                     type_id: TypeId(0), // placeholder
-                    fields: IndexMap::from([
-                        ("x".into(), TypeId::F64),
-                        ("y".into(), TypeId::F64),
-                    ]),
+                    fields: IndexMap::from([("x".into(), TypeId::F64), ("y".into(), TypeId::F64)]),
                     module: ModuleId(0),
                     visibility: Visibility::Public,
                 }),
@@ -449,10 +445,7 @@ mod tests {
                 LmType::Struct(StructDef {
                     name: "Vec2".into(),
                     type_id: TypeId(0),
-                    fields: IndexMap::from([
-                        ("x".into(), TypeId::F32),
-                        ("y".into(), TypeId::F32),
-                    ]),
+                    fields: IndexMap::from([("x".into(), TypeId::F32), ("y".into(), TypeId::F32)]),
                     module: ModuleId(0),
                     visibility: Visibility::Public,
                 }),

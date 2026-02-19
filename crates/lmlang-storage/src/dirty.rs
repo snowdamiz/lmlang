@@ -204,8 +204,12 @@ mod tests {
         let cmp = graph
             .add_core_op(ComputeOp::Compare { op: CmpOp::Ge }, func_id)
             .unwrap();
-        graph.add_data_edge(param_node, cmp, 0, 0, TypeId::I32).unwrap();
-        graph.add_data_edge(const_zero, cmp, 0, 1, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_node, cmp, 0, 0, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(const_zero, cmp, 0, 1, TypeId::I32)
+            .unwrap();
 
         let precond = graph
             .add_core_op(
@@ -215,7 +219,9 @@ mod tests {
                 func_id,
             )
             .unwrap();
-        graph.add_data_edge(cmp, precond, 0, 0, TypeId::BOOL).unwrap();
+        graph
+            .add_data_edge(cmp, precond, 0, 0, TypeId::BOOL)
+            .unwrap();
 
         let dirty = compute_dirty_set(&graph, &prev_hashes);
 
@@ -233,7 +239,10 @@ mod tests {
         //
         // Since we did add const_zero and cmp (non-contract), the function IS dirty.
         // This is correct behavior -- the supporting nodes changed the function.
-        assert!(!dirty.is_clean(), "Adding support nodes + contract should dirty the function");
+        assert!(
+            !dirty.is_clean(),
+            "Adding support nodes + contract should dirty the function"
+        );
     }
 
     #[test]
@@ -255,8 +264,12 @@ mod tests {
         let cmp = graph
             .add_core_op(ComputeOp::Compare { op: CmpOp::Ge }, func_id)
             .unwrap();
-        graph.add_data_edge(param_node, cmp, 0, 0, TypeId::I32).unwrap();
-        graph.add_data_edge(const_zero, cmp, 0, 1, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_node, cmp, 0, 0, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(const_zero, cmp, 0, 1, TypeId::I32)
+            .unwrap();
 
         // Take snapshot AFTER support nodes exist
         let prev_hashes = crate::hash::hash_all_functions_for_compilation(&graph);
@@ -271,13 +284,18 @@ mod tests {
             )
             .unwrap();
         // Wire contract node to existing compare
-        graph.add_data_edge(cmp, _precond, 0, 0, TypeId::BOOL).unwrap();
+        graph
+            .add_data_edge(cmp, _precond, 0, 0, TypeId::BOOL)
+            .unwrap();
 
         let dirty = compute_dirty_set(&graph, &prev_hashes);
 
         // Adding only a contract node should NOT dirty the function
         // because contract nodes are excluded from compilation hashing
-        assert!(dirty.is_clean(), "Adding only a contract node should not dirty the function");
+        assert!(
+            dirty.is_clean(),
+            "Adding only a contract node should not dirty the function"
+        );
     }
 
     #[test]
@@ -290,13 +308,7 @@ mod tests {
 
         // Add a new function
         let func_b = graph
-            .add_function(
-                "g".into(),
-                root,
-                vec![],
-                TypeId::UNIT,
-                Visibility::Public,
-            )
+            .add_function("g".into(), root, vec![], TypeId::UNIT, Visibility::Public)
             .unwrap();
         let ret_b = graph.add_core_op(ComputeOp::Return, func_b).unwrap();
 
@@ -313,8 +325,14 @@ mod tests {
         let dirty = compute_dirty_set(&graph, &prev_hashes);
         let recompile = dirty.needs_recompile();
 
-        assert!(recompile.contains(&func_id), "Modified function should need recompile");
-        assert!(recompile.contains(&func_b), "New function should need recompile");
+        assert!(
+            recompile.contains(&func_id),
+            "Modified function should need recompile"
+        );
+        assert!(
+            recompile.contains(&func_b),
+            "New function should need recompile"
+        );
         assert_eq!(recompile.len(), 2);
     }
 }

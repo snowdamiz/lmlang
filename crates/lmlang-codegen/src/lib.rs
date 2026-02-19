@@ -14,11 +14,11 @@ pub mod codegen;
 pub mod compiler;
 pub mod error;
 pub mod incremental;
-pub mod types;
-pub mod runtime;
 pub mod linker;
+pub mod runtime;
+pub mod types;
 
-pub use compiler::{compile, compile_to_ir, compile_incremental};
+pub use compiler::{compile, compile_incremental, compile_to_ir};
 
 use std::path::PathBuf;
 

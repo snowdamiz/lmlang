@@ -10,7 +10,9 @@ use lmlang_core::ops::{ComputeNodeOp, ComputeOp, StructuredOp};
 use lmlang_core::type_id::TypeId;
 use lmlang_core::types::{ConstValue, LmType};
 
-use super::coercion::{can_coerce, common_numeric_type, is_integer, is_numeric, is_numeric_or_bool};
+use super::coercion::{
+    can_coerce, common_numeric_type, is_integer, is_numeric, is_numeric_or_bool,
+};
 use super::diagnostics::TypeError;
 
 /// Result of resolving the type rule for an op.
@@ -43,8 +45,12 @@ pub fn resolve_type_rule(
     function_id: FunctionId,
 ) -> Result<OpTypeRule, TypeError> {
     match op {
-        ComputeNodeOp::Core(core_op) => resolve_core_rule(core_op, input_types, graph, node_id, function_id),
-        ComputeNodeOp::Structured(struct_op) => resolve_structured_rule(struct_op, input_types, graph, node_id, function_id),
+        ComputeNodeOp::Core(core_op) => {
+            resolve_core_rule(core_op, input_types, graph, node_id, function_id)
+        }
+        ComputeNodeOp::Structured(struct_op) => {
+            resolve_structured_rule(struct_op, input_types, graph, node_id, function_id)
+        }
     }
 }
 
@@ -116,27 +122,25 @@ fn resolve_core_rule(
             }
         }
 
-        ComputeOp::UnaryArith { .. } => {
-            match find_port_type(input_types, 0) {
-                Some(t) => {
-                    if !is_numeric(t) {
-                        return Err(TypeError::NonNumericArithmetic {
-                            node: node_id,
-                            type_id: t,
-                            function_id,
-                        });
-                    }
-                    Ok(OpTypeRule {
-                        expected_inputs: vec![(0, t)],
-                        output_type: Some(t),
-                    })
+        ComputeOp::UnaryArith { .. } => match find_port_type(input_types, 0) {
+            Some(t) => {
+                if !is_numeric(t) {
+                    return Err(TypeError::NonNumericArithmetic {
+                        node: node_id,
+                        type_id: t,
+                        function_id,
+                    });
                 }
-                None => Ok(OpTypeRule {
-                    expected_inputs: vec![],
-                    output_type: None,
-                }),
+                Ok(OpTypeRule {
+                    expected_inputs: vec![(0, t)],
+                    output_type: Some(t),
+                })
             }
-        }
+            None => Ok(OpTypeRule {
+                expected_inputs: vec![],
+                output_type: None,
+            }),
+        },
 
         // -- Comparison --
         ComputeOp::Compare { .. } => {
@@ -180,8 +184,8 @@ fn resolve_core_rule(
             match (port0, port1) {
                 (Some(t0), Some(t1)) => {
                     // Both must be Bool or same integer type (bitwise)
-                    let ok = (t0 == TypeId::BOOL && t1 == TypeId::BOOL)
-                        || (is_integer(t0) && t0 == t1);
+                    let ok =
+                        (t0 == TypeId::BOOL && t1 == TypeId::BOOL) || (is_integer(t0) && t0 == t1);
                     if ok {
                         Ok(OpTypeRule {
                             expected_inputs: vec![(0, t0), (1, t1)],
@@ -207,33 +211,31 @@ fn resolve_core_rule(
             }
         }
 
-        ComputeOp::Not => {
-            match find_port_type(input_types, 0) {
-                Some(t) => {
-                    if t == TypeId::BOOL || is_integer(t) {
-                        Ok(OpTypeRule {
-                            expected_inputs: vec![(0, t)],
-                            output_type: Some(t),
-                        })
-                    } else {
-                        Err(TypeError::TypeMismatch {
-                            source_node: node_id,
-                            target_node: node_id,
-                            source_port: 0,
-                            target_port: 0,
-                            expected: TypeId::BOOL,
-                            actual: t,
-                            function_id,
-                            suggestion: None,
-                        })
-                    }
+        ComputeOp::Not => match find_port_type(input_types, 0) {
+            Some(t) => {
+                if t == TypeId::BOOL || is_integer(t) {
+                    Ok(OpTypeRule {
+                        expected_inputs: vec![(0, t)],
+                        output_type: Some(t),
+                    })
+                } else {
+                    Err(TypeError::TypeMismatch {
+                        source_node: node_id,
+                        target_node: node_id,
+                        source_port: 0,
+                        target_port: 0,
+                        expected: TypeId::BOOL,
+                        actual: t,
+                        function_id,
+                        suggestion: None,
+                    })
                 }
-                None => Ok(OpTypeRule {
-                    expected_inputs: vec![],
-                    output_type: None,
-                }),
             }
-        }
+            None => Ok(OpTypeRule {
+                expected_inputs: vec![],
+                output_type: None,
+            }),
+        },
 
         // -- Bitwise --
         ComputeOp::Shift { .. } => {
@@ -347,12 +349,10 @@ fn resolve_core_rule(
             }
         }
 
-        ComputeOp::Jump => {
-            Ok(OpTypeRule {
-                expected_inputs: vec![],
-                output_type: None,
-            })
-        }
+        ComputeOp::Jump => Ok(OpTypeRule {
+            expected_inputs: vec![],
+            output_type: None,
+        }),
 
         ComputeOp::Phi => {
             // N data inputs, all must be same type
@@ -403,12 +403,10 @@ fn resolve_core_rule(
             match find_port_type(input_types, 0) {
                 Some(ptr_type) => {
                     match registry.get(ptr_type) {
-                        Some(LmType::Pointer { pointee, .. }) => {
-                            Ok(OpTypeRule {
-                                expected_inputs: vec![(0, ptr_type)],
-                                output_type: Some(*pointee),
-                            })
-                        }
+                        Some(LmType::Pointer { pointee, .. }) => Ok(OpTypeRule {
+                            expected_inputs: vec![(0, ptr_type)],
+                            output_type: Some(*pointee),
+                        }),
                         _ => {
                             // Not a pointer type -- accept for now, actual validation
                             // happens at edge level
@@ -500,26 +498,25 @@ fn resolve_core_rule(
             // Port 0 = function pointer, remaining ports = arguments
             // Output = return type from function type
             match find_port_type(input_types, 0) {
-                Some(fn_ptr_type) => {
-                    match registry.get(fn_ptr_type) {
-                        Some(LmType::Function { params, return_type }) => {
-                            let mut expected = vec![(0, fn_ptr_type)];
-                            for (i, param_ty) in params.iter().enumerate() {
-                                expected.push(((i + 1) as u16, *param_ty));
-                            }
-                            Ok(OpTypeRule {
-                                expected_inputs: expected,
-                                output_type: Some(*return_type),
-                            })
+                Some(fn_ptr_type) => match registry.get(fn_ptr_type) {
+                    Some(LmType::Function {
+                        params,
+                        return_type,
+                    }) => {
+                        let mut expected = vec![(0, fn_ptr_type)];
+                        for (i, param_ty) in params.iter().enumerate() {
+                            expected.push(((i + 1) as u16, *param_ty));
                         }
-                        _ => {
-                            Ok(OpTypeRule {
-                                expected_inputs: vec![(0, fn_ptr_type)],
-                                output_type: None,
-                            })
-                        }
+                        Ok(OpTypeRule {
+                            expected_inputs: expected,
+                            output_type: Some(*return_type),
+                        })
                     }
-                }
+                    _ => Ok(OpTypeRule {
+                        expected_inputs: vec![(0, fn_ptr_type)],
+                        output_type: None,
+                    }),
+                },
                 None => Ok(OpTypeRule {
                     expected_inputs: vec![],
                     output_type: None,
@@ -543,10 +540,7 @@ fn resolve_core_rule(
             // 0 data inputs. Output = parameter type from FunctionDef.
             match graph.get_function(function_id) {
                 Some(func_def) => {
-                    let param_type = func_def
-                        .params
-                        .get(*index as usize)
-                        .map(|(_, ty)| *ty);
+                    let param_type = func_def.params.get(*index as usize).map(|(_, ty)| *ty);
                     Ok(OpTypeRule {
                         expected_inputs: vec![],
                         output_type: param_type,
@@ -762,75 +756,68 @@ fn resolve_structured_rule(
     let registry = &graph.types;
 
     match op {
-        StructuredOp::StructCreate { type_id } => {
-            match registry.get(*type_id) {
+        StructuredOp::StructCreate { type_id } => match registry.get(*type_id) {
+            Some(LmType::Struct(struct_def)) => {
+                let expected: Vec<(u16, TypeId)> = struct_def
+                    .fields
+                    .values()
+                    .enumerate()
+                    .map(|(i, ty)| (i as u16, *ty))
+                    .collect();
+                Ok(OpTypeRule {
+                    expected_inputs: expected,
+                    output_type: Some(*type_id),
+                })
+            }
+            _ => Ok(OpTypeRule {
+                expected_inputs: vec![],
+                output_type: Some(*type_id),
+            }),
+        },
+
+        StructuredOp::StructGet { field_index } => match find_port_type(input_types, 0) {
+            Some(struct_type) => match registry.get(struct_type) {
                 Some(LmType::Struct(struct_def)) => {
-                    let expected: Vec<(u16, TypeId)> = struct_def
+                    let field_type = struct_def
                         .fields
                         .values()
-                        .enumerate()
-                        .map(|(i, ty)| (i as u16, *ty))
-                        .collect();
+                        .nth(*field_index as usize)
+                        .copied();
                     Ok(OpTypeRule {
-                        expected_inputs: expected,
-                        output_type: Some(*type_id),
+                        expected_inputs: vec![(0, struct_type)],
+                        output_type: field_type,
                     })
                 }
                 _ => Ok(OpTypeRule {
-                    expected_inputs: vec![],
-                    output_type: Some(*type_id),
-                }),
-            }
-        }
-
-        StructuredOp::StructGet { field_index } => {
-            match find_port_type(input_types, 0) {
-                Some(struct_type) => {
-                    match registry.get(struct_type) {
-                        Some(LmType::Struct(struct_def)) => {
-                            let field_type = struct_def
-                                .fields
-                                .values()
-                                .nth(*field_index as usize)
-                                .copied();
-                            Ok(OpTypeRule {
-                                expected_inputs: vec![(0, struct_type)],
-                                output_type: field_type,
-                            })
-                        }
-                        _ => Ok(OpTypeRule {
-                            expected_inputs: vec![(0, struct_type)],
-                            output_type: None,
-                        }),
-                    }
-                }
-                None => Ok(OpTypeRule {
-                    expected_inputs: vec![],
+                    expected_inputs: vec![(0, struct_type)],
                     output_type: None,
                 }),
-            }
-        }
+            },
+            None => Ok(OpTypeRule {
+                expected_inputs: vec![],
+                output_type: None,
+            }),
+        },
 
-        StructuredOp::StructSet { field_index } => {
-            match find_port_type(input_types, 0) {
-                Some(struct_type) => {
-                    let mut expected = vec![(0, struct_type)];
-                    if let Some(LmType::Struct(struct_def)) = registry.get(struct_type) {
-                        if let Some(field_type) = struct_def.fields.values().nth(*field_index as usize) {
-                            expected.push((1, *field_type));
-                        }
+        StructuredOp::StructSet { field_index } => match find_port_type(input_types, 0) {
+            Some(struct_type) => {
+                let mut expected = vec![(0, struct_type)];
+                if let Some(LmType::Struct(struct_def)) = registry.get(struct_type) {
+                    if let Some(field_type) = struct_def.fields.values().nth(*field_index as usize)
+                    {
+                        expected.push((1, *field_type));
                     }
-                    Ok(OpTypeRule {
-                        expected_inputs: expected,
-                        output_type: Some(struct_type),
-                    })
                 }
-                None => Ok(OpTypeRule {
-                    expected_inputs: vec![],
-                    output_type: None,
-                }),
+                Ok(OpTypeRule {
+                    expected_inputs: expected,
+                    output_type: Some(struct_type),
+                })
             }
-        }
+            None => Ok(OpTypeRule {
+                expected_inputs: vec![],
+                output_type: None,
+            }),
+        },
 
         StructuredOp::ArrayCreate { length: _ } => {
             // N inputs all same type. Output = array type.
@@ -841,11 +828,17 @@ fn resolve_structured_rule(
                 });
             }
             let elem_type = input_types[0].1;
-            let expected: Vec<(u16, TypeId)> = input_types.iter().map(|&(port, _)| (port, elem_type)).collect();
+            let expected: Vec<(u16, TypeId)> = input_types
+                .iter()
+                .map(|&(port, _)| (port, elem_type))
+                .collect();
 
             // Find or infer array type
-            let array_type = registry.iter()
-                .find(|(_, ty)| matches!(ty, LmType::Array { element, .. } if *element == elem_type))
+            let array_type = registry
+                .iter()
+                .find(
+                    |(_, ty)| matches!(ty, LmType::Array { element, .. } if *element == elem_type),
+                )
                 .map(|(id, _)| id);
 
             Ok(OpTypeRule {
@@ -935,7 +928,10 @@ fn resolve_structured_rule(
             })
         }
 
-        StructuredOp::EnumCreate { type_id, variant_index } => {
+        StructuredOp::EnumCreate {
+            type_id,
+            variant_index,
+        } => {
             // 0 or 1 input (variant payload). Output = enum type.
             match registry.get(*type_id) {
                 Some(LmType::Enum(enum_def)) => {
@@ -975,13 +971,11 @@ fn resolve_structured_rule(
             match find_port_type(input_types, 0) {
                 Some(enum_type) => {
                     let output = match registry.get(enum_type) {
-                        Some(LmType::Enum(enum_def)) => {
-                            enum_def
-                                .variants
-                                .values()
-                                .nth(*variant_index as usize)
-                                .and_then(|v| v.payload)
-                        }
+                        Some(LmType::Enum(enum_def)) => enum_def
+                            .variants
+                            .values()
+                            .nth(*variant_index as usize)
+                            .and_then(|v| v.payload),
                         _ => None,
                     };
                     Ok(OpTypeRule {
@@ -1000,7 +994,10 @@ fn resolve_structured_rule(
 
 /// Helper: find the type connected to a specific port in the input list.
 fn find_port_type(input_types: &[(u16, TypeId)], port: u16) -> Option<TypeId> {
-    input_types.iter().find(|(p, _)| *p == port).map(|(_, t)| *t)
+    input_types
+        .iter()
+        .find(|(p, _)| *p == port)
+        .map(|(_, t)| *t)
 }
 
 /// Map a ConstValue to its output TypeId.
@@ -1166,7 +1163,13 @@ mod tests {
             .unwrap();
 
         let caller = graph
-            .add_function("caller".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+            .add_function(
+                "caller".into(),
+                root,
+                vec![],
+                TypeId::UNIT,
+                Visibility::Public,
+            )
             .unwrap();
 
         let op = ComputeNodeOp::Core(ComputeOp::Call { target: callee });
@@ -1204,10 +1207,7 @@ mod tests {
         let op = ComputeNodeOp::Core(ComputeOp::Branch);
         let inputs = vec![(0, TypeId::I32)];
         let result = resolve_type_rule(&op, &inputs, &graph, NodeId(0), func_id);
-        assert!(matches!(
-            result,
-            Err(TypeError::NonBooleanCondition { .. })
-        ));
+        assert!(matches!(result, Err(TypeError::NonBooleanCondition { .. })));
     }
 
     #[test]
@@ -1216,10 +1216,7 @@ mod tests {
         let op = ComputeNodeOp::Core(ComputeOp::IfElse);
         let inputs = vec![(0, TypeId::I32)];
         let result = resolve_type_rule(&op, &inputs, &graph, NodeId(0), func_id);
-        assert!(matches!(
-            result,
-            Err(TypeError::NonBooleanCondition { .. })
-        ));
+        assert!(matches!(result, Err(TypeError::NonBooleanCondition { .. })));
     }
 
     #[test]
@@ -1356,10 +1353,7 @@ mod tests {
                 LmType::Struct(StructDef {
                     name: "Point".into(),
                     type_id: TypeId(0), // placeholder
-                    fields: IndexMap::from([
-                        ("x".into(), TypeId::F64),
-                        ("y".into(), TypeId::F64),
-                    ]),
+                    fields: IndexMap::from([("x".into(), TypeId::F64), ("y".into(), TypeId::F64)]),
                     module: root,
                     visibility: Visibility::Public,
                 }),
@@ -1416,7 +1410,13 @@ mod tests {
         let mut graph = ProgramGraph::new("test");
         let root = graph.modules.root_id();
         let parent = graph
-            .add_function("parent".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+            .add_function(
+                "parent".into(),
+                root,
+                vec![],
+                TypeId::UNIT,
+                Visibility::Public,
+            )
             .unwrap();
         let closure = graph
             .add_closure(

@@ -10,8 +10,8 @@ pub mod conflict;
 pub mod lock_manager;
 pub mod verify;
 
-pub use agent::{AgentId, AgentRegistry, AgentSession};
-pub use conflict::{check_hashes, build_function_diff, ConflictDetail, FunctionDiff};
+pub use agent::{AgentId, AgentLlmConfig, AgentRegistry, AgentSession};
+pub use conflict::{build_function_diff, check_hashes, ConflictDetail, FunctionDiff};
 pub use lock_manager::{
     FunctionLockState, LockDenial, LockError, LockGrant, LockHolderInfo, LockManager, LockMode,
     LockStatusEntry,
@@ -44,10 +44,7 @@ pub fn extract_agent_id(headers: &axum::http::HeaderMap) -> Result<AgentId, ApiE
 /// Computes which functions a batch of mutations touches.
 ///
 /// Returns `(affected_functions, is_structure_change)`.
-pub fn affected_functions(
-    mutations: &[Mutation],
-    graph: &ProgramGraph,
-) -> (Vec<FunctionId>, bool) {
+pub fn affected_functions(mutations: &[Mutation], graph: &ProgramGraph) -> (Vec<FunctionId>, bool) {
     let mut affected = HashSet::new();
     let mut structure_change = false;
 
@@ -83,11 +80,7 @@ pub fn affected_functions(
     (affected_list, structure_change)
 }
 
-fn add_owner_for_node(
-    graph: &ProgramGraph,
-    affected: &mut HashSet<FunctionId>,
-    node_id: NodeId,
-) {
+fn add_owner_for_node(graph: &ProgramGraph, affected: &mut HashSet<FunctionId>, node_id: NodeId) {
     if let Some(node) = graph.get_compute_node(node_id) {
         affected.insert(node.owner);
         if let ComputeNodeOp::Core(ComputeOp::Call { target }) = &node.op {

@@ -13,11 +13,11 @@ use std::time::Instant;
 
 use inkwell::context::Context;
 use inkwell::module::Module;
-use inkwell::types::BasicType;
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
 };
+use inkwell::types::BasicType;
 use inkwell::OptimizationLevel;
 
 use lmlang_check::typecheck;
@@ -45,7 +45,10 @@ use crate::{codegen, linker, runtime, CompileOptions, CompileResult, OptLevel};
 ///
 /// The Context is created and dropped entirely within this function,
 /// so no LLVM types escape the compilation boundary.
-pub fn compile(graph: &ProgramGraph, options: &CompileOptions) -> Result<CompileResult, CodegenError> {
+pub fn compile(
+    graph: &ProgramGraph,
+    options: &CompileOptions,
+) -> Result<CompileResult, CodegenError> {
     let start = Instant::now();
 
     // 1. Run type checker -- invalid graphs are rejected before codegen
@@ -61,8 +64,9 @@ pub fn compile(graph: &ProgramGraph, options: &CompileOptions) -> Result<Compile
     if options.target_triple.is_some() {
         Target::initialize_all(&InitializationConfig::default());
     } else {
-        Target::initialize_native(&InitializationConfig::default())
-            .map_err(|e| CodegenError::LlvmError(format!("failed to initialize native target: {}", e)))?;
+        Target::initialize_native(&InitializationConfig::default()).map_err(|e| {
+            CodegenError::LlvmError(format!("failed to initialize native target: {}", e))
+        })?;
     }
 
     // 4. Create fresh Context -- this is the EXEC-04 boundary
@@ -101,8 +105,9 @@ pub fn compile(graph: &ProgramGraph, options: &CompileOptions) -> Result<Compile
         .map_err(|e| CodegenError::LlvmError(format!("module verification failed: {}", e)))?;
 
     // 13. Create target machine
-    let target = Target::from_triple(&triple)
-        .map_err(|e| CodegenError::LlvmError(format!("failed to create target from triple: {}", e)))?;
+    let target = Target::from_triple(&triple).map_err(|e| {
+        CodegenError::LlvmError(format!("failed to create target from triple: {}", e))
+    })?;
     let target_machine = target
         .create_target_machine(
             &triple,
@@ -159,7 +164,10 @@ pub fn compile(graph: &ProgramGraph, options: &CompileOptions) -> Result<Compile
 /// Same pipeline as [`compile`] but returns the LLVM IR text representation
 /// instead of producing a binary. Useful for integration tests that want to
 /// inspect the generated IR without invoking the linker.
-pub fn compile_to_ir(graph: &ProgramGraph, options: &CompileOptions) -> Result<String, CodegenError> {
+pub fn compile_to_ir(
+    graph: &ProgramGraph,
+    options: &CompileOptions,
+) -> Result<String, CodegenError> {
     // 1. Run type checker
     let type_errors = typecheck::validate_graph(graph);
     if !type_errors.is_empty() {
@@ -170,8 +178,9 @@ pub fn compile_to_ir(graph: &ProgramGraph, options: &CompileOptions) -> Result<S
     if options.target_triple.is_some() {
         Target::initialize_all(&InitializationConfig::default());
     } else {
-        Target::initialize_native(&InitializationConfig::default())
-            .map_err(|e| CodegenError::LlvmError(format!("failed to initialize native target: {}", e)))?;
+        Target::initialize_native(&InitializationConfig::default()).map_err(|e| {
+            CodegenError::LlvmError(format!("failed to initialize native target: {}", e))
+        })?;
     }
 
     // 3. Create fresh Context
@@ -264,8 +273,9 @@ pub fn compile_incremental(
     if options.target_triple.is_some() {
         Target::initialize_all(&InitializationConfig::default());
     } else {
-        Target::initialize_native(&InitializationConfig::default())
-            .map_err(|e| CodegenError::LlvmError(format!("failed to initialize native target: {}", e)))?;
+        Target::initialize_native(&InitializationConfig::default()).map_err(|e| {
+            CodegenError::LlvmError(format!("failed to initialize native target: {}", e))
+        })?;
     }
 
     let triple = match &options.target_triple {
@@ -273,8 +283,9 @@ pub fn compile_incremental(
         None => TargetMachine::get_default_triple(),
     };
 
-    let target = Target::from_triple(&triple)
-        .map_err(|e| CodegenError::LlvmError(format!("failed to create target from triple: {}", e)))?;
+    let target = Target::from_triple(&triple).map_err(|e| {
+        CodegenError::LlvmError(format!("failed to create target from triple: {}", e))
+    })?;
 
     // 7. Determine which functions need compilation
     let functions_to_compile: Vec<lmlang_core::id::FunctionId> = plan
@@ -293,9 +304,9 @@ pub fn compile_incremental(
         // Emit the full runtime (with function body)
         runtime::declare_runtime_functions(&context, &module);
 
-        module
-            .verify()
-            .map_err(|e| CodegenError::LlvmError(format!("runtime module verification failed: {}", e)))?;
+        module.verify().map_err(|e| {
+            CodegenError::LlvmError(format!("runtime module verification failed: {}", e))
+        })?;
 
         let target_machine = target
             .create_target_machine(
@@ -306,19 +317,23 @@ pub fn compile_incremental(
                 RelocMode::Default,
                 CodeModel::Default,
             )
-            .ok_or_else(|| CodegenError::LlvmError("failed to create target machine".to_string()))?;
+            .ok_or_else(|| {
+                CodegenError::LlvmError("failed to create target machine".to_string())
+            })?;
 
         let runtime_obj = state.cache_dir().join("runtime.o");
         target_machine
             .write_to_file(&module, FileType::Object, &runtime_obj)
-            .map_err(|e| CodegenError::LlvmError(format!("failed to write runtime object: {}", e)))?;
+            .map_err(|e| {
+                CodegenError::LlvmError(format!("failed to write runtime object: {}", e))
+            })?;
     }
 
     // 9. Compile each dirty function to its own .o file
     for &func_id in &functions_to_compile {
-        let func_def = graph
-            .get_function(func_id)
-            .ok_or_else(|| CodegenError::InvalidGraph(format!("function {} not found", func_id.0)))?;
+        let func_def = graph.get_function(func_id).ok_or_else(|| {
+            CodegenError::InvalidGraph(format!("function {} not found", func_id.0))
+        })?;
 
         // Create a fresh Context and Module for this function
         let context = Context::create();
@@ -344,9 +359,12 @@ pub fn compile_incremental(
         }
 
         // Verify the module
-        module
-            .verify()
-            .map_err(|e| CodegenError::LlvmError(format!("module verification failed for func {}: {}", func_id.0, e)))?;
+        module.verify().map_err(|e| {
+            CodegenError::LlvmError(format!(
+                "module verification failed for func {}: {}",
+                func_id.0, e
+            ))
+        })?;
 
         // Create target machine for this function
         let target_machine = target
@@ -358,7 +376,9 @@ pub fn compile_incremental(
                 RelocMode::Default,
                 CodeModel::Default,
             )
-            .ok_or_else(|| CodegenError::LlvmError("failed to create target machine".to_string()))?;
+            .ok_or_else(|| {
+                CodegenError::LlvmError("failed to create target machine".to_string())
+            })?;
 
         // Run optimization passes
         let pass_options = PassBuilderOptions::create();
@@ -391,9 +411,9 @@ pub fn compile_incremental(
 
         generate_main_wrapper(&context, &module, &builder, graph, options)?;
 
-        module
-            .verify()
-            .map_err(|e| CodegenError::LlvmError(format!("main wrapper verification failed: {}", e)))?;
+        module.verify().map_err(|e| {
+            CodegenError::LlvmError(format!("main wrapper verification failed: {}", e))
+        })?;
 
         let target_machine = target
             .create_target_machine(
@@ -404,7 +424,9 @@ pub fn compile_incremental(
                 RelocMode::Default,
                 CodeModel::Default,
             )
-            .ok_or_else(|| CodegenError::LlvmError("failed to create target machine".to_string()))?;
+            .ok_or_else(|| {
+                CodegenError::LlvmError("failed to create target machine".to_string())
+            })?;
 
         let pass_options = PassBuilderOptions::create();
         let pass_str = match options.opt_level {
@@ -420,7 +442,9 @@ pub fn compile_incremental(
         let main_obj = state.cache_dir().join("main_wrapper.o");
         target_machine
             .write_to_file(&module, FileType::Object, &main_obj)
-            .map_err(|e| CodegenError::LlvmError(format!("failed to write main wrapper object: {}", e)))?;
+            .map_err(|e| {
+                CodegenError::LlvmError(format!("failed to write main wrapper object: {}", e))
+            })?;
     }
 
     // 11. Collect all .o files (fresh + cached) for linking
@@ -488,10 +512,7 @@ fn generate_main_wrapper<'ctx>(
             .values()
             .find(|f| f.name == *entry_name)
             .ok_or_else(|| {
-                CodegenError::InvalidGraph(format!(
-                    "entry function '{}' not found",
-                    entry_name
-                ))
+                CodegenError::InvalidGraph(format!("entry function '{}' not found", entry_name))
             })?
     } else {
         // Auto-detect: first "main", or first public, or first
@@ -547,10 +568,9 @@ fn generate_main_wrapper<'ctx>(
     let return_type = entry_func_def.return_type;
     if return_type == lmlang_core::type_id::TypeId::I32 {
         // Direct i32 return
-        let ret_val = call_result
-            .try_as_basic_value()
-            .basic()
-            .ok_or_else(|| CodegenError::LlvmError("expected return value from entry function".into()))?;
+        let ret_val = call_result.try_as_basic_value().basic().ok_or_else(|| {
+            CodegenError::LlvmError("expected return value from entry function".into())
+        })?;
         builder
             .build_return(Some(&ret_val))
             .map_err(|e| CodegenError::LlvmError(e.to_string()))?;
@@ -559,10 +579,9 @@ fn generate_main_wrapper<'ctx>(
         || return_type == lmlang_core::type_id::TypeId::I64
     {
         // Truncate or extend to i32 for exit code
-        let ret_val = call_result
-            .try_as_basic_value()
-            .basic()
-            .ok_or_else(|| CodegenError::LlvmError("expected return value from entry function".into()))?;
+        let ret_val = call_result.try_as_basic_value().basic().ok_or_else(|| {
+            CodegenError::LlvmError("expected return value from entry function".into())
+        })?;
         let int_val = ret_val.into_int_value();
         let bit_width = int_val.get_type().get_bit_width();
         let exit_code: inkwell::values::IntValue<'ctx> = if bit_width < 32 {
@@ -661,7 +680,10 @@ fn determine_binary_name(graph: &ProgramGraph, options: &CompileOptions) -> Stri
     if let Some(f) = functions.values().find(|f| f.name == "main") {
         return f.name.clone();
     }
-    if let Some(f) = functions.values().find(|f| f.visibility == lmlang_core::types::Visibility::Public) {
+    if let Some(f) = functions
+        .values()
+        .find(|f| f.visibility == lmlang_core::types::Visibility::Public)
+    {
         return f.name.clone();
     }
     if let Some(f) = functions.values().next() {

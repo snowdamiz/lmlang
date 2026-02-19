@@ -9,7 +9,7 @@
 
 ## Current
 
-### v1.1 milestone-2
+### v1.1 Agent Control Dashboard
 - Started: 2026-02-19
-- Status: Defining requirements
-- Goal: Finalize scope and roadmap for next increment
+- Status: Requirements scoped, roadmap drafted
+- Goal: Ship a dashboard to spawn/control agents and supervise AI-driven development workflows

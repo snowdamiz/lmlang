@@ -109,10 +109,7 @@ fn eval_core_op(
         | ComputeOp::FileClose
         | ComputeOp::MakeClosure { .. }
         | ComputeOp::CaptureAccess { .. } => Err(RuntimeError::InternalError {
-            message: format!(
-                "op {:?} should be handled by Interpreter, not eval_op",
-                op
-            ),
+            message: format!("op {:?} should be handled by Interpreter, not eval_op", op),
         }),
 
         // Contract ops: check nodes evaluated separately by contract checking hooks,
@@ -380,13 +377,40 @@ fn eval_binary_arith(
     // Integer checked arithmetic
     match op {
         ArithOp::Add => {
-            checked_int_arith!(Add, lhs, rhs, node_id, (I8, i8), (I16, i16), (I32, i32), (I64, i64))
+            checked_int_arith!(
+                Add,
+                lhs,
+                rhs,
+                node_id,
+                (I8, i8),
+                (I16, i16),
+                (I32, i32),
+                (I64, i64)
+            )
         }
         ArithOp::Sub => {
-            checked_int_arith!(Sub, lhs, rhs, node_id, (I8, i8), (I16, i16), (I32, i32), (I64, i64))
+            checked_int_arith!(
+                Sub,
+                lhs,
+                rhs,
+                node_id,
+                (I8, i8),
+                (I16, i16),
+                (I32, i32),
+                (I64, i64)
+            )
         }
         ArithOp::Mul => {
-            checked_int_arith!(Mul, lhs, rhs, node_id, (I8, i8), (I16, i16), (I32, i32), (I64, i64))
+            checked_int_arith!(
+                Mul,
+                lhs,
+                rhs,
+                node_id,
+                (I8, i8),
+                (I16, i16),
+                (I32, i32),
+                (I64, i64)
+            )
         }
         ArithOp::Div => {
             // Check for divide by zero first
@@ -396,7 +420,16 @@ fn eval_binary_arith(
                 }
                 _ => {}
             }
-            checked_int_arith!(Div, lhs, rhs, node_id, (I8, i8), (I16, i16), (I32, i32), (I64, i64))
+            checked_int_arith!(
+                Div,
+                lhs,
+                rhs,
+                node_id,
+                (I8, i8),
+                (I16, i16),
+                (I32, i32),
+                (I64, i64)
+            )
         }
         ArithOp::Rem => {
             match rhs {
@@ -405,7 +438,16 @@ fn eval_binary_arith(
                 }
                 _ => {}
             }
-            checked_int_arith!(Rem, lhs, rhs, node_id, (I8, i8), (I16, i16), (I32, i32), (I64, i64))
+            checked_int_arith!(
+                Rem,
+                lhs,
+                rhs,
+                node_id,
+                (I8, i8),
+                (I16, i16),
+                (I32, i32),
+                (I64, i64)
+            )
         }
     }
 }

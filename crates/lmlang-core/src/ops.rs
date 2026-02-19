@@ -365,10 +365,7 @@ pub enum StructuredOp {
 
     /// Create an enum/tagged union value for a specific variant.
     /// Lowers to: store discriminant + store payload into `{ i8, [max_payload x i8] }` struct.
-    EnumCreate {
-        type_id: TypeId,
-        variant_index: u32,
-    },
+    EnumCreate { type_id: TypeId, variant_index: u32 },
     /// Extract the discriminant from an enum value (returns an integer).
     /// Lowers to: `extractvalue %enum, 0` (first field of the enum struct).
     EnumDiscriminant,
@@ -449,11 +446,7 @@ mod tests {
         ];
 
         for op in &cf_ops {
-            assert!(
-                op.is_control_flow(),
-                "{:?} should be control flow",
-                op
-            );
+            assert!(op.is_control_flow(), "{:?} should be control flow", op);
         }
     }
 
@@ -480,28 +473,16 @@ mod tests {
         ];
 
         for op in &non_cf_ops {
-            assert!(
-                !op.is_control_flow(),
-                "{:?} should NOT be control flow",
-                op
-            );
+            assert!(!op.is_control_flow(), "{:?} should NOT be control flow", op);
         }
     }
 
     #[test]
     fn is_terminator_returns_true_for_terminators() {
-        let terminators = vec![
-            ComputeOp::Return,
-            ComputeOp::Branch,
-            ComputeOp::Jump,
-        ];
+        let terminators = vec![ComputeOp::Return, ComputeOp::Branch, ComputeOp::Jump];
 
         for op in &terminators {
-            assert!(
-                op.is_terminator(),
-                "{:?} should be a terminator",
-                op
-            );
+            assert!(op.is_terminator(), "{:?} should be a terminator", op);
         }
     }
 
@@ -520,11 +501,7 @@ mod tests {
         ];
 
         for op in &non_terminators {
-            assert!(
-                !op.is_terminator(),
-                "{:?} should NOT be a terminator",
-                op
-            );
+            assert!(!op.is_terminator(), "{:?} should NOT be a terminator", op);
         }
     }
 
@@ -668,17 +645,35 @@ mod tests {
 
     #[test]
     fn is_contract_correct() {
-        assert!(ComputeOp::Precondition { message: "test".into() }.is_contract());
-        assert!(ComputeOp::Postcondition { message: "test".into() }.is_contract());
-        assert!(ComputeOp::Invariant { target_type: TypeId(0), message: "test".into() }.is_contract());
-        assert!(!ComputeOp::Const { value: ConstValue::I32(0) }.is_contract());
+        assert!(ComputeOp::Precondition {
+            message: "test".into()
+        }
+        .is_contract());
+        assert!(ComputeOp::Postcondition {
+            message: "test".into()
+        }
+        .is_contract());
+        assert!(ComputeOp::Invariant {
+            target_type: TypeId(0),
+            message: "test".into()
+        }
+        .is_contract());
+        assert!(!ComputeOp::Const {
+            value: ConstValue::I32(0)
+        }
+        .is_contract());
         assert!(!ComputeOp::Return.is_contract());
-        assert!(!ComputeOp::Call { target: FunctionId(0) }.is_contract());
+        assert!(!ComputeOp::Call {
+            target: FunctionId(0)
+        }
+        .is_contract());
     }
 
     #[test]
     fn compute_node_op_is_contract() {
-        let precond = ComputeNodeOp::Core(ComputeOp::Precondition { message: "test".into() });
+        let precond = ComputeNodeOp::Core(ComputeOp::Precondition {
+            message: "test".into(),
+        });
         assert!(precond.is_contract());
 
         let add = ComputeNodeOp::Core(ComputeOp::BinaryArith { op: ArithOp::Add });
@@ -690,14 +685,8 @@ mod tests {
 
     #[test]
     fn compute_node_op_tier() {
-        assert_eq!(
-            ComputeNodeOp::Core(ComputeOp::Alloc).tier(),
-            1
-        );
-        assert_eq!(
-            ComputeNodeOp::Structured(StructuredOp::ArrayGet).tier(),
-            2
-        );
+        assert_eq!(ComputeNodeOp::Core(ComputeOp::Alloc).tier(), 1);
+        assert_eq!(ComputeNodeOp::Structured(StructuredOp::ArrayGet).tier(), 2);
     }
 
     #[test]
@@ -711,7 +700,10 @@ mod tests {
     fn compute_node_op_delegates_is_terminator() {
         assert!(ComputeNodeOp::Core(ComputeOp::Return).is_terminator());
         assert!(!ComputeNodeOp::Core(ComputeOp::IfElse).is_terminator());
-        assert!(!ComputeNodeOp::Structured(StructuredOp::Cast { target_type: TypeId(0) }).is_terminator());
+        assert!(!ComputeNodeOp::Structured(StructuredOp::Cast {
+            target_type: TypeId(0)
+        })
+        .is_terminator());
     }
 
     #[test]

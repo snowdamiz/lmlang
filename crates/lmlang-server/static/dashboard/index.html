@@ -3,129 +3,121 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>lmlang Dashboard</title>
-    <link rel="stylesheet" href="/programs/__PROGRAM_ID__/dashboard/styles.css" />
+    <title>lmlang Unified Dashboard</title>
+    <link rel="stylesheet" href="/dashboard/styles.css" />
   </head>
-  <body data-program-id="__PROGRAM_ID__">
-    <div class="dashboard-shell">
-      <header class="dashboard-header">
-        <div class="brand-block">
-          <p class="eyebrow">Program Dashboard</p>
-          <h1>Operate + Observe</h1>
-          <p class="subtitle">
-            Endpoint-first orchestration controls paired with the existing observability surface.
-          </p>
+  <body data-initial-program-id="__INITIAL_PROGRAM_ID__">
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">lmlang Control Center</p>
+          <h1>Unified Dashboard</h1>
+          <p class="subtitle">AI-first control loop: use the chat box to create projects, configure agents, build, run, and query.</p>
         </div>
         <div class="badge-row">
-          <span class="badge" id="programBadge">Program __PROGRAM_ID__</span>
-          <span class="badge" id="agentBadge">No agent selected</span>
-          <span class="badge" id="statusBadge">Status: idle</span>
-          <span class="badge" id="templateBadge">Template: execute-phase</span>
+          <span class="badge" id="activeProjectBadge">Project: none</span>
+          <span class="badge" id="activeAgentBadge">Agent: none</span>
+          <span class="badge" id="runStatusBadge">Run: idle</span>
         </div>
       </header>
 
-      <section class="context-strip" aria-label="Run context overview">
-        <div>
-          <p class="strip-label">Program Context</p>
-          <p class="strip-value">Program ID <strong id="contextProgramId">__PROGRAM_ID__</strong></p>
-        </div>
-        <div>
-          <p class="strip-label">Workflow Mode</p>
-          <p class="strip-value">Endpoint-first Operate using existing API contracts</p>
-        </div>
-        <div>
-          <p class="strip-label">Observe Reuse</p>
-          <p class="strip-value">Mounted from <code>/programs/__PROGRAM_ID__/observability</code></p>
-        </div>
-      </section>
-
-      <nav class="tab-nav" aria-label="Dashboard modules">
-        <button class="tab-btn is-active" data-tab="operate" type="button">Operate</button>
-        <button class="tab-btn" data-tab="observe" type="button">Observe</button>
-      </nav>
-
-      <main class="tab-panels">
-        <section class="panel is-active" id="operatePanel" data-panel="operate" aria-label="Operate panel">
-          <div class="operate-columns">
-            <article class="panel-card" id="agentListContainer">
-              <header>
-                <h2>Agents & Session State</h2>
-                <p class="card-intro">
-                  Registered agents with derived state labels: idle, running, blocked, error.
-                </p>
-              </header>
-              <div id="operateAgentListMount" class="content-mount"></div>
-            </article>
-
-            <article class="panel-card" id="runSetupContainer">
-              <header>
-                <h2>Run Setup</h2>
-                <p class="card-intro">
-                  Configure workflow template and task prompt before launching actions.
-                </p>
-              </header>
-              <div id="operateRunSetupMount" class="content-mount"></div>
-            </article>
-
-            <article class="panel-card" id="actionsContainer">
-              <header>
-                <h2>Actions</h2>
-                <p class="card-intro">
-                  Register/list/deregister agents, locks, mutations, verify, simulate, compile, and history.
-                </p>
-              </header>
-              <div id="operateActionsMount" class="content-mount"></div>
-            </article>
-
-            <article class="panel-card" id="timelineContainer">
-              <header>
-                <h2>Timeline / History Preview</h2>
-                <p class="card-intro">
-                  Operation timeline and history snapshots for rapid diagnostics.
-                </p>
-              </header>
-              <div id="operateTimelineMount" class="content-mount"></div>
-            </article>
-
-            <article class="panel-card" id="outputContainer">
-              <header>
-                <h2>Request / Response Output</h2>
-                <p class="card-intro">
-                  Structured payload snapshots for endpoint actions and troubleshooting.
-                </p>
-              </header>
-              <div id="operateOutputMount" class="content-mount"></div>
-            </article>
+      <main class="workspace">
+        <section class="panel" aria-label="Projects">
+          <h2>Projects</h2>
+          <p class="hint">Create a project, then select it to manage assigned agents.</p>
+          <div class="controls">
+            <input id="projectNameInput" placeholder="new-project-name" />
+            <button id="createProjectBtn" type="button">Create Project</button>
+            <button id="refreshProjectsBtn" type="button">Refresh</button>
           </div>
-          <section class="operate-footer-notes" aria-label="Operate notes">
-            <h3>Operate Notes</h3>
-            <p>
-              Actions in this tab intentionally target existing APIs first. Missing lifecycle/timeline controls are deferred to later phases.
-            </p>
-            <p>
-              Use the shared status bar for immediate feedback, then inspect request/response snapshots and the timeline panel for details.
-            </p>
-          </section>
+          <ul id="projectList" class="list"></ul>
+          <div class="controls">
+            <button id="createHelloWorldBtn" type="button">Create Hello World Scaffold</button>
+          </div>
+          <p class="hint">
+            Seeds a first `hello_world` function and verifies it so you can immediately visualize/query in Observe.
+          </p>
+          <a id="observeLink" class="inline-link" href="#" target="_blank" rel="noopener noreferrer">Open selected project in Observe</a>
         </section>
 
-        <section class="panel" id="observePanel" data-panel="observe" aria-label="Observe panel">
-          <div class="observe-toolbar">
-            <p>
-              Observe reuses the existing observability UI and backend graph/query endpoints.
-            </p>
-            <a id="openObserveLink" href="/programs/__PROGRAM_ID__/observability" target="_blank" rel="noopener noreferrer">
-              Open Observe in a new tab
-            </a>
+        <section class="panel" aria-label="Agents">
+          <h2>Agents</h2>
+          <p class="hint">Register global agents, configure AI provider access, then assign one to the selected project.</p>
+          <div class="controls">
+            <input id="agentNameInput" placeholder="optional agent name" />
+            <button id="registerAgentBtn" type="button">Register Agent</button>
+            <button id="refreshAgentsBtn" type="button">Refresh</button>
           </div>
-          <div id="observeMount" class="observe-mount" data-observe-src="/programs/__PROGRAM_ID__/observability"></div>
+          <div class="controls">
+            <select id="agentProviderSelect">
+              <option value="">No external provider</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="openai_compatible">OpenAI-compatible</option>
+            </select>
+            <input id="agentModelInput" placeholder="model (e.g. openai/gpt-4o-mini)" />
+          </div>
+          <div class="controls">
+            <input id="agentBaseUrlInput" placeholder="api base url (optional for OpenRouter)" />
+            <input id="agentApiKeyInput" type="password" placeholder="api key (stored in-memory)" />
+          </div>
+          <div class="controls">
+            <input id="agentSystemPromptInput" placeholder="system prompt (optional)" />
+            <button id="saveAgentConfigBtn" type="button">Save Agent Config</button>
+          </div>
+          <div class="controls">
+            <select id="agentAssignSelect"></select>
+            <button id="assignAgentBtn" type="button">Assign To Project</button>
+          </div>
+          <h3>Assigned To Project</h3>
+          <ul id="projectAgentList" class="list"></ul>
+        </section>
+
+        <section class="panel panel-chat" aria-label="Build and Chat">
+          <h2>Build Control + Chat</h2>
+          <p class="hint">Primary interface: ask chat to do everything (create project, register/configure/assign agent, start/stop build, create/compile/run).</p>
+          <div class="controls">
+            <input id="goalInput" placeholder="build goal" />
+            <button id="startBuildBtn" type="button">Start Build</button>
+            <button id="stopBuildBtn" type="button">Stop Build</button>
+          </div>
+          <div class="chat-log" id="chatLog"></div>
+          <div class="controls">
+            <input id="chatInput" placeholder="message to agent" />
+            <button id="sendChatBtn" type="button">Send</button>
+          </div>
         </section>
       </main>
 
-      <aside id="sharedStatusPanel" class="shared-status" aria-live="polite" aria-label="Shared status">
-        Dashboard shell initialized.
-      </aside>
+      <footer class="statusbar" id="statusBar" data-state="idle">Dashboard ready.</footer>
     </div>
 
-    <script src="/programs/__PROGRAM_ID__/dashboard/app.js" defer></script>
+    <div class="setup-overlay hidden" id="setupWizard" role="dialog" aria-modal="true" aria-label="First-time setup">
+      <section class="setup-card">
+        <h2>First-Time AI Setup</h2>
+        <p class="hint">
+          Configure your provider once so agents can use real AI replies from the dashboard.
+        </p>
+        <div class="controls">
+          <input id="setupAgentNameInput" placeholder="agent name (optional)" />
+          <select id="setupProviderSelect">
+            <option value="openrouter">OpenRouter</option>
+            <option value="openai_compatible">OpenAI-compatible</option>
+          </select>
+        </div>
+        <div class="controls">
+          <input id="setupModelInput" placeholder="model (e.g. openai/gpt-4o-mini)" />
+          <input id="setupApiKeyInput" type="password" placeholder="api key" />
+        </div>
+        <div class="controls">
+          <input id="setupBaseUrlInput" placeholder="base url (optional for OpenRouter)" />
+        </div>
+        <div class="controls">
+          <button id="setupCompleteBtn" type="button">Complete Setup</button>
+          <button id="setupSkipBtn" type="button">Skip For Now</button>
+        </div>
+      </section>
+    </div>
+
+    <script src="/dashboard/app.js" defer></script>
   </body>
 </html>

@@ -82,11 +82,7 @@ pub trait GraphStore {
     ) -> Result<(), StorageError>;
 
     /// Retrieves a compute node by ID.
-    fn get_node(
-        &self,
-        program: ProgramId,
-        node_id: NodeId,
-    ) -> Result<ComputeNode, StorageError>;
+    fn get_node(&self, program: ProgramId, node_id: NodeId) -> Result<ComputeNode, StorageError>;
 
     /// Updates an existing compute node.
     fn update_node(
@@ -97,11 +93,7 @@ pub trait GraphStore {
     ) -> Result<(), StorageError>;
 
     /// Deletes a compute node.
-    fn delete_node(
-        &mut self,
-        program: ProgramId,
-        node_id: NodeId,
-    ) -> Result<(), StorageError>;
+    fn delete_node(&mut self, program: ProgramId, node_id: NodeId) -> Result<(), StorageError>;
 
     // -------------------------------------------------------------------
     // Edge CRUD
@@ -125,11 +117,7 @@ pub trait GraphStore {
     ) -> Result<(NodeId, NodeId, FlowEdge), StorageError>;
 
     /// Deletes a flow edge.
-    fn delete_edge(
-        &mut self,
-        program: ProgramId,
-        edge_id: EdgeId,
-    ) -> Result<(), StorageError>;
+    fn delete_edge(&mut self, program: ProgramId, edge_id: EdgeId) -> Result<(), StorageError>;
 
     // -------------------------------------------------------------------
     // Type CRUD
@@ -144,11 +132,7 @@ pub trait GraphStore {
     ) -> Result<(), StorageError>;
 
     /// Retrieves a type by ID.
-    fn get_type(
-        &self,
-        program: ProgramId,
-        type_id: TypeId,
-    ) -> Result<LmType, StorageError>;
+    fn get_type(&self, program: ProgramId, type_id: TypeId) -> Result<LmType, StorageError>;
 
     // -------------------------------------------------------------------
     // Function CRUD

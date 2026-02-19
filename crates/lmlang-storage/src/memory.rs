@@ -129,7 +129,11 @@ impl StoredProgram {
                 .iter()
                 .map(|(eid, (src, tgt, e))| (eid.0, *src, *tgt, e.clone()))
                 .collect(),
-            types: self.types.iter().map(|(&id, ty)| (id, ty.clone())).collect(),
+            types: self
+                .types
+                .iter()
+                .map(|(&id, ty)| (id, ty.clone()))
+                .collect(),
             type_names: self.type_names.clone(),
             type_next_id: self.type_next_id,
             functions: self
@@ -328,11 +332,7 @@ impl GraphStore for InMemoryStore {
         Ok(())
     }
 
-    fn get_node(
-        &self,
-        program: ProgramId,
-        node_id: NodeId,
-    ) -> Result<ComputeNode, StorageError> {
+    fn get_node(&self, program: ProgramId, node_id: NodeId) -> Result<ComputeNode, StorageError> {
         let stored = self.get_stored(program)?;
         stored
             .nodes
@@ -361,11 +361,7 @@ impl GraphStore for InMemoryStore {
         Ok(())
     }
 
-    fn delete_node(
-        &mut self,
-        program: ProgramId,
-        node_id: NodeId,
-    ) -> Result<(), StorageError> {
+    fn delete_node(&mut self, program: ProgramId, node_id: NodeId) -> Result<(), StorageError> {
         let stored = self.get_stored_mut(program)?;
         stored
             .nodes
@@ -390,9 +386,7 @@ impl GraphStore for InMemoryStore {
         edge: &FlowEdge,
     ) -> Result<(), StorageError> {
         let stored = self.get_stored_mut(program)?;
-        stored
-            .edges
-            .insert(edge_id, (source, target, edge.clone()));
+        stored.edges.insert(edge_id, (source, target, edge.clone()));
         Ok(())
     }
 
@@ -412,11 +406,7 @@ impl GraphStore for InMemoryStore {
             })
     }
 
-    fn delete_edge(
-        &mut self,
-        program: ProgramId,
-        edge_id: EdgeId,
-    ) -> Result<(), StorageError> {
+    fn delete_edge(&mut self, program: ProgramId, edge_id: EdgeId) -> Result<(), StorageError> {
         let stored = self.get_stored_mut(program)?;
         stored
             .edges
@@ -443,11 +433,7 @@ impl GraphStore for InMemoryStore {
         Ok(())
     }
 
-    fn get_type(
-        &self,
-        program: ProgramId,
-        type_id: TypeId,
-    ) -> Result<LmType, StorageError> {
+    fn get_type(&self, program: ProgramId, type_id: TypeId) -> Result<LmType, StorageError> {
         let stored = self.get_stored(program)?;
         stored
             .types
@@ -577,9 +563,7 @@ impl GraphStore for InMemoryStore {
         edge: &SemanticEdge,
     ) -> Result<(), StorageError> {
         let stored = self.get_stored_mut(program)?;
-        stored
-            .semantic_edges
-            .insert(index, (source, target, *edge));
+        stored.semantic_edges.insert(index, (source, target, *edge));
         Ok(())
     }
 
@@ -727,19 +711,11 @@ mod tests {
         let sum = graph
             .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, add_fn_id)
             .unwrap();
-        let add_ret = graph
-            .add_core_op(ComputeOp::Return, add_fn_id)
-            .unwrap();
+        let add_ret = graph.add_core_op(ComputeOp::Return, add_fn_id).unwrap();
 
-        graph
-            .add_data_edge(param_a, sum, 0, 0, i32_id)
-            .unwrap();
-        graph
-            .add_data_edge(param_b, sum, 0, 1, i32_id)
-            .unwrap();
-        graph
-            .add_data_edge(sum, add_ret, 0, 0, i32_id)
-            .unwrap();
+        graph.add_data_edge(param_a, sum, 0, 0, i32_id).unwrap();
+        graph.add_data_edge(param_b, sum, 0, 1, i32_id).unwrap();
+        graph.add_data_edge(sum, add_ret, 0, 0, i32_id).unwrap();
 
         graph.get_function_mut(add_fn_id).unwrap().entry_node = Some(param_a);
 
@@ -786,9 +762,7 @@ mod tests {
         let call_add = graph
             .add_core_op(ComputeOp::Call { target: add_fn_id }, adder_fn_id)
             .unwrap();
-        let adder_ret = graph
-            .add_core_op(ComputeOp::Return, adder_fn_id)
-            .unwrap();
+        let adder_ret = graph.add_core_op(ComputeOp::Return, adder_fn_id).unwrap();
 
         graph
             .add_data_edge(param_x, call_add, 0, 0, i32_id)
@@ -814,9 +788,7 @@ mod tests {
                 make_adder_id,
             )
             .unwrap();
-        let ma_ret = graph
-            .add_core_op(ComputeOp::Return, make_adder_id)
-            .unwrap();
+        let ma_ret = graph.add_core_op(ComputeOp::Return, make_adder_id).unwrap();
 
         graph
             .add_data_edge(ma_param_offset, make_closure, 0, 0, i32_id)

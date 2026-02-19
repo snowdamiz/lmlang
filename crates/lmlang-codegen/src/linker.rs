@@ -58,9 +58,9 @@ pub fn link_executable(
         cmd.arg("-Wl,-S");
     }
 
-    let output = cmd.output().map_err(|e| {
-        CodegenError::LinkerFailed(format!("failed to invoke cc: {}", e))
-    })?;
+    let output = cmd
+        .output()
+        .map_err(|e| CodegenError::LinkerFailed(format!("failed to invoke cc: {}", e)))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -109,9 +109,9 @@ pub fn link_objects(
         cmd.arg("-Wl,-S");
     }
 
-    let output = cmd.output().map_err(|e| {
-        CodegenError::LinkerFailed(format!("failed to invoke cc: {}", e))
-    })?;
+    let output = cmd
+        .output()
+        .map_err(|e| CodegenError::LinkerFailed(format!("failed to invoke cc: {}", e)))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -240,11 +240,7 @@ mod tests {
         let nested_output = dir.path().join("nested").join("deep").join("output");
 
         // This will fail at linking (no real .o file) but should create the directory
-        let _ = link_executable(
-            Path::new("/tmp/nonexistent.o"),
-            &nested_output,
-            false,
-        );
+        let _ = link_executable(Path::new("/tmp/nonexistent.o"), &nested_output, false);
 
         // The parent directories should have been created
         assert!(nested_output.parent().unwrap().exists());

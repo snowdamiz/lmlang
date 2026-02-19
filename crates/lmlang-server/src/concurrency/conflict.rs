@@ -90,14 +90,16 @@ pub fn check_hashes(
 /// changed; this diff shows the current state for re-planning.
 pub fn build_function_diff(graph: &ProgramGraph, func_id: FunctionId) -> FunctionDiff {
     let func_nodes = graph.function_nodes(func_id);
-    let func_node_set: std::collections::HashSet<NodeId> =
-        func_nodes.iter().copied().collect();
+    let func_node_set: std::collections::HashSet<NodeId> = func_nodes.iter().copied().collect();
 
     // Collect intra-function edges
     let mut edges = Vec::new();
     for &node_id in &func_nodes {
         let node_idx: NodeIndex<u32> = node_id.into();
-        for edge_ref in graph.compute().edges_directed(node_idx, Direction::Outgoing) {
+        for edge_ref in graph
+            .compute()
+            .edges_directed(node_idx, Direction::Outgoing)
+        {
             let target = NodeId::from(edge_ref.target());
             if func_node_set.contains(&target) {
                 edges.push(EdgeId(edge_ref.id().index() as u32));

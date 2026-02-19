@@ -41,8 +41,16 @@ pub fn can_coerce(from: TypeId, to: TypeId, registry: &TypeRegistry) -> bool {
     }
 
     // &mut T -> &T (mutable to immutable reference coercion)
-    if let (Some(LmType::Pointer { pointee: p1, mutable: true }), Some(LmType::Pointer { pointee: p2, mutable: false })) =
-        (registry.get(from), registry.get(to))
+    if let (
+        Some(LmType::Pointer {
+            pointee: p1,
+            mutable: true,
+        }),
+        Some(LmType::Pointer {
+            pointee: p2,
+            mutable: false,
+        }),
+    ) = (registry.get(from), registry.get(to))
     {
         return p1 == p2;
     }
@@ -309,28 +317,49 @@ mod tests {
     #[test]
     fn common_type_same_type() {
         let reg = registry();
-        assert_eq!(common_numeric_type(TypeId::I32, TypeId::I32, &reg), Some(TypeId::I32));
+        assert_eq!(
+            common_numeric_type(TypeId::I32, TypeId::I32, &reg),
+            Some(TypeId::I32)
+        );
     }
 
     #[test]
     fn common_type_integer_widening() {
         let reg = registry();
-        assert_eq!(common_numeric_type(TypeId::I8, TypeId::I32, &reg), Some(TypeId::I32));
-        assert_eq!(common_numeric_type(TypeId::I32, TypeId::I64, &reg), Some(TypeId::I64));
-        assert_eq!(common_numeric_type(TypeId::I16, TypeId::I32, &reg), Some(TypeId::I32));
+        assert_eq!(
+            common_numeric_type(TypeId::I8, TypeId::I32, &reg),
+            Some(TypeId::I32)
+        );
+        assert_eq!(
+            common_numeric_type(TypeId::I32, TypeId::I64, &reg),
+            Some(TypeId::I64)
+        );
+        assert_eq!(
+            common_numeric_type(TypeId::I16, TypeId::I32, &reg),
+            Some(TypeId::I32)
+        );
     }
 
     #[test]
     fn common_type_float_widening() {
         let reg = registry();
-        assert_eq!(common_numeric_type(TypeId::F32, TypeId::F64, &reg), Some(TypeId::F64));
+        assert_eq!(
+            common_numeric_type(TypeId::F32, TypeId::F64, &reg),
+            Some(TypeId::F64)
+        );
     }
 
     #[test]
     fn common_type_bool_resolves_to_i8() {
         let reg = registry();
-        assert_eq!(common_numeric_type(TypeId::BOOL, TypeId::BOOL, &reg), Some(TypeId::I8));
-        assert_eq!(common_numeric_type(TypeId::BOOL, TypeId::I32, &reg), Some(TypeId::I32));
+        assert_eq!(
+            common_numeric_type(TypeId::BOOL, TypeId::BOOL, &reg),
+            Some(TypeId::I8)
+        );
+        assert_eq!(
+            common_numeric_type(TypeId::BOOL, TypeId::I32, &reg),
+            Some(TypeId::I32)
+        );
     }
 
     #[test]

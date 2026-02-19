@@ -9,8 +9,8 @@
 //! and the same test results are produced.
 
 use rand::Rng;
-use rand_chacha::ChaCha8Rng;
 use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 
 use lmlang_core::graph::ProgramGraph;
 use lmlang_core::id::{FunctionId, NodeId};
@@ -131,10 +131,7 @@ pub fn generate_random_value(type_id: TypeId, rng: &mut ChaCha8Rng) -> Value {
 }
 
 /// Generates random input values for a function's parameters.
-pub fn generate_random_inputs(
-    params: &[(String, TypeId)],
-    rng: &mut ChaCha8Rng,
-) -> Vec<Value> {
+pub fn generate_random_inputs(params: &[(String, TypeId)], rng: &mut ChaCha8Rng) -> Vec<Value> {
     params
         .iter()
         .map(|(_, type_id)| generate_random_value(*type_id, rng))
@@ -156,11 +153,11 @@ pub fn run_property_tests(
     func_id: FunctionId,
     config: PropertyTestConfig,
 ) -> Result<PropertyTestResult, RuntimeError> {
-    let func_def = graph.get_function(func_id).ok_or_else(|| {
-        RuntimeError::InternalError {
+    let func_def = graph
+        .get_function(func_id)
+        .ok_or_else(|| RuntimeError::InternalError {
             message: format!("function {} not found", func_id.0),
-        }
-    })?;
+        })?;
 
     let params = func_def.params.clone();
     let mut rng = ChaCha8Rng::seed_from_u64(config.random_seed);
@@ -227,10 +224,7 @@ fn run_single_test(
     match interp.state() {
         ExecutionState::Completed { .. } => Ok(SingleTestResult::Pass),
         ExecutionState::ContractViolation { violation } => {
-            let trace = interp
-                .trace()
-                .map(|t| t.to_vec())
-                .unwrap_or_default();
+            let trace = interp.trace().map(|t| t.to_vec()).unwrap_or_default();
             Ok(SingleTestResult::Failure(PropertyTestFailure {
                 inputs,
                 violation: violation.clone(),
@@ -291,8 +285,12 @@ mod tests {
         let cmp_node = graph
             .add_core_op(ComputeOp::Compare { op: CmpOp::Ge }, func_id)
             .unwrap();
-        graph.add_data_edge(param_a, cmp_node, 0, 0, TypeId::I32).unwrap();
-        graph.add_data_edge(const_zero, cmp_node, 0, 1, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_a, cmp_node, 0, 0, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(const_zero, cmp_node, 0, 1, TypeId::I32)
+            .unwrap();
 
         // Precondition node
         let precond_node = graph
@@ -303,13 +301,17 @@ mod tests {
                 func_id,
             )
             .unwrap();
-        graph.add_data_edge(cmp_node, precond_node, 0, 0, TypeId::BOOL).unwrap();
+        graph
+            .add_data_edge(cmp_node, precond_node, 0, 0, TypeId::BOOL)
+            .unwrap();
 
         // Return node (just return a)
         // Control edge from precondition to return ensures the contract
         // is checked before the function completes.
         let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
-        graph.add_data_edge(param_a, ret, 0, 0, TypeId::I32).unwrap();
+        graph
+            .add_data_edge(param_a, ret, 0, 0, TypeId::I32)
+            .unwrap();
         graph.add_control_edge(precond_node, ret, None).unwrap();
 
         (graph, func_id)
@@ -378,11 +380,11 @@ mod tests {
 
         // Verify each failure has a contract violation
         for failure in &result.failures {
-            assert_eq!(
-                failure.violation.message,
-                "a must be non-negative"
+            assert_eq!(failure.violation.message, "a must be non-negative");
+            assert!(
+                !failure.trace.is_empty(),
+                "Failure trace should not be empty"
             );
-            assert!(!failure.trace.is_empty(), "Failure trace should not be empty");
         }
     }
 
@@ -413,7 +415,10 @@ mod tests {
 
         // Verify failure inputs are identical
         for (f1, f2) in result1.failures.iter().zip(result2.failures.iter()) {
-            assert_eq!(f1.inputs, f2.inputs, "Failure inputs should be identical for same seed");
+            assert_eq!(
+                f1.inputs, f2.inputs,
+                "Failure inputs should be identical for same seed"
+            );
         }
     }
 

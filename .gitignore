@@ -1,1 +1,5 @@
 /target
+lmlang.db
+lmlang.db-shm
+lmlang.db-wal
+crates/lmlang-server/build/

@@ -18,8 +18,8 @@
 
 use std::process::Command;
 
-use lmlang_codegen::{compile, compile_incremental, compile_to_ir, CompileOptions, OptLevel};
 use lmlang_codegen::incremental::{build_call_graph, IncrementalState};
+use lmlang_codegen::{compile, compile_incremental, compile_to_ir, CompileOptions, OptLevel};
 use lmlang_core::graph::ProgramGraph;
 use lmlang_core::id::FunctionId;
 use lmlang_core::ops::{ArithOp, CmpOp, ComputeOp, StructuredOp};
@@ -61,7 +61,6 @@ fn interpret_io(graph: &ProgramGraph, func_id: FunctionId, args: Vec<Value>) -> 
     interp.io_log().to_vec()
 }
 
-
 // ---------------------------------------------------------------------------
 // Graph builders
 // ---------------------------------------------------------------------------
@@ -73,12 +72,34 @@ fn build_simple_add_graph() -> (ProgramGraph, FunctionId) {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c2 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(2) }, func_id).unwrap();
-    let c3 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(3) }, func_id).unwrap();
-    let add = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id).unwrap();
+    let c2 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(2),
+            },
+            func_id,
+        )
+        .unwrap();
+    let c3 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(3),
+            },
+            func_id,
+        )
+        .unwrap();
+    let add = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
@@ -99,14 +120,45 @@ fn build_nested_arith_graph() -> (ProgramGraph, FunctionId) {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c10 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(10) }, func_id).unwrap();
-    let c3 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(3) }, func_id).unwrap();
-    let c4 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(4) }, func_id).unwrap();
-    let sub = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Sub }, func_id).unwrap();
-    let mul = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Mul }, func_id).unwrap();
+    let c10 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(10),
+            },
+            func_id,
+        )
+        .unwrap();
+    let c3 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(3),
+            },
+            func_id,
+        )
+        .unwrap();
+    let c4 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(4),
+            },
+            func_id,
+        )
+        .unwrap();
+    let sub = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Sub }, func_id)
+        .unwrap();
+    let mul = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Mul }, func_id)
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
@@ -129,12 +181,34 @@ fn build_comparison_graph() -> (ProgramGraph, FunctionId) {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c5 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(5) }, func_id).unwrap();
-    let c3 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(3) }, func_id).unwrap();
-    let cmp = graph.add_core_op(ComputeOp::Compare { op: CmpOp::Gt }, func_id).unwrap();
+    let c5 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(5),
+            },
+            func_id,
+        )
+        .unwrap();
+    let c3 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(3),
+            },
+            func_id,
+        )
+        .unwrap();
+    let cmp = graph
+        .add_core_op(ComputeOp::Compare { op: CmpOp::Gt }, func_id)
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
@@ -163,22 +237,50 @@ fn build_multi_function_call_graph() -> (ProgramGraph, FunctionId) {
         )
         .unwrap();
 
-    let param_x = graph.add_core_op(ComputeOp::Parameter { index: 0 }, add_one_id).unwrap();
-    let c1 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(1) }, add_one_id).unwrap();
-    let add = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, add_one_id).unwrap();
+    let param_x = graph
+        .add_core_op(ComputeOp::Parameter { index: 0 }, add_one_id)
+        .unwrap();
+    let c1 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(1),
+            },
+            add_one_id,
+        )
+        .unwrap();
+    let add = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, add_one_id)
+        .unwrap();
     let ret1 = graph.add_core_op(ComputeOp::Return, add_one_id).unwrap();
 
-    graph.add_data_edge(param_x, add, 0, 0, TypeId::I32).unwrap();
+    graph
+        .add_data_edge(param_x, add, 0, 0, TypeId::I32)
+        .unwrap();
     graph.add_data_edge(c1, add, 0, 1, TypeId::I32).unwrap();
     graph.add_data_edge(add, ret1, 0, 0, TypeId::I32).unwrap();
 
     // Function "main() -> void { print(add_one(10)); return; }"
     let main_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c10 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(10) }, main_id).unwrap();
-    let call = graph.add_core_op(ComputeOp::Call { target: add_one_id }, main_id).unwrap();
+    let c10 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(10),
+            },
+            main_id,
+        )
+        .unwrap();
+    let call = graph
+        .add_core_op(ComputeOp::Call { target: add_one_id }, main_id)
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, main_id).unwrap();
     let ret2 = graph.add_core_op(ComputeOp::Return, main_id).unwrap();
 
@@ -195,14 +297,40 @@ fn build_expression_chain_graph() -> (ProgramGraph, FunctionId) {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let ca = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(7) }, func_id).unwrap();
-    let cb = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(3) }, func_id).unwrap();
-    let add = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id).unwrap();
-    let sub = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Sub }, func_id).unwrap();
-    let mul = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Mul }, func_id).unwrap();
+    let ca = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(7),
+            },
+            func_id,
+        )
+        .unwrap();
+    let cb = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(3),
+            },
+            func_id,
+        )
+        .unwrap();
+    let add = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
+        .unwrap();
+    let sub = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Sub }, func_id)
+        .unwrap();
+    let mul = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Mul }, func_id)
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
@@ -229,12 +357,34 @@ fn build_div_by_zero_graph() -> (ProgramGraph, FunctionId) {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c10 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(10) }, func_id).unwrap();
-    let c0 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(0) }, func_id).unwrap();
-    let div = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Div }, func_id).unwrap();
+    let c10 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(10),
+            },
+            func_id,
+        )
+        .unwrap();
+    let c0 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(0),
+            },
+            func_id,
+        )
+        .unwrap();
+    let div = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Div }, func_id)
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
@@ -253,15 +403,34 @@ fn build_overflow_graph() -> (ProgramGraph, FunctionId) {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let cmax = graph.add_core_op(
-        ComputeOp::Const { value: ConstValue::I32(i32::MAX) },
-        func_id,
-    ).unwrap();
-    let c1 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(1) }, func_id).unwrap();
-    let add = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id).unwrap();
+    let cmax = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(i32::MAX),
+            },
+            func_id,
+        )
+        .unwrap();
+    let c1 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(1),
+            },
+            func_id,
+        )
+        .unwrap();
+    let add = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
@@ -282,10 +451,14 @@ fn build_return_exit_code_graph(exit_code: i32) -> (ProgramGraph, FunctionId) {
         .add_function("main".into(), root, vec![], TypeId::I32, Visibility::Public)
         .unwrap();
 
-    let c = graph.add_core_op(
-        ComputeOp::Const { value: ConstValue::I32(exit_code) },
-        func_id,
-    ).unwrap();
+    let c = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(exit_code),
+            },
+            func_id,
+        )
+        .unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
     graph.add_data_edge(c, ret, 0, 0, TypeId::I32).unwrap();
 
@@ -298,14 +471,31 @@ fn build_cast_graph() -> (ProgramGraph, FunctionId) {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c42 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(42) }, func_id).unwrap();
-    let cast = graph.add_structured_op(
-        StructuredOp::Cast { target_type: TypeId::I64 },
-        func_id,
-    ).unwrap();
+    let c42 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(42),
+            },
+            func_id,
+        )
+        .unwrap();
+    let cast = graph
+        .add_structured_op(
+            StructuredOp::Cast {
+                target_type: TypeId::I64,
+            },
+            func_id,
+        )
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
@@ -327,11 +517,18 @@ fn test_simple_arithmetic_2_plus_3() {
     // Compile and run
     let (stdout, _stderr, exit_code) = compile_and_run(&graph, OptLevel::O0);
     assert_eq!(exit_code, 0, "expected exit code 0");
-    assert!(stdout.trim().contains("5"), "stdout should contain '5', got: '{}'", stdout);
+    assert!(
+        stdout.trim().contains("5"),
+        "stdout should contain '5', got: '{}'",
+        stdout
+    );
 
     // Verify interpreter produces the same result
     let io_log = interpret_io(&graph, func_id, vec![]);
-    assert!(!io_log.is_empty(), "interpreter should produce Print output");
+    assert!(
+        !io_log.is_empty(),
+        "interpreter should produce Print output"
+    );
     match &io_log[0] {
         Value::I32(v) => assert_eq!(*v, 5, "interpreter should produce I32(5)"),
         other => panic!("expected I32, got {:?}", other),
@@ -344,7 +541,11 @@ fn test_nested_arithmetic_10_minus_3_times_4() {
 
     let (stdout, _stderr, exit_code) = compile_and_run(&graph, OptLevel::O0);
     assert_eq!(exit_code, 0);
-    assert!(stdout.trim().contains("28"), "stdout should contain '28', got: '{}'", stdout);
+    assert!(
+        stdout.trim().contains("28"),
+        "stdout should contain '28', got: '{}'",
+        stdout
+    );
 
     // Verify interpreter match
     let io_log = interpret_io(&graph, func_id, vec![]);
@@ -374,7 +575,11 @@ fn test_multi_function_call() {
 
     let (stdout, _stderr, exit_code) = compile_and_run(&graph, OptLevel::O0);
     assert_eq!(exit_code, 0);
-    assert!(stdout.trim().contains("11"), "stdout should contain '11', got: '{}'", stdout);
+    assert!(
+        stdout.trim().contains("11"),
+        "stdout should contain '11', got: '{}'",
+        stdout
+    );
 }
 
 #[test]
@@ -383,7 +588,11 @@ fn test_expression_chain_a_plus_b_times_a_minus_b() {
 
     let (stdout, _stderr, exit_code) = compile_and_run(&graph, OptLevel::O0);
     assert_eq!(exit_code, 0);
-    assert!(stdout.trim().contains("40"), "stdout should contain '40', got: '{}'", stdout);
+    assert!(
+        stdout.trim().contains("40"),
+        "stdout should contain '40', got: '{}'",
+        stdout
+    );
 
     // Verify interpreter match
     let io_log = interpret_io(&graph, func_id, vec![]);
@@ -416,7 +625,11 @@ fn test_division_by_zero_runtime_error() {
     let (stdout, stderr, exit_code) = compile_and_run(&graph, OptLevel::O0);
     let _ = stdout; // may or may not produce output before the error
 
-    assert_eq!(exit_code, 1, "div-by-zero should exit with code 1, got: {}", exit_code);
+    assert_eq!(
+        exit_code, 1,
+        "div-by-zero should exit with code 1, got: {}",
+        exit_code
+    );
     assert!(
         stderr.contains("Runtime error"),
         "stderr should contain 'Runtime error', got: '{}'",
@@ -441,7 +654,11 @@ fn test_integer_overflow_runtime_error() {
 
     let (_stdout, stderr, exit_code) = compile_and_run(&graph, OptLevel::O0);
 
-    assert_eq!(exit_code, 2, "overflow should exit with code 2, got: {}", exit_code);
+    assert_eq!(
+        exit_code, 2,
+        "overflow should exit with code 2, got: {}",
+        exit_code
+    );
     assert!(
         stderr.contains("Runtime error"),
         "stderr should contain 'Runtime error', got: '{}'",
@@ -465,12 +682,20 @@ fn test_optimization_levels_produce_correct_results() {
     // O0
     let (stdout_o0, _stderr, exit_code) = compile_and_run(&graph, OptLevel::O0);
     assert_eq!(exit_code, 0);
-    assert!(stdout_o0.trim().contains("5"), "O0: expected '5', got: '{}'", stdout_o0);
+    assert!(
+        stdout_o0.trim().contains("5"),
+        "O0: expected '5', got: '{}'",
+        stdout_o0
+    );
 
     // O2
     let (stdout_o2, _stderr, exit_code) = compile_and_run(&graph, OptLevel::O2);
     assert_eq!(exit_code, 0);
-    assert!(stdout_o2.trim().contains("5"), "O2: expected '5', got: '{}'", stdout_o2);
+    assert!(
+        stdout_o2.trim().contains("5"),
+        "O2: expected '5', got: '{}'",
+        stdout_o2
+    );
 }
 
 // ===========================================================================
@@ -591,8 +816,12 @@ fn test_nested_function_calls() {
         )
         .unwrap();
 
-    let param = graph.add_core_op(ComputeOp::Parameter { index: 0 }, double_id).unwrap();
-    let add = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, double_id).unwrap();
+    let param = graph
+        .add_core_op(ComputeOp::Parameter { index: 0 }, double_id)
+        .unwrap();
+    let add = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, double_id)
+        .unwrap();
     let ret1 = graph.add_core_op(ComputeOp::Return, double_id).unwrap();
 
     graph.add_data_edge(param, add, 0, 0, TypeId::I32).unwrap();
@@ -600,23 +829,48 @@ fn test_nested_function_calls() {
     graph.add_data_edge(add, ret1, 0, 0, TypeId::I32).unwrap();
 
     let main_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c3 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(3) }, main_id).unwrap();
-    let call1 = graph.add_core_op(ComputeOp::Call { target: double_id }, main_id).unwrap();
-    let call2 = graph.add_core_op(ComputeOp::Call { target: double_id }, main_id).unwrap();
+    let c3 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(3),
+            },
+            main_id,
+        )
+        .unwrap();
+    let call1 = graph
+        .add_core_op(ComputeOp::Call { target: double_id }, main_id)
+        .unwrap();
+    let call2 = graph
+        .add_core_op(ComputeOp::Call { target: double_id }, main_id)
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, main_id).unwrap();
     let ret2 = graph.add_core_op(ComputeOp::Return, main_id).unwrap();
 
     graph.add_data_edge(c3, call1, 0, 0, TypeId::I32).unwrap();
-    graph.add_data_edge(call1, call2, 0, 0, TypeId::I32).unwrap();
-    graph.add_data_edge(call2, print, 0, 0, TypeId::I32).unwrap();
+    graph
+        .add_data_edge(call1, call2, 0, 0, TypeId::I32)
+        .unwrap();
+    graph
+        .add_data_edge(call2, print, 0, 0, TypeId::I32)
+        .unwrap();
     graph.add_control_edge(print, ret2, None).unwrap();
 
     let (stdout, _stderr, exit_code) = compile_and_run(&graph, OptLevel::O0);
     assert_eq!(exit_code, 0);
-    assert!(stdout.trim().contains("12"), "stdout should contain '12', got: '{}'", stdout);
+    assert!(
+        stdout.trim().contains("12"),
+        "stdout should contain '12', got: '{}'",
+        stdout
+    );
 }
 
 #[test]
@@ -626,12 +880,34 @@ fn test_boolean_false_comparison() {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c3 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(3) }, func_id).unwrap();
-    let c5 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(5) }, func_id).unwrap();
-    let cmp = graph.add_core_op(ComputeOp::Compare { op: CmpOp::Gt }, func_id).unwrap();
+    let c3 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(3),
+            },
+            func_id,
+        )
+        .unwrap();
+    let c5 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(5),
+            },
+            func_id,
+        )
+        .unwrap();
+    let cmp = graph
+        .add_core_op(ComputeOp::Compare { op: CmpOp::Gt }, func_id)
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
@@ -665,8 +941,12 @@ fn test_o2_optimization_with_nested_calls() {
         )
         .unwrap();
 
-    let param = graph.add_core_op(ComputeOp::Parameter { index: 0 }, double_id).unwrap();
-    let add = graph.add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, double_id).unwrap();
+    let param = graph
+        .add_core_op(ComputeOp::Parameter { index: 0 }, double_id)
+        .unwrap();
+    let add = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, double_id)
+        .unwrap();
     let ret1 = graph.add_core_op(ComputeOp::Return, double_id).unwrap();
 
     graph.add_data_edge(param, add, 0, 0, TypeId::I32).unwrap();
@@ -674,23 +954,48 @@ fn test_o2_optimization_with_nested_calls() {
     graph.add_data_edge(add, ret1, 0, 0, TypeId::I32).unwrap();
 
     let main_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c3 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(3) }, main_id).unwrap();
-    let call1 = graph.add_core_op(ComputeOp::Call { target: double_id }, main_id).unwrap();
-    let call2 = graph.add_core_op(ComputeOp::Call { target: double_id }, main_id).unwrap();
+    let c3 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(3),
+            },
+            main_id,
+        )
+        .unwrap();
+    let call1 = graph
+        .add_core_op(ComputeOp::Call { target: double_id }, main_id)
+        .unwrap();
+    let call2 = graph
+        .add_core_op(ComputeOp::Call { target: double_id }, main_id)
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, main_id).unwrap();
     let ret2 = graph.add_core_op(ComputeOp::Return, main_id).unwrap();
 
     graph.add_data_edge(c3, call1, 0, 0, TypeId::I32).unwrap();
-    graph.add_data_edge(call1, call2, 0, 0, TypeId::I32).unwrap();
-    graph.add_data_edge(call2, print, 0, 0, TypeId::I32).unwrap();
+    graph
+        .add_data_edge(call1, call2, 0, 0, TypeId::I32)
+        .unwrap();
+    graph
+        .add_data_edge(call2, print, 0, 0, TypeId::I32)
+        .unwrap();
     graph.add_control_edge(print, ret2, None).unwrap();
 
     let (stdout, _stderr, exit_code) = compile_and_run(&graph, OptLevel::O2);
     assert_eq!(exit_code, 0);
-    assert!(stdout.trim().contains("12"), "O2: expected '12', got: '{}'", stdout);
+    assert!(
+        stdout.trim().contains("12"),
+        "O2: expected '12', got: '{}'",
+        stdout
+    );
 }
 
 // ===========================================================================
@@ -706,25 +1011,40 @@ fn test_invalid_graph_rejected_before_execution() {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c_bool = graph.add_core_op(
-        ComputeOp::Const { value: ConstValue::Bool(true) },
-        func_id,
-    ).unwrap();
-    let c_i32 = graph.add_core_op(
-        ComputeOp::Const { value: ConstValue::I32(5) },
-        func_id,
-    ).unwrap();
-    let add = graph.add_core_op(
-        ComputeOp::BinaryArith { op: ArithOp::Add },
-        func_id,
-    ).unwrap();
+    let c_bool = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::Bool(true),
+            },
+            func_id,
+        )
+        .unwrap();
+    let c_i32 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(5),
+            },
+            func_id,
+        )
+        .unwrap();
+    let add = graph
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
+        .unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
     // Wire Bool -> add port 0, I32 -> add port 1 (type mismatch)
-    graph.add_data_edge(c_bool, add, 0, 0, TypeId::BOOL).unwrap();
+    graph
+        .add_data_edge(c_bool, add, 0, 0, TypeId::BOOL)
+        .unwrap();
     graph.add_data_edge(c_i32, add, 0, 1, TypeId::I32).unwrap();
     graph.add_data_edge(add, ret, 0, 0, TypeId::I32).unwrap();
 
@@ -766,37 +1086,53 @@ fn test_struct_create_and_get() {
     let root = graph.modules.root_id();
 
     // Register a struct type with two I32 fields
-    let struct_type_id = graph.types.register(lmlang_core::types::LmType::Struct(StructDef {
-        name: "Point".into(),
-        type_id: TypeId(100), // placeholder, will be overwritten
-        fields: IndexMap::from([
-            ("x".into(), TypeId::I32),
-            ("y".into(), TypeId::I32),
-        ]),
-        module: root,
-        visibility: Visibility::Public,
-    }));
+    let struct_type_id = graph
+        .types
+        .register(lmlang_core::types::LmType::Struct(StructDef {
+            name: "Point".into(),
+            type_id: TypeId(100), // placeholder, will be overwritten
+            fields: IndexMap::from([("x".into(), TypeId::I32), ("y".into(), TypeId::I32)]),
+            module: root,
+            visibility: Visibility::Public,
+        }));
 
     let func_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c10 = graph.add_core_op(
-        ComputeOp::Const { value: ConstValue::I32(10) },
-        func_id,
-    ).unwrap();
-    let c20 = graph.add_core_op(
-        ComputeOp::Const { value: ConstValue::I32(20) },
-        func_id,
-    ).unwrap();
-    let create = graph.add_structured_op(
-        StructuredOp::StructCreate { type_id: struct_type_id },
-        func_id,
-    ).unwrap();
-    let get = graph.add_structured_op(
-        StructuredOp::StructGet { field_index: 0 },
-        func_id,
-    ).unwrap();
+    let c10 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(10),
+            },
+            func_id,
+        )
+        .unwrap();
+    let c20 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(20),
+            },
+            func_id,
+        )
+        .unwrap();
+    let create = graph
+        .add_structured_op(
+            StructuredOp::StructCreate {
+                type_id: struct_type_id,
+            },
+            func_id,
+        )
+        .unwrap();
+    let get = graph
+        .add_structured_op(StructuredOp::StructGet { field_index: 0 }, func_id)
+        .unwrap();
     let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
 
@@ -804,7 +1140,9 @@ fn test_struct_create_and_get() {
     graph.add_data_edge(c10, create, 0, 0, TypeId::I32).unwrap();
     graph.add_data_edge(c20, create, 0, 1, TypeId::I32).unwrap();
     // create -> get port 0 (struct value)
-    graph.add_data_edge(create, get, 0, 0, struct_type_id).unwrap();
+    graph
+        .add_data_edge(create, get, 0, 0, struct_type_id)
+        .unwrap();
     // get -> print port 0 (field 0 = I32)
     graph.add_data_edge(get, print, 0, 0, TypeId::I32).unwrap();
     graph.add_control_edge(print, ret, None).unwrap();
@@ -829,12 +1167,39 @@ fn test_multiple_prints_sequential() {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root,
+            vec![],
+            TypeId::UNIT,
+            Visibility::Public,
+        )
         .unwrap();
 
-    let c1 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(1) }, func_id).unwrap();
-    let c2 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(2) }, func_id).unwrap();
-    let c3 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(3) }, func_id).unwrap();
+    let c1 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(1),
+            },
+            func_id,
+        )
+        .unwrap();
+    let c2 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(2),
+            },
+            func_id,
+        )
+        .unwrap();
+    let c3 = graph
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(3),
+            },
+            func_id,
+        )
+        .unwrap();
     let p1 = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
     let p2 = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
     let p3 = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
@@ -853,7 +1218,12 @@ fn test_multiple_prints_sequential() {
     assert_eq!(exit_code, 0);
 
     let lines: Vec<&str> = stdout.trim().lines().collect();
-    assert_eq!(lines.len(), 3, "expected 3 lines of output, got: {:?}", lines);
+    assert_eq!(
+        lines.len(),
+        3,
+        "expected 3 lines of output, got: {:?}",
+        lines
+    );
     assert_eq!(lines[0].trim(), "1");
     assert_eq!(lines[1].trim(), "2");
     assert_eq!(lines[2].trim(), "3");
@@ -873,19 +1243,15 @@ fn test_contract_nodes_stripped_during_compilation() {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function(
-            "main".into(),
-            root,
-            vec![],
-            TypeId::I32,
-            Visibility::Public,
-        )
+        .add_function("main".into(), root, vec![], TypeId::I32, Visibility::Public)
         .unwrap();
 
     // Const 5
     let c5 = graph
         .add_core_op(
-            ComputeOp::Const { value: ConstValue::I32(5) },
+            ComputeOp::Const {
+                value: ConstValue::I32(5),
+            },
             func_id,
         )
         .unwrap();
@@ -893,17 +1259,16 @@ fn test_contract_nodes_stripped_during_compilation() {
     // Const 1
     let c1 = graph
         .add_core_op(
-            ComputeOp::Const { value: ConstValue::I32(1) },
+            ComputeOp::Const {
+                value: ConstValue::I32(1),
+            },
             func_id,
         )
         .unwrap();
 
     // Add: 5 + 1 = 6
     let add = graph
-        .add_core_op(
-            ComputeOp::BinaryArith { op: ArithOp::Add },
-            func_id,
-        )
+        .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, func_id)
         .unwrap();
     graph.add_data_edge(c5, add, 0, 0, TypeId::I32).unwrap();
     graph.add_data_edge(c1, add, 0, 1, TypeId::I32).unwrap();
@@ -916,19 +1281,20 @@ fn test_contract_nodes_stripped_during_compilation() {
     // Precondition: 5 > 0 (always true)
     let const_zero = graph
         .add_core_op(
-            ComputeOp::Const { value: ConstValue::I32(0) },
+            ComputeOp::Const {
+                value: ConstValue::I32(0),
+            },
             func_id,
         )
         .unwrap();
 
     let cmp = graph
-        .add_core_op(
-            ComputeOp::Compare { op: CmpOp::Gt },
-            func_id,
-        )
+        .add_core_op(ComputeOp::Compare { op: CmpOp::Gt }, func_id)
         .unwrap();
     graph.add_data_edge(c5, cmp, 0, 0, TypeId::I32).unwrap();
-    graph.add_data_edge(const_zero, cmp, 0, 1, TypeId::I32).unwrap();
+    graph
+        .add_data_edge(const_zero, cmp, 0, 1, TypeId::I32)
+        .unwrap();
 
     let precond = graph
         .add_core_op(
@@ -938,17 +1304,20 @@ fn test_contract_nodes_stripped_during_compilation() {
             func_id,
         )
         .unwrap();
-    graph.add_data_edge(cmp, precond, 0, 0, TypeId::BOOL).unwrap();
+    graph
+        .add_data_edge(cmp, precond, 0, 0, TypeId::BOOL)
+        .unwrap();
 
     // Postcondition: result > 0 (always true since 6 > 0)
     let post_cmp = graph
-        .add_core_op(
-            ComputeOp::Compare { op: CmpOp::Gt },
-            func_id,
-        )
+        .add_core_op(ComputeOp::Compare { op: CmpOp::Gt }, func_id)
         .unwrap();
-    graph.add_data_edge(add, post_cmp, 0, 0, TypeId::I32).unwrap();
-    graph.add_data_edge(const_zero, post_cmp, 0, 1, TypeId::I32).unwrap();
+    graph
+        .add_data_edge(add, post_cmp, 0, 0, TypeId::I32)
+        .unwrap();
+    graph
+        .add_data_edge(const_zero, post_cmp, 0, 1, TypeId::I32)
+        .unwrap();
 
     let postcond = graph
         .add_core_op(
@@ -958,8 +1327,12 @@ fn test_contract_nodes_stripped_during_compilation() {
             func_id,
         )
         .unwrap();
-    graph.add_data_edge(post_cmp, postcond, 0, 0, TypeId::BOOL).unwrap();
-    graph.add_data_edge(add, postcond, 0, 1, TypeId::I32).unwrap();
+    graph
+        .add_data_edge(post_cmp, postcond, 0, 0, TypeId::BOOL)
+        .unwrap();
+    graph
+        .add_data_edge(add, postcond, 0, 1, TypeId::I32)
+        .unwrap();
 
     // Type check should pass
     let errors = lmlang_check::typecheck::validate_graph(&graph);
@@ -982,18 +1355,14 @@ fn test_compile_to_ir_excludes_contracts() {
     let root = graph.modules.root_id();
 
     let func_id = graph
-        .add_function(
-            "main".into(),
-            root,
-            vec![],
-            TypeId::I32,
-            Visibility::Public,
-        )
+        .add_function("main".into(), root, vec![], TypeId::I32, Visibility::Public)
         .unwrap();
 
     let c42 = graph
         .add_core_op(
-            ComputeOp::Const { value: ConstValue::I32(42) },
+            ComputeOp::Const {
+                value: ConstValue::I32(42),
+            },
             func_id,
         )
         .unwrap();
@@ -1004,7 +1373,9 @@ fn test_compile_to_ir_excludes_contracts() {
     // Add a precondition
     let const_true = graph
         .add_core_op(
-            ComputeOp::Const { value: ConstValue::Bool(true) },
+            ComputeOp::Const {
+                value: ConstValue::Bool(true),
+            },
             func_id,
         )
         .unwrap();
@@ -1016,7 +1387,9 @@ fn test_compile_to_ir_excludes_contracts() {
             func_id,
         )
         .unwrap();
-    graph.add_data_edge(const_true, precond, 0, 0, TypeId::BOOL).unwrap();
+    graph
+        .add_data_edge(const_true, precond, 0, 0, TypeId::BOOL)
+        .unwrap();
 
     let ir = compile_to_ir(
         &graph,
@@ -1028,7 +1401,10 @@ fn test_compile_to_ir_excludes_contracts() {
     .unwrap();
 
     // IR should contain main function
-    assert!(ir.contains("define"), "IR should contain function definitions");
+    assert!(
+        ir.contains("define"),
+        "IR should contain function definitions"
+    );
     // IR should NOT contain any contract-related strings
     assert!(
         !ir.contains("precondition"),
@@ -1147,7 +1523,10 @@ fn test_incremental_recompilation_plan() {
         !plan2.needs_recompilation,
         "Second compile should NOT need recompilation (nothing changed)"
     );
-    assert!(!plan2.cached.is_empty(), "Second compile should have cached functions");
+    assert!(
+        !plan2.cached.is_empty(),
+        "Second compile should have cached functions"
+    );
     assert!(plan2.dirty.is_empty(), "No functions should be dirty");
     assert!(
         plan2.dirty_dependents.is_empty(),
@@ -1166,7 +1545,12 @@ fn test_incremental_contract_changes_no_recompile() {
         .unwrap();
 
     let c42 = graph
-        .add_core_op(ComputeOp::Const { value: ConstValue::I32(42) }, func_id)
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(42),
+            },
+            func_id,
+        )
         .unwrap();
     let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
     graph.add_data_edge(c42, ret, 0, 0, TypeId::I32).unwrap();
@@ -1188,15 +1572,24 @@ fn test_incremental_contract_changes_no_recompile() {
 
     // Add a contract node (precondition)
     let const_true = graph
-        .add_core_op(ComputeOp::Const { value: ConstValue::Bool(true) }, func_id)
-        .unwrap();
-    let _precond = graph
         .add_core_op(
-            ComputeOp::Precondition { message: "always true".into() },
+            ComputeOp::Const {
+                value: ConstValue::Bool(true),
+            },
             func_id,
         )
         .unwrap();
-    graph.add_data_edge(const_true, _precond, 0, 0, TypeId::BOOL).unwrap();
+    let _precond = graph
+        .add_core_op(
+            ComputeOp::Precondition {
+                message: "always true".into(),
+            },
+            func_id,
+        )
+        .unwrap();
+    graph
+        .add_data_edge(const_true, _precond, 0, 0, TypeId::BOOL)
+        .unwrap();
 
     // Second compile: contract-only change should not trigger recompilation
     // NOTE: We added const_true (non-contract node) as supporting node, so compilation
@@ -1208,18 +1601,36 @@ fn test_incremental_contract_changes_no_recompile() {
     let root2 = graph2.modules.root_id();
 
     let func_id2 = graph2
-        .add_function("main".into(), root2, vec![], TypeId::I32, Visibility::Public)
+        .add_function(
+            "main".into(),
+            root2,
+            vec![],
+            TypeId::I32,
+            Visibility::Public,
+        )
         .unwrap();
 
     let c42_2 = graph2
-        .add_core_op(ComputeOp::Const { value: ConstValue::I32(42) }, func_id2)
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::I32(42),
+            },
+            func_id2,
+        )
         .unwrap();
     let ret2 = graph2.add_core_op(ComputeOp::Return, func_id2).unwrap();
-    graph2.add_data_edge(c42_2, ret2, 0, 0, TypeId::I32).unwrap();
+    graph2
+        .add_data_edge(c42_2, ret2, 0, 0, TypeId::I32)
+        .unwrap();
 
     // Add a bool const for use with precondition
     let const_true2 = graph2
-        .add_core_op(ComputeOp::Const { value: ConstValue::Bool(true) }, func_id2)
+        .add_core_op(
+            ComputeOp::Const {
+                value: ConstValue::Bool(true),
+            },
+            func_id2,
+        )
         .unwrap();
 
     // First compile with this graph (including const_true2 already in the body)
@@ -1235,11 +1646,15 @@ fn test_incremental_contract_changes_no_recompile() {
     // Now add ONLY a contract node (no new supporting nodes)
     let _precond2 = graph2
         .add_core_op(
-            ComputeOp::Precondition { message: "always true".into() },
+            ComputeOp::Precondition {
+                message: "always true".into(),
+            },
             func_id2,
         )
         .unwrap();
-    graph2.add_data_edge(const_true2, _precond2, 0, 0, TypeId::BOOL).unwrap();
+    graph2
+        .add_data_edge(const_true2, _precond2, 0, 0, TypeId::BOOL)
+        .unwrap();
 
     let (_result2, plan2) = compile_incremental(&graph2, &options2, &mut state2).unwrap();
 
@@ -1266,11 +1681,7 @@ fn test_build_call_graph_integration() {
         .find(|(_, f)| f.name == "add_one")
         .unwrap()
         .0;
-    let main_id = functions
-        .iter()
-        .find(|(_, f)| f.name == "main")
-        .unwrap()
-        .0;
+    let main_id = functions.iter().find(|(_, f)| f.name == "main").unwrap().0;
 
     // main calls add_one
     assert!(cg[main_id].contains(add_one_id));

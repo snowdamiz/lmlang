@@ -259,7 +259,7 @@ mod tests {
         });
 
         assert_ne!(id1, id2);
-        assert_eq!(id1, TypeId(9));  // First after builtins
+        assert_eq!(id1, TypeId(9)); // First after builtins
         assert_eq!(id2, TypeId(10));
     }
 

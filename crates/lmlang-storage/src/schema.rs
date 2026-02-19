@@ -14,6 +14,7 @@ fn migrations() -> Migrations<'static> {
     Migrations::new(vec![
         M::up(include_str!("migrations/001_initial_schema.sql")),
         M::up(include_str!("migrations/002_edit_history.sql")),
+        M::up(include_str!("migrations/003_agent_config_store.sql")),
     ])
 }
 

@@ -156,9 +156,7 @@ pub async fn diff_versions(
         )));
     }
 
-    let response = service.diff_versions(
-        req.from_checkpoint.as_deref(),
-        req.to_checkpoint.as_deref(),
-    )?;
+    let response =
+        service.diff_versions(req.from_checkpoint.as_deref(), req.to_checkpoint.as_deref())?;
     Ok(Json(response))
 }

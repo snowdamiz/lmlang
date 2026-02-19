@@ -99,11 +99,7 @@ impl EditCommand {
     /// (LIFO order) to correctly undo the batch.
     pub fn inverse(&self) -> EditCommand {
         match self {
-            EditCommand::InsertNode {
-                node_id,
-                op,
-                owner,
-            } => EditCommand::RemoveNode {
+            EditCommand::InsertNode { node_id, op, owner } => EditCommand::RemoveNode {
                 node_id: *node_id,
                 removed_node: ComputeNode::new(op.clone(), *owner),
             },
@@ -182,7 +178,12 @@ impl EditCommand {
                 },
             },
             EditCommand::AddFunction {
-                func_id, name, module, params, return_type, visibility,
+                func_id,
+                name,
+                module,
+                params,
+                return_type,
+                visibility,
             } => {
                 // Inverse of AddFunction: conceptually a RemoveFunction.
                 // We store the same data so we can re-add on redo.
@@ -198,16 +199,17 @@ impl EditCommand {
                     return_type: *return_type,
                     visibility: *visibility,
                 }
-            },
+            }
             EditCommand::AddModule {
-                module_id, name, parent, visibility,
-            } => {
-                EditCommand::AddModule {
-                    module_id: *module_id,
-                    name: name.clone(),
-                    parent: *parent,
-                    visibility: *visibility,
-                }
+                module_id,
+                name,
+                parent,
+                visibility,
+            } => EditCommand::AddModule {
+                module_id: *module_id,
+                name: name.clone(),
+                parent: *parent,
+                visibility: *visibility,
             },
             EditCommand::Batch {
                 commands,
@@ -281,8 +283,9 @@ impl EditLog {
                 )
                 .map_err(|e| ApiError::InternalError(format!("failed to mark undo: {}", e)))?;
 
-                let command: EditCommand = serde_json::from_str(&command_json)
-                    .map_err(|e| ApiError::InternalError(format!("failed to deserialize command: {}", e)))?;
+                let command: EditCommand = serde_json::from_str(&command_json).map_err(|e| {
+                    ApiError::InternalError(format!("failed to deserialize command: {}", e))
+                })?;
 
                 let entry = HistoryEntry {
                     id: edit_id,
@@ -330,8 +333,9 @@ impl EditLog {
                 )
                 .map_err(|e| ApiError::InternalError(format!("failed to mark redo: {}", e)))?;
 
-                let command: EditCommand = serde_json::from_str(&command_json)
-                    .map_err(|e| ApiError::InternalError(format!("failed to deserialize command: {}", e)))?;
+                let command: EditCommand = serde_json::from_str(&command_json).map_err(|e| {
+                    ApiError::InternalError(format!("failed to deserialize command: {}", e))
+                })?;
 
                 let entry = HistoryEntry {
                     id: edit_id,
@@ -346,10 +350,7 @@ impl EditLog {
     }
 
     /// Lists all edit history entries for a program, in reverse chronological order.
-    pub fn list(
-        conn: &Connection,
-        program_id: ProgramId,
-    ) -> Result<Vec<HistoryEntry>, ApiError> {
+    pub fn list(conn: &Connection, program_id: ProgramId) -> Result<Vec<HistoryEntry>, ApiError> {
         let mut stmt = conn
             .prepare(
                 "SELECT edit_id, timestamp, description, undone FROM edit_log WHERE program_id = ?1 ORDER BY id DESC",
@@ -384,10 +385,7 @@ impl EditLog {
     ///
     /// Called when a new mutation is committed, since new edits invalidate
     /// the existing redo stack.
-    pub fn clear_redo_stack(
-        conn: &Connection,
-        program_id: ProgramId,
-    ) -> Result<(), ApiError> {
+    pub fn clear_redo_stack(conn: &Connection, program_id: ProgramId) -> Result<(), ApiError> {
         conn.execute(
             "DELETE FROM edit_log WHERE program_id = ?1 AND undone = 1",
             rusqlite::params![program_id.0],
@@ -462,10 +460,7 @@ impl CheckpointManager {
     }
 
     /// Lists all checkpoints for a program.
-    pub fn list(
-        conn: &Connection,
-        program_id: ProgramId,
-    ) -> Result<Vec<CheckpointView>, ApiError> {
+    pub fn list(conn: &Connection, program_id: ProgramId) -> Result<Vec<CheckpointView>, ApiError> {
         let mut stmt = conn
             .prepare(
                 "SELECT name, timestamp, description, edit_log_position FROM checkpoints WHERE program_id = ?1 ORDER BY id DESC",
@@ -497,11 +492,7 @@ impl CheckpointManager {
     }
 
     /// Deletes a named checkpoint.
-    pub fn delete(
-        conn: &Connection,
-        program_id: ProgramId,
-        name: &str,
-    ) -> Result<(), ApiError> {
+    pub fn delete(conn: &Connection, program_id: ProgramId, name: &str) -> Result<(), ApiError> {
         let rows = conn
             .execute(
                 "DELETE FROM checkpoints WHERE program_id = ?1 AND name = ?2",
