@@ -908,8 +908,8 @@ fn targeted_repair_retry_note(
             .unwrap_or(false);
 
         format!(
-            "Attempt {}/{} failed at `{}` (class={}, retryable={}); replanning with targeted diagnostics context.",
-            attempt, max_attempts, action.kind, class, retryable
+            "Attempt {}/{} failed at `{}` (summary=\"{}\", class={}, retryable={}); replanning with targeted diagnostics context.",
+            attempt, max_attempts, action.kind, action.summary, class, retryable
         )
     } else {
         format!(

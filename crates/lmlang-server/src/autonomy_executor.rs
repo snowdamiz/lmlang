@@ -20,6 +20,7 @@ use crate::schema::autonomy_plan::{
     AutonomyPlanMutationRequest, AutonomyPlanSimulateRequest, AutonomyPlanVerifyRequest,
 };
 use crate::schema::compile::CompileRequest;
+use crate::schema::mutations::Mutation;
 use crate::schema::queries::{DetailLevel, SearchRequest};
 use crate::schema::simulate::SimulateRequest;
 use crate::schema::verify::VerifyResponse;
@@ -181,14 +182,7 @@ fn execute_mutate_batch(
     Ok(AutonomyActionExecutionResult::succeeded(
         action_index,
         "mutate_batch",
-        if request.dry_run {
-            format!(
-                "validated {} mutation(s) in dry-run mode",
-                request.mutations.len()
-            )
-        } else {
-            format!("applied {} mutation(s)", request.mutations.len())
-        },
+        mutation_batch_summary(&request.mutations, request.dry_run),
     )
     .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)))
 }
@@ -214,10 +208,18 @@ fn execute_verify(
         return Err(verify_failure_result(action_index, &response));
     }
 
-    Ok(
-        AutonomyActionExecutionResult::succeeded(action_index, "verify", "verification passed")
-            .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)),
+    let scope_label = serde_json::to_value(scope)
+        .ok()
+        .and_then(|value| value.as_str().map(ToString::to_string))
+        .map(|value| value.to_ascii_lowercase())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    Ok(AutonomyActionExecutionResult::succeeded(
+        action_index,
+        "verify",
+        format!("verification passed (scope={})", scope_label),
     )
+    .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)))
 }
 
 fn execute_compile(
@@ -500,6 +502,78 @@ fn execute_history(
     }
 }
 
+fn mutation_batch_summary(mutations: &[Mutation], dry_run: bool) -> String {
+    const MAX_HINTS: usize = 3;
+    let verb = if dry_run { "validated" } else { "applied" };
+    let hints = mutations
+        .iter()
+        .take(MAX_HINTS)
+        .map(mutation_hint)
+        .collect::<Vec<_>>();
+
+    if hints.is_empty() {
+        return format!("{verb} {} mutation(s)", mutations.len());
+    }
+
+    let extra = mutations.len().saturating_sub(MAX_HINTS);
+    if extra == 0 {
+        format!(
+            "{verb} {} mutation(s): {}",
+            mutations.len(),
+            hints.join(", ")
+        )
+    } else {
+        format!(
+            "{verb} {} mutation(s): {}, +{} more",
+            mutations.len(),
+            hints.join(", "),
+            extra
+        )
+    }
+}
+
+fn mutation_hint(mutation: &Mutation) -> String {
+    match mutation {
+        Mutation::AddFunction { name, .. } => format!("add_function({})", name),
+        Mutation::AddModule { name, .. } => format!("add_module({})", name),
+        Mutation::InsertNode { op, owner } => {
+            format!("insert_node({} @fn#{})", node_op_hint(op), owner.0)
+        }
+        Mutation::ModifyNode { node_id, new_op } => {
+            format!("modify_node(#{} => {})", node_id.0, node_op_hint(new_op))
+        }
+        Mutation::RemoveNode { node_id } => format!("remove_node(#{})", node_id.0),
+        Mutation::AddEdge { from, to, .. } => format!("add_edge(#{}->#{})", from.0, to.0),
+        Mutation::AddControlEdge {
+            from,
+            to,
+            branch_index,
+        } => match branch_index {
+            Some(branch) => format!(
+                "add_control_edge(#{}->#{} @branch {})",
+                from.0, to.0, branch
+            ),
+            None => format!("add_control_edge(#{}->#{})", from.0, to.0),
+        },
+        Mutation::RemoveEdge { edge_id } => format!("remove_edge(#{})", edge_id.0),
+    }
+}
+
+fn node_op_hint(op: &lmlang_core::ops::ComputeNodeOp) -> String {
+    let value = serde_json::to_value(op).unwrap_or(serde_json::Value::Null);
+    if let serde_json::Value::Object(level_one) = value {
+        if let Some((outer, inner)) = level_one.iter().next() {
+            if let serde_json::Value::Object(level_two) = inner {
+                if let Some((nested, _)) = level_two.iter().next() {
+                    return format!("{}::{}", outer.to_lowercase(), nested.to_lowercase());
+                }
+            }
+            return outer.to_lowercase();
+        }
+    }
+    "unknown_op".to_string()
+}
+
 fn invalid_payload_result(
     action_index: usize,
     kind: &str,
@@ -732,6 +806,72 @@ mod tests {
         assert_eq!(outcome.attempts.len(), 1);
         assert_eq!(outcome.attempts[0].action_results.len(), 4);
         assert_eq!(outcome.attempts[0].succeeded_actions, 4);
+    }
+
+    #[test]
+    fn mutate_batch_summary_contains_function_hints_for_benchmarks() {
+        let mut service = ProgramService::in_memory().expect("in-memory service");
+        let envelope = envelope_with_actions(vec![AutonomyPlanAction::MutateBatch {
+            request: AutonomyPlanMutationRequest {
+                mutations: vec![
+                    Mutation::AddFunction {
+                        name: "calc_add".to_string(),
+                        module: ModuleId(0),
+                        params: Vec::new(),
+                        return_type: TypeId::UNIT,
+                        visibility: Visibility::Public,
+                    },
+                    Mutation::AddFunction {
+                        name: "calc_sub".to_string(),
+                        module: ModuleId(0),
+                        params: Vec::new(),
+                        return_type: TypeId::UNIT,
+                        visibility: Visibility::Public,
+                    },
+                ],
+                dry_run: false,
+                expected_hashes: None,
+            },
+            rationale: None,
+        }]);
+
+        let outcome = execute_plan(&mut service, &envelope);
+        let action = &outcome.attempts[0].action_results[0];
+        assert_eq!(action.status, AutonomyActionStatus::Succeeded);
+        assert!(action.summary.contains("add_function(calc_add)"));
+        assert!(action.summary.contains("add_function(calc_sub)"));
+    }
+
+    #[test]
+    fn verify_summary_includes_scope_marker() {
+        let mut service = ProgramService::in_memory().expect("in-memory service");
+        let envelope = envelope_with_actions(vec![
+            AutonomyPlanAction::MutateBatch {
+                request: AutonomyPlanMutationRequest {
+                    mutations: vec![Mutation::AddFunction {
+                        name: "verify_target".to_string(),
+                        module: ModuleId(0),
+                        params: Vec::new(),
+                        return_type: TypeId::UNIT,
+                        visibility: Visibility::Public,
+                    }],
+                    dry_run: false,
+                    expected_hashes: None,
+                },
+                rationale: None,
+            },
+            AutonomyPlanAction::Verify {
+                request: AutonomyPlanVerifyRequest {
+                    scope: Some(VerifyScope::Full),
+                },
+                rationale: None,
+            },
+        ]);
+
+        let outcome = execute_plan(&mut service, &envelope);
+        let verify = &outcome.attempts[0].action_results[1];
+        assert_eq!(verify.status, AutonomyActionStatus::Succeeded);
+        assert!(verify.summary.contains("scope=full"));
     }
 
     #[test]
