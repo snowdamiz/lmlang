@@ -477,6 +477,79 @@ mod tests {
     }
 
     #[test]
+    fn test_compilation_hash_excludes_contract_nodes() {
+        let mut graph = ProgramGraph::new("test");
+        let root = graph.modules.root_id();
+
+        let func_id = graph
+            .add_function(
+                "f".into(),
+                root,
+                vec![("x".into(), TypeId::I32)],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        let param = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+            .unwrap();
+        let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+        graph.add_data_edge(param, ret, 0, 0, TypeId::I32).unwrap();
+
+        // Get compilation hash before adding contract
+        let hash_before = hash_function_for_compilation(&graph, func_id);
+
+        // Also get full hash (includes contracts)
+        let full_hash_before = hash_function(&graph, func_id);
+
+        // Add a precondition (contract node)
+        let precond = graph
+            .add_core_op(
+                ComputeOp::Precondition {
+                    message: "x > 0".into(),
+                },
+                func_id,
+            )
+            .unwrap();
+        // Wire it to param via a compare
+        // (Note: the contract node itself is excluded, but shared support nodes are kept)
+
+        // Get hashes after adding contract
+        let hash_after = hash_function_for_compilation(&graph, func_id);
+        let full_hash_after = hash_function(&graph, func_id);
+
+        // Compilation hash should NOT change (contract nodes excluded)
+        assert_eq!(
+            hash_before, hash_after,
+            "Compilation hash must be unchanged after adding a contract-only node"
+        );
+
+        // Full hash SHOULD change (includes all nodes)
+        assert_ne!(
+            full_hash_before, full_hash_after,
+            "Full hash must change when any node is added"
+        );
+    }
+
+    #[test]
+    fn test_compilation_hash_deterministic() {
+        let (graph, fn_a, _fn_b) = build_two_function_graph();
+        let hash1 = hash_function_for_compilation(&graph, fn_a);
+        let hash2 = hash_function_for_compilation(&graph, fn_a);
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_hash_all_functions_for_compilation() {
+        let (graph, fn_a, fn_b) = build_two_function_graph();
+        let all_hashes = hash_all_functions_for_compilation(&graph);
+        assert_eq!(all_hashes.len(), 2);
+        assert!(all_hashes.contains_key(&fn_a));
+        assert!(all_hashes.contains_key(&fn_b));
+    }
+
+    #[test]
     fn test_function_hash_changes_on_edge_add() {
         let (mut graph, fn_a, _fn_b) = build_two_function_graph();
         let hash_before = hash_function(&graph, fn_a);
