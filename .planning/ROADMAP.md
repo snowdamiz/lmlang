@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Storage & Persistence** - SQLite backend, trait abstraction, content hashing so programs survive restarts (completed 2026-02-18)
 - [x] **Phase 3: Type Checking & Graph Interpreter** - Static type verification and development-time execution without LLVM (completed 2026-02-18)
 - [x] **Phase 4: AI Agent Tool API** - HTTP endpoints for structured graph manipulation, retrieval, verification, simulation, and undo (completed 2026-02-18)
-- [ ] **Phase 5: LLVM Compilation Pipeline** - Graph to LLVM IR to native binary with function-scoped codegen
+- [x] **Phase 5: LLVM Compilation Pipeline** - Graph to LLVM IR to native binary with function-scoped codegen (completed 2026-02-18)
 - [ ] **Phase 6: Full Contract System & Incremental Compilation** - Pre/post-conditions, invariants, property-based testing, and red-green dirty tracking
 - [ ] **Phase 7: Multi-Agent Concurrency** - Concurrent graph editing with region locking and optimistic concurrency control
 - [ ] **Phase 8: Dual-Layer Semantic Architecture** - Semantic knowledge graph, bidirectional propagation, and vector embeddings
@@ -102,10 +102,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Crate setup, type mapping, error types, runtime declarations, linker
-- [ ] 05-02-PLAN.md — Per-function codegen: all ~34 op nodes to LLVM IR
-- [ ] 05-03-PLAN.md — Top-level compiler pipeline, HTTP endpoint, function-scoped Context
-- [ ] 05-04-PLAN.md — End-to-end integration tests: compiled output matches interpreter
+- [x] 05-01-PLAN.md — Crate setup, type mapping, error types, runtime declarations, linker
+- [x] 05-02-PLAN.md — Per-function codegen: all ~34 op nodes to LLVM IR
+- [x] 05-03-PLAN.md — Top-level compiler pipeline, HTTP endpoint, function-scoped Context
+- [x] 05-04-PLAN.md — End-to-end integration tests: compiled output matches interpreter
 
 ### Phase 6: Full Contract System & Incremental Compilation
 **Goal**: Programs have rich behavioral contracts (pre/post-conditions, invariants, property-based tests) and only changed functions recompile
@@ -182,7 +182,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 2. Storage & Persistence | 3/3 | Complete   | 2026-02-18 |
 | 3. Type Checking & Graph Interpreter | 2/3 | Complete    | 2026-02-18 |
 | 4. AI Agent Tool API | 3/4 | Complete    | 2026-02-18 |
-| 5. LLVM Compilation Pipeline | 2/4 | In Progress|  |
+| 5. LLVM Compilation Pipeline | 4/4 | Complete | 2026-02-18 |
 | 6. Full Contract System & Incremental Compilation | 0/? | Not started | - |
 | 7. Multi-Agent Concurrency | 0/? | Not started | - |
 | 8. Dual-Layer Semantic Architecture | 0/? | Not started | - |

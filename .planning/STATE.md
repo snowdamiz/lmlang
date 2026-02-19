@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 5 of 9 (LLVM Compilation Pipeline)
-Plan: 3 of 4 in current phase
-Status: Executing Phase 5
-Last activity: 2026-02-19 — Completed 05-03-PLAN.md
+Plan: 4 of 4 in current phase
+Status: Phase 5 Complete
+Last activity: 2026-02-18 — Completed 05-04-PLAN.md
 
-Progress: [██████░░░░] 63%
+Progress: [██████░░░░] 64%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17
+- Total plans completed: 18
 - Average duration: 7min
-- Total execution time: 1.92 hours
+- Total execution time: 2.12 hours
 
 **By Phase:**
 
@@ -31,11 +31,11 @@ Progress: [██████░░░░] 63%
 | 02 | 3/3 | 18min | 6min |
 | 03 | 3/3 | 35min | 12min |
 | 04 | 4/4 | 24min | 6min |
-| 05 | 3/4 | 24min | 8min |
+| 05 | 4/4 | 36min | 9min |
 
 **Recent Trend:**
-- Last 5 plans: 04-03 (3min), 04-04 (1min), 05-01 (7min), 05-02 (12min), 05-03 (5min)
-- Trend: Pipeline integration (3 tasks, 12 files) completed in 5min; clean orchestration of existing pieces
+- Last 5 plans: 04-04 (1min), 05-01 (7min), 05-02 (12min), 05-03 (5min), 05-04 (12min)
+- Trend: Integration test plan took 12min; found and fixed 2 compiler bugs (void main exit code, forward declaration ordering)
 
 *Updated after each plan completion*
 
@@ -119,6 +119,8 @@ Recent decisions affecting current work:
 - [Phase 05]: If entry function returns integer, use as exit code; otherwise return 0
 - [Phase 05]: CLI outputs CompileResult as JSON to stdout for machine-readable agent integration
 - [Phase 05]: TypeCheckFailed maps to 422 (HTTP) / exit code 2 (CLI)
+- [Phase 05]: Main wrapper always generated (entry renamed to __lmlang_main) to ensure i32 @main() for C runtime
+- [Phase 05]: Forward-declare all function signatures before compiling bodies (handles HashMap iteration order)
 
 ### Pending Todos
 
@@ -132,6 +134,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-19
-Stopped at: Completed 05-03-PLAN.md
-Resume file: .planning/phases/05-llvm-compilation-pipeline/05-03-SUMMARY.md
+Last session: 2026-02-18
+Stopped at: Completed 05-04-PLAN.md (Phase 5 complete)
+Resume file: .planning/phases/05-llvm-compilation-pipeline/05-04-SUMMARY.md
