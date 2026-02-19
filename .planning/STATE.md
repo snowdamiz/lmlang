@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 5 of 9 (LLVM Compilation Pipeline)
-Plan: 1 of 4 in current phase
+Plan: 2 of 4 in current phase
 Status: Executing Phase 5
-Last activity: 2026-02-18 — Completed 05-01-PLAN.md
+Last activity: 2026-02-19 — Completed 05-02-PLAN.md
 
-Progress: [██████░░░░] 56%
+Progress: [██████░░░░] 59%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 15
+- Total plans completed: 16
 - Average duration: 7min
-- Total execution time: 1.64 hours
+- Total execution time: 1.84 hours
 
 **By Phase:**
 
@@ -31,11 +31,11 @@ Progress: [██████░░░░] 56%
 | 02 | 3/3 | 18min | 6min |
 | 03 | 3/3 | 35min | 12min |
 | 04 | 4/4 | 24min | 6min |
-| 05 | 1/4 | 7min | 7min |
+| 05 | 2/4 | 19min | 10min |
 
 **Recent Trend:**
-- Last 5 plans: 04-01 (5min), 04-02 (15min), 04-03 (3min), 04-04 (1min), 05-01 (7min)
-- Trend: LLVM codegen foundation plan took 7min including inkwell compilation; consistent with average
+- Last 5 plans: 04-02 (15min), 04-03 (3min), 04-04 (1min), 05-01 (7min), 05-02 (12min)
+- Trend: Per-function codegen with 39 ops took 12min; heavier plan but inline with complexity
 
 *Updated after each plan completion*
 
@@ -111,6 +111,10 @@ Recent decisions affecting current work:
 - [Phase 05]: Direct libc calls (printf/fprintf/exit) for I/O rather than separate runtime library
 - [Phase 05]: lmlang_runtime_error emitted as LLVM IR function body with switch on error kind
 - [Phase 05]: Unsigned comparison (ULT) for bounds checking to catch negative indices
+- [Phase 05]: Topological sort uses both data AND control edges for correct ordering of side-effect nodes (Print before Return)
+- [Phase 05]: Integer add/sub/mul use LLVM overflow intrinsics (sadd/ssub/smul.with.overflow) for checked arithmetic
+- [Phase 05]: Closures use {fn_ptr, env_ptr} struct pair with stack-allocated environment; CaptureAccess uses GEP into env struct
+- [Phase 05]: AggregateValueEnum from build_insert_value converted via explicit match helper (not blanket Into)
 
 ### Pending Todos
 
@@ -124,6 +128,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-18
-Stopped at: Completed 05-01-PLAN.md
-Resume file: .planning/phases/05-llvm-compilation-pipeline/05-01-SUMMARY.md
+Last session: 2026-02-19
+Stopped at: Completed 05-02-PLAN.md
+Resume file: .planning/phases/05-llvm-compilation-pipeline/05-02-SUMMARY.md
