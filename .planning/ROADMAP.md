@@ -53,7 +53,7 @@ This milestone closes the core capability gap: agents currently route through fi
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 14. Action Protocol and Planner Contract | 0/0 | Planned | - |
+| 14. Action Protocol and Planner Contract | 1/3 | In Progress | - |
 | 15. Generic Graph Build Executor | 0/0 | Planned | - |
 | 16. Verify/Compile Repair Loop | 0/0 | Planned | - |
 | 17. Acceptance Benchmarks and Attempt Visibility | 0/0 | Planned | - |

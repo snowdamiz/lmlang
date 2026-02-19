@@ -9,8 +9,8 @@
 ### Natural-Language Goal to Plan
 
 - [ ] **AUT-01**: User can submit a natural-language build request and receive a structured autonomous execution attempt instead of a chat-only response.
-- [ ] **AUT-02**: Planner output must conform to a versioned JSON schema that is validated server-side before any execution.
-- [ ] **AUT-03**: Planner can decompose a request into multi-step graph/tool actions spanning more than one function or edit batch.
+- [x] **AUT-02**: Planner output must conform to a versioned JSON schema that is validated server-side before any execution.
+- [x] **AUT-03**: Planner can decompose a request into multi-step graph/tool actions spanning more than one function or edit batch.
 
 ### Generic Autonomous Execution
 
@@ -46,8 +46,8 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | AUT-01 | Phase 14 | Planned |
-| AUT-02 | Phase 14 | Planned |
-| AUT-03 | Phase 14 | Planned |
+| AUT-02 | Phase 14 | Complete (14-01) |
+| AUT-03 | Phase 14 | Complete (14-01) |
 | AUT-04 | Phase 15 | Planned |
 | AUT-05 | Phase 15 | Planned |
 | AUT-06 | Phase 15 | Planned |
