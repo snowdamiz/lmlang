@@ -117,12 +117,13 @@ Plans:
   3. Data structures can have invariant contracts checked at module boundaries
   4. Property-based tests are auto-generated from contracts and verify graph behavior across randomized input ranges
   5. After editing a single function in a multi-function program, only that function and its dependents recompile (not the entire program)
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [x] 06-01-PLAN.md — Contract node types (Precondition/Postcondition/Invariant), interpreter contract checking, codegen filtering, contract-aware hashing
-- [ ] 06-02-PLAN.md — Property-based testing harness with random input generation and API endpoint
-- [ ] 06-03-PLAN.md — Incremental compilation with dirty tracking, per-function object caching, and dirty query API
+- [x] 06-02-PLAN.md — Property-based testing harness with random input generation and API endpoint
+- [x] 06-03-PLAN.md — Incremental compilation with dirty tracking, per-function object caching, and dirty query API
+- [ ] 06-04-PLAN.md — Gap closure: wire module-boundary invariant checking, update REQUIREMENTS.md
 
 ### Phase 7: Multi-Agent Concurrency
 **Goal**: Multiple AI agents can simultaneously read and edit the program graph with consistency guarantees preventing corruption
@@ -183,7 +184,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 3. Type Checking & Graph Interpreter | 2/3 | Complete    | 2026-02-18 |
 | 4. AI Agent Tool API | 3/4 | Complete    | 2026-02-18 |
 | 5. LLVM Compilation Pipeline | 4/4 | Complete    | 2026-02-19 |
-| 6. Full Contract System & Incremental Compilation | 3/3 | Complete   | 2026-02-19 |
+| 6. Full Contract System & Incremental Compilation | 3/4 | In Progress   | - |
 | 7. Multi-Agent Concurrency | 0/? | Not started | - |
 | 8. Dual-Layer Semantic Architecture | 0/? | Not started | - |
 | 9. Human Observability | 0/? | Not started | - |
