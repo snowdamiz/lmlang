@@ -39,7 +39,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **CNTR-02**: Functions support pre-conditions as contract nodes checked at function entry
 - [ ] **CNTR-03**: Functions support post-conditions as contract nodes checked at function return
 - [ ] **CNTR-04**: Data structures support invariants checked at module boundaries
-- [ ] **CNTR-05**: Property-based tests auto-generated from contracts to verify graph behavior across input ranges
+- [x] **CNTR-05**: Property-based tests auto-generated from contracts to verify graph behavior across input ranges
 
 ### Execution & Compilation
 
@@ -128,7 +128,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | CNTR-02 | Phase 6 | Pending |
 | CNTR-03 | Phase 6 | Pending |
 | CNTR-04 | Phase 6 | Pending |
-| CNTR-05 | Phase 6 | Pending |
+| CNTR-05 | Phase 6 | Complete |
 | EXEC-01 | Phase 3 | Complete |
 | EXEC-02 | Phase 5 | Complete |
 | EXEC-03 | Phase 5 | Complete |
