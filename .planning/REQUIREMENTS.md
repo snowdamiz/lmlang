@@ -20,8 +20,8 @@
 
 ### Verification, Compile, and Repair
 
-- [ ] **AUT-07**: After each mutation batch, verify runs automatically and feeds diagnostics back into the next planning step.
-- [ ] **AUT-08**: Compile and optional run results are captured and can trigger targeted repair iterations when failures occur.
+- [x] **AUT-07**: After each mutation batch, verify runs automatically and feeds diagnostics back into the next planning step.
+- [x] **AUT-08**: Compile and optional run results are captured and can trigger targeted repair iterations when failures occur.
 
 ### Acceptance and Observability
 
@@ -51,8 +51,8 @@
 | AUT-04 | Phase 15 | Complete (15-01, 15-03) |
 | AUT-05 | Phase 15 | Complete (15-02, 15-03) |
 | AUT-06 | Phase 15 | Complete (15-01, 15-02, 15-03) |
-| AUT-07 | Phase 16 | Planned |
-| AUT-08 | Phase 16 | Planned |
+| AUT-07 | Phase 16 | Complete (16-01) |
+| AUT-08 | Phase 16 | Complete (16-01) |
 | AUT-09 | Phase 17 | Planned |
 | AUT-10 | Phase 17 | Planned |
 | AUT-11 | Phase 17 | Planned |
