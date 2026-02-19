@@ -691,3 +691,169 @@ fn test_o2_optimization_with_nested_calls() {
     assert_eq!(exit_code, 0);
     assert!(stdout.trim().contains("12"), "O2: expected '12', got: '{}'", stdout);
 }
+
+// ===========================================================================
+// Task 2: Type checker rejection before codegen
+// ===========================================================================
+
+#[test]
+fn test_invalid_graph_rejected_before_execution() {
+    // Build a graph with a type mismatch: BinaryArith(Add) with Bool and I32 inputs.
+    // The compile pipeline should catch this (either via type checker or LLVM verification)
+    // and return an error rather than producing a broken binary.
+    let mut graph = ProgramGraph::new("test");
+    let root = graph.modules.root_id();
+
+    let func_id = graph
+        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .unwrap();
+
+    let c_bool = graph.add_core_op(
+        ComputeOp::Const { value: ConstValue::Bool(true) },
+        func_id,
+    ).unwrap();
+    let c_i32 = graph.add_core_op(
+        ComputeOp::Const { value: ConstValue::I32(5) },
+        func_id,
+    ).unwrap();
+    let add = graph.add_core_op(
+        ComputeOp::BinaryArith { op: ArithOp::Add },
+        func_id,
+    ).unwrap();
+    let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+
+    // Wire Bool -> add port 0, I32 -> add port 1 (type mismatch)
+    graph.add_data_edge(c_bool, add, 0, 0, TypeId::BOOL).unwrap();
+    graph.add_data_edge(c_i32, add, 0, 1, TypeId::I32).unwrap();
+    graph.add_data_edge(add, ret, 0, 0, TypeId::I32).unwrap();
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let options = CompileOptions {
+        output_dir: temp_dir.path().to_path_buf(),
+        opt_level: OptLevel::O0,
+        target_triple: None,
+        debug_symbols: false,
+        entry_function: None,
+    };
+
+    let result = compile(&graph, &options);
+    assert!(
+        result.is_err(),
+        "compile should fail for graph with mismatched types"
+    );
+    // Error could be TypeCheckFailed or LlvmError depending on what the checker catches
+    let err = result.unwrap_err();
+    let err_msg = format!("{:?}", err);
+    assert!(
+        err_msg.contains("TypeCheck") || err_msg.contains("Llvm") || err_msg.contains("type"),
+        "error should relate to type issues, got: {}",
+        err_msg
+    );
+}
+
+// ===========================================================================
+// Task 2: Struct operations
+// ===========================================================================
+
+#[test]
+fn test_struct_create_and_get() {
+    // Build: create struct { i32, i32 } with values (10, 20), get field 0, print it
+    use indexmap::IndexMap;
+    use lmlang_core::types::StructDef;
+
+    let mut graph = ProgramGraph::new("test");
+    let root = graph.modules.root_id();
+
+    // Register a struct type with two I32 fields
+    let struct_type_id = graph.types.register(lmlang_core::types::LmType::Struct(StructDef {
+        name: "Point".into(),
+        type_id: TypeId(100), // placeholder, will be overwritten
+        fields: IndexMap::from([
+            ("x".into(), TypeId::I32),
+            ("y".into(), TypeId::I32),
+        ]),
+        module: root,
+        visibility: Visibility::Public,
+    }));
+
+    let func_id = graph
+        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .unwrap();
+
+    let c10 = graph.add_core_op(
+        ComputeOp::Const { value: ConstValue::I32(10) },
+        func_id,
+    ).unwrap();
+    let c20 = graph.add_core_op(
+        ComputeOp::Const { value: ConstValue::I32(20) },
+        func_id,
+    ).unwrap();
+    let create = graph.add_structured_op(
+        StructuredOp::StructCreate { type_id: struct_type_id },
+        func_id,
+    ).unwrap();
+    let get = graph.add_structured_op(
+        StructuredOp::StructGet { field_index: 0 },
+        func_id,
+    ).unwrap();
+    let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
+    let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+
+    // Wire: c10 -> create port 0, c20 -> create port 1
+    graph.add_data_edge(c10, create, 0, 0, TypeId::I32).unwrap();
+    graph.add_data_edge(c20, create, 0, 1, TypeId::I32).unwrap();
+    // create -> get port 0 (struct value)
+    graph.add_data_edge(create, get, 0, 0, struct_type_id).unwrap();
+    // get -> print port 0 (field 0 = I32)
+    graph.add_data_edge(get, print, 0, 0, TypeId::I32).unwrap();
+    graph.add_control_edge(print, ret, None).unwrap();
+
+    let (stdout, _stderr, exit_code) = compile_and_run(&graph, OptLevel::O0);
+    assert_eq!(exit_code, 0);
+    assert!(
+        stdout.trim().contains("10"),
+        "stdout should contain '10' (field 0 of struct), got: '{}'",
+        stdout
+    );
+}
+
+// ===========================================================================
+// Task 2: Multiple prints
+// ===========================================================================
+
+#[test]
+fn test_multiple_prints_sequential() {
+    // Build: print(1), print(2), print(3), return
+    let mut graph = ProgramGraph::new("test");
+    let root = graph.modules.root_id();
+
+    let func_id = graph
+        .add_function("main".into(), root, vec![], TypeId::UNIT, Visibility::Public)
+        .unwrap();
+
+    let c1 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(1) }, func_id).unwrap();
+    let c2 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(2) }, func_id).unwrap();
+    let c3 = graph.add_core_op(ComputeOp::Const { value: ConstValue::I32(3) }, func_id).unwrap();
+    let p1 = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
+    let p2 = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
+    let p3 = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
+    let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+
+    graph.add_data_edge(c1, p1, 0, 0, TypeId::I32).unwrap();
+    graph.add_data_edge(c2, p2, 0, 0, TypeId::I32).unwrap();
+    graph.add_data_edge(c3, p3, 0, 0, TypeId::I32).unwrap();
+
+    // Chain prints with control edges for ordering
+    graph.add_control_edge(p1, p2, None).unwrap();
+    graph.add_control_edge(p2, p3, None).unwrap();
+    graph.add_control_edge(p3, ret, None).unwrap();
+
+    let (stdout, _stderr, exit_code) = compile_and_run(&graph, OptLevel::O0);
+    assert_eq!(exit_code, 0);
+
+    let lines: Vec<&str> = stdout.trim().lines().collect();
+    assert_eq!(lines.len(), 3, "expected 3 lines of output, got: {:?}", lines);
+    assert_eq!(lines[0].trim(), "1");
+    assert_eq!(lines[1].trim(), "2");
+    assert_eq!(lines[2].trim(), "3");
+}
