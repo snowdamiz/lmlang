@@ -341,6 +341,19 @@ impl<'g> Interpreter<'g> {
                 self.call_stack.push(frame);
                 self.state = ExecutionState::Running;
             }
+            Ok(EvalResult::ContractViolated { violation }) => {
+                // Record trace before halting
+                if let Some(trace) = &mut self.trace {
+                    trace.push(TraceEntry {
+                        node_id,
+                        op_description: format!("{:?}", op),
+                        inputs: inputs.clone(),
+                        output: None,
+                    });
+                }
+
+                self.state = ExecutionState::ContractViolation { violation };
+            }
             Err(error) => {
                 self.state = ExecutionState::Error {
                     partial_results: self.collect_partial_results(),
@@ -917,6 +930,97 @@ impl<'g> Interpreter<'g> {
                 };
                 Ok(EvalResult::Value(value))
             }
+            // Contract ops: check condition and halt with ContractViolation if false
+            ComputeNodeOp::Core(
+                ComputeOp::Precondition { message }
+                | ComputeOp::Postcondition { message }
+            ) => {
+                // Port 0 is the condition (Bool)
+                let condition = inputs
+                    .iter()
+                    .find(|(p, _)| *p == 0)
+                    .map(|(_, v)| v);
+                match condition {
+                    Some(Value::Bool(true)) => Ok(EvalResult::NoValue),
+                    Some(Value::Bool(false)) => {
+                        let kind = match op {
+                            ComputeNodeOp::Core(ComputeOp::Precondition { .. }) => {
+                                crate::contracts::ContractKind::Precondition
+                            }
+                            _ => crate::contracts::ContractKind::Postcondition,
+                        };
+                        let frame = self.call_stack.last().ok_or_else(|| {
+                            RuntimeError::InternalError {
+                                message: "no call frame for contract check".into(),
+                            }
+                        })?;
+                        let counterexample = crate::contracts::check::collect_counterexample(
+                            self.graph,
+                            node_id,
+                            &frame.node_values,
+                        );
+                        Ok(EvalResult::ContractViolated {
+                            violation: crate::contracts::ContractViolation {
+                                kind,
+                                contract_node: node_id,
+                                function_id: frame.function_id,
+                                message: message.clone(),
+                                inputs: frame.arguments.clone(),
+                                actual_return: None,
+                                counterexample,
+                            },
+                        })
+                    }
+                    Some(other) => Err(RuntimeError::TypeMismatchAtRuntime {
+                        node: node_id,
+                        expected: "Bool".into(),
+                        got: other.type_name().into(),
+                    }),
+                    None => {
+                        // No condition input -- treat as passed
+                        Ok(EvalResult::NoValue)
+                    }
+                }
+            }
+            ComputeNodeOp::Core(ComputeOp::Invariant { message, .. }) => {
+                let condition = inputs
+                    .iter()
+                    .find(|(p, _)| *p == 0)
+                    .map(|(_, v)| v);
+                match condition {
+                    Some(Value::Bool(true)) => Ok(EvalResult::NoValue),
+                    Some(Value::Bool(false)) => {
+                        let frame = self.call_stack.last().ok_or_else(|| {
+                            RuntimeError::InternalError {
+                                message: "no call frame for contract check".into(),
+                            }
+                        })?;
+                        let counterexample = crate::contracts::check::collect_counterexample(
+                            self.graph,
+                            node_id,
+                            &frame.node_values,
+                        );
+                        Ok(EvalResult::ContractViolated {
+                            violation: crate::contracts::ContractViolation {
+                                kind: crate::contracts::ContractKind::Invariant,
+                                contract_node: node_id,
+                                function_id: frame.function_id,
+                                message: message.clone(),
+                                inputs: frame.arguments.clone(),
+                                actual_return: None,
+                                counterexample,
+                            },
+                        })
+                    }
+                    Some(other) => Err(RuntimeError::TypeMismatchAtRuntime {
+                        node: node_id,
+                        expected: "Bool".into(),
+                        got: other.type_name().into(),
+                    }),
+                    None => Ok(EvalResult::NoValue),
+                }
+            }
+
             // Delegate all other ops (arithmetic, logic, comparison, structured) to eval_op
             _ => {
                 match eval_op(op, inputs, node_id, self.graph)? {
@@ -1262,6 +1366,10 @@ pub(crate) enum EvalResult {
         args: Vec<Value>,
         return_target: (NodeId, u16),
         captures: Vec<Value>,
+    },
+    /// A contract check failed -- halt with violation.
+    ContractViolated {
+        violation: crate::contracts::ContractViolation,
     },
 }
 

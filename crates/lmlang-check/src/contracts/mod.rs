@@ -5,6 +5,7 @@
 //! Violations produce structured diagnostics with counterexample values.
 
 pub mod check;
+pub mod property;
 
 use lmlang_core::id::{FunctionId, NodeId};
 use serde::{Deserialize, Serialize};
