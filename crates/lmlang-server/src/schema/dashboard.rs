@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::schema::agent_control::{
-    AgentChatMessageView, ExecutionSummaryView, PlannerOutcomeView,
+    AgentChatMessageView, ExecutionDiagnosticsView, ExecutionSummaryView, PlannerOutcomeView,
 };
 
 /// Request body for the dashboard AI chat endpoint.
@@ -37,6 +37,9 @@ pub struct DashboardAiChatResponse {
     /// Latest autonomous execution metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution: Option<ExecutionSummaryView>,
+    /// Compact diagnostics summary for the latest autonomous attempt failure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<ExecutionDiagnosticsView>,
 }
 
 /// Query params for OpenRouter connectivity status checks.

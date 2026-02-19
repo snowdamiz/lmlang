@@ -98,6 +98,18 @@ pub struct ExecutionStopReasonView {
     pub detail: Option<serde_json::Value>,
 }
 
+/// Compact diagnostics metadata projected for operator triage.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExecutionDiagnosticsView {
+    pub class: String,
+    pub retryable: bool,
+    pub summary: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub key_diagnostics: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<serde_json::Value>,
+}
+
 /// Compact action result row from latest autonomous attempt.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExecutionActionView {
@@ -107,6 +119,8 @@ pub struct ExecutionActionView {
     pub summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<ExecutionDiagnosticsView>,
 }
 
 /// Compact attempt-level execution evidence.
@@ -119,6 +133,8 @@ pub struct ExecutionSummaryView {
     pub succeeded_actions: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<ExecutionActionView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<ExecutionDiagnosticsView>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_reason: Option<ExecutionStopReasonView>,
 }

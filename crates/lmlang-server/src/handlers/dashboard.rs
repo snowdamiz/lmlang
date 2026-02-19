@@ -9,7 +9,9 @@ use lmlang_storage::ProgramId;
 use crate::concurrency::{AgentId, AgentLlmConfig};
 use crate::error::ApiError;
 use crate::project_agent::ProjectAgentMessage;
-use crate::schema::agent_control::{AgentChatMessageView, ExecutionSummaryView};
+use crate::schema::agent_control::{
+    AgentChatMessageView, ExecutionDiagnosticsView, ExecutionSummaryView,
+};
 use crate::schema::dashboard::{
     DashboardAiChatRequest, DashboardAiChatResponse, DashboardOpenRouterStatusQuery,
     DashboardOpenRouterStatusResponse,
@@ -106,6 +108,7 @@ pub async fn ai_chat(
     let mut transcript = None;
     let mut planner = None;
     let mut execution: Option<ExecutionSummaryView> = None;
+    let mut diagnostics: Option<ExecutionDiagnosticsView> = None;
 
     let reply = if lower.contains("create project") || lower.contains("new project") {
         let name = parse_project_name(&message, &lower)
@@ -176,6 +179,9 @@ pub async fn ai_chat(
             .await
             .map_err(ApiError::BadRequest)?;
         execution = to_latest_execution_view(&session);
+        diagnostics = execution
+            .as_ref()
+            .and_then(|value| value.diagnostics.clone());
         state
             .autonomous_runner
             .start(state.clone(), program_id, agent_id);
@@ -198,6 +204,9 @@ pub async fn ai_chat(
             .await
             .map_err(ApiError::BadRequest)?;
         execution = to_latest_execution_view(&session);
+        diagnostics = execution
+            .as_ref()
+            .and_then(|value| value.diagnostics.clone());
         state.autonomous_runner.stop(program_id, agent_id);
         ctx.selected_project_agent_id = Some(session.agent_id);
         actions.push(format!(
@@ -232,6 +241,9 @@ pub async fn ai_chat(
         transcript = Some(to_transcript_view(&session.transcript));
         planner = planner_outcome;
         execution = to_latest_execution_view(&session);
+        diagnostics = execution
+            .as_ref()
+            .and_then(|value| value.diagnostics.clone());
         actions.push(format!(
             "Delegated chat to agent {} for project {}.",
             agent_id.0, program_id
@@ -249,6 +261,7 @@ pub async fn ai_chat(
         transcript,
         planner,
         execution,
+        diagnostics,
     }))
 }
 

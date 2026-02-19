@@ -16,10 +16,10 @@ use crate::error::ApiError;
 use crate::project_agent::{ProjectAgentMessage, ProjectAgentSession};
 use crate::schema::agent_control::{
     AgentChatMessageView, ChatWithProgramAgentRequest, ChatWithProgramAgentResponse,
-    ExecutionActionView, ExecutionStopReasonView, ExecutionSummaryView, ListProgramAgentsResponse,
-    PlannerActionView, PlannerFailureView, PlannerOutcomeView, PlannerValidationErrorView,
-    ProgramAgentActionResponse, ProgramAgentDetailResponse, ProgramAgentSessionView,
-    StartProgramAgentRequest, StopProgramAgentRequest,
+    ExecutionActionView, ExecutionDiagnosticsView, ExecutionStopReasonView, ExecutionSummaryView,
+    ListProgramAgentsResponse, PlannerActionView, PlannerFailureView, PlannerOutcomeView,
+    PlannerValidationErrorView, ProgramAgentActionResponse, ProgramAgentDetailResponse,
+    ProgramAgentSessionView, StartProgramAgentRequest, StopProgramAgentRequest,
 };
 use crate::schema::compile::CompileRequest;
 use crate::schema::mutations::{CreatedEntity, Mutation, ProposeEditRequest};
@@ -525,7 +525,7 @@ async fn plan_non_command_prompt(
         })
         .unwrap_or_default();
 
-    let outcome = plan_for_prompt(&agent.llm, user_message, &transcript_context).await;
+    let outcome = plan_for_prompt(&agent.llm, user_message, &transcript_context, None).await;
     let view = planner_outcome_to_view(&outcome);
     let reply = planner_outcome_to_reply(&outcome);
     Ok((reply, view))
@@ -612,6 +612,20 @@ pub(crate) fn to_latest_execution_view(
     session: &ProjectAgentSession,
 ) -> Option<ExecutionSummaryView> {
     let latest = session.execution_attempts.last()?;
+    let diagnostics = latest
+        .action_results
+        .iter()
+        .rev()
+        .find_map(|action| {
+            action.diagnostics.as_ref().or_else(|| {
+                action
+                    .error
+                    .as_ref()
+                    .and_then(|error| error.diagnostics.as_ref())
+            })
+        })
+        .map(to_diagnostics_view);
+
     Some(ExecutionSummaryView {
         attempt: latest.attempt,
         max_attempts: latest.max_attempts,
@@ -627,8 +641,19 @@ pub(crate) fn to_latest_execution_view(
                 status: enum_to_string(&action.status),
                 summary: action.summary.clone(),
                 error_code: action.error.as_ref().map(|err| enum_to_string(&err.code)),
+                diagnostics: action
+                    .diagnostics
+                    .as_ref()
+                    .or_else(|| {
+                        action
+                            .error
+                            .as_ref()
+                            .and_then(|error| error.diagnostics.as_ref())
+                    })
+                    .map(to_diagnostics_view),
             })
             .collect(),
+        diagnostics,
         stop_reason: latest
             .stop_reason
             .as_ref()
@@ -644,6 +669,18 @@ fn to_stop_reason_view(
         code: enum_to_string(&reason.code),
         message: reason.message.clone(),
         detail: reason.detail.clone(),
+    }
+}
+
+fn to_diagnostics_view(
+    diagnostics: &crate::schema::autonomy_execution::AutonomyDiagnostics,
+) -> ExecutionDiagnosticsView {
+    ExecutionDiagnosticsView {
+        class: enum_to_string(&diagnostics.class),
+        retryable: diagnostics.retryable,
+        summary: diagnostics.summary.clone(),
+        key_diagnostics: diagnostics.messages.clone(),
+        detail: diagnostics.detail.clone(),
     }
 }
 
