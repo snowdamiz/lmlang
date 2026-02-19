@@ -60,8 +60,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Multi-Agent Concurrency
 
-- [ ] **MAGENT-01**: Multiple AI agents can read and edit the graph concurrently through the tool API
-- [ ] **MAGENT-02**: Region-level locking prevents conflicting edits to the same subgraph
+- [x] **MAGENT-01**: Multiple AI agents can read and edit the graph concurrently through the tool API
+- [x] **MAGENT-02**: Region-level locking prevents conflicting edits to the same subgraph
 - [ ] **MAGENT-03**: Optimistic concurrency with conflict detection and rollback for overlapping edits
 - [ ] **MAGENT-04**: Verification runs on merge to ensure global invariants hold after concurrent modifications
 
@@ -140,8 +140,8 @@ Deferred to future release. Tracked but not in current roadmap.
 | DUAL-05 | Phase 8 | Pending |
 | DUAL-06 | Phase 8 | Pending |
 | DUAL-07 | Phase 8 | Pending |
-| MAGENT-01 | Phase 7 | Pending |
-| MAGENT-02 | Phase 7 | Pending |
+| MAGENT-01 | Phase 7 | Complete |
+| MAGENT-02 | Phase 7 | Complete |
 | MAGENT-03 | Phase 7 | Pending |
 | MAGENT-04 | Phase 7 | Pending |
 | VIZ-01 | Phase 9 | Pending |
