@@ -16,9 +16,10 @@ use crate::error::ApiError;
 use crate::project_agent::{ProjectAgentMessage, ProjectAgentSession};
 use crate::schema::agent_control::{
     AgentChatMessageView, ChatWithProgramAgentRequest, ChatWithProgramAgentResponse,
-    ListProgramAgentsResponse, ProgramAgentActionResponse, ProgramAgentDetailResponse,
+    ExecutionActionView, ExecutionStopReasonView, ExecutionSummaryView, ListProgramAgentsResponse,
     PlannerActionView, PlannerFailureView, PlannerOutcomeView, PlannerValidationErrorView,
-    ProgramAgentSessionView, StartProgramAgentRequest, StopProgramAgentRequest,
+    ProgramAgentActionResponse, ProgramAgentDetailResponse, ProgramAgentSessionView,
+    StartProgramAgentRequest, StopProgramAgentRequest,
 };
 use crate::schema::compile::CompileRequest;
 use crate::schema::mutations::{CreatedEntity, Mutation, ProposeEditRequest};
@@ -168,6 +169,7 @@ pub async fn chat_with_program_agent(
         reply,
         transcript: to_transcript_view(&session.transcript),
         planner,
+        execution: to_latest_execution_view(&session),
     }))
 }
 
@@ -244,6 +246,13 @@ async fn ensure_program_exists(state: &AppState, program_id: i64) -> Result<(), 
 }
 
 fn to_session_view(session: ProjectAgentSession) -> ProgramAgentSessionView {
+    let execution = to_latest_execution_view(&session);
+    let stop_reason = session
+        .stop_reason
+        .as_ref()
+        .map(to_stop_reason_view)
+        .or_else(|| execution.as_ref().and_then(|value| value.stop_reason.clone()));
+
     ProgramAgentSessionView {
         program_id: session.program_id,
         agent_id: session.agent_id.0,
@@ -255,6 +264,8 @@ fn to_session_view(session: ProjectAgentSession) -> ProgramAgentSessionView {
         stopped_at: session.stopped_at,
         updated_at: session.updated_at,
         message_count: session.transcript.len(),
+        stop_reason,
+        execution,
     }
 }
 
@@ -588,6 +599,48 @@ fn planner_outcome_to_view(outcome: &PlannerOutcome) -> PlannerOutcomeView {
             }),
         },
     }
+}
+
+pub(crate) fn to_latest_execution_view(session: &ProjectAgentSession) -> Option<ExecutionSummaryView> {
+    let latest = session.execution_attempts.last()?;
+    Some(ExecutionSummaryView {
+        attempt: latest.attempt,
+        max_attempts: latest.max_attempts,
+        planner_status: latest.planner_status.clone(),
+        action_count: latest.action_count,
+        succeeded_actions: latest.succeeded_actions,
+        actions: latest
+            .action_results
+            .iter()
+            .map(|action| ExecutionActionView {
+                action_index: action.action_index,
+                kind: action.kind.clone(),
+                status: enum_to_string(&action.status),
+                summary: action.summary.clone(),
+                error_code: action.error.as_ref().map(|err| enum_to_string(&err.code)),
+            })
+            .collect(),
+        stop_reason: latest
+            .stop_reason
+            .as_ref()
+            .map(to_stop_reason_view)
+            .or_else(|| session.stop_reason.as_ref().map(to_stop_reason_view)),
+    })
+}
+
+fn to_stop_reason_view(reason: &crate::schema::autonomy_execution::StopReason) -> ExecutionStopReasonView {
+    ExecutionStopReasonView {
+        code: enum_to_string(&reason.code),
+        message: reason.message.clone(),
+        detail: reason.detail.clone(),
+    }
+}
+
+fn enum_to_string<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|raw| raw.as_str().map(ToString::to_string))
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn validation_code_to_string(

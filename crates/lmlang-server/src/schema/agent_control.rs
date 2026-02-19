@@ -24,6 +24,12 @@ pub struct ProgramAgentSessionView {
     pub stopped_at: Option<String>,
     pub updated_at: String,
     pub message_count: usize,
+    /// Machine-readable terminal stop reason (if any).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<ExecutionStopReasonView>,
+    /// Compact summary of latest autonomous execution attempt metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution: Option<ExecutionSummaryView>,
 }
 
 /// Lists all agents assigned to a project.
@@ -71,6 +77,9 @@ pub struct ChatWithProgramAgentResponse {
     /// Planner outcome metadata for non-command prompts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub planner: Option<PlannerOutcomeView>,
+    /// Latest autonomous execution metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution: Option<ExecutionSummaryView>,
 }
 
 /// Detailed session view for one assigned agent.
@@ -78,6 +87,40 @@ pub struct ChatWithProgramAgentResponse {
 pub struct ProgramAgentDetailResponse {
     pub session: ProgramAgentSessionView,
     pub transcript: Vec<AgentChatMessageView>,
+}
+
+/// Structured stop reason metadata projected for operators.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExecutionStopReasonView {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<serde_json::Value>,
+}
+
+/// Compact action result row from latest autonomous attempt.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExecutionActionView {
+    pub action_index: usize,
+    pub kind: String,
+    pub status: String,
+    pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+}
+
+/// Compact attempt-level execution evidence.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExecutionSummaryView {
+    pub attempt: u32,
+    pub max_attempts: u32,
+    pub planner_status: String,
+    pub action_count: usize,
+    pub succeeded_actions: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<ExecutionActionView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<ExecutionStopReasonView>,
 }
 
 /// Structured planner outcome for chat responses.

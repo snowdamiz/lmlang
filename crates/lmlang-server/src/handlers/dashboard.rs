@@ -9,14 +9,14 @@ use lmlang_storage::ProgramId;
 use crate::concurrency::{AgentId, AgentLlmConfig};
 use crate::error::ApiError;
 use crate::project_agent::ProjectAgentMessage;
-use crate::schema::agent_control::AgentChatMessageView;
+use crate::schema::agent_control::{AgentChatMessageView, ExecutionSummaryView};
 use crate::schema::dashboard::{
     DashboardAiChatRequest, DashboardAiChatResponse, DashboardOpenRouterStatusQuery,
     DashboardOpenRouterStatusResponse,
 };
 use crate::state::AppState;
 
-use super::agent_control::execute_program_agent_chat;
+use super::agent_control::{execute_program_agent_chat, to_latest_execution_view};
 
 /// Serves the top-level unified dashboard shell.
 ///
@@ -105,6 +105,7 @@ pub async fn ai_chat(
     let mut actions = Vec::new();
     let mut transcript = None;
     let mut planner = None;
+    let mut execution: Option<ExecutionSummaryView> = None;
 
     let reply = if lower.contains("create project") || lower.contains("new project") {
         let name = parse_project_name(&message, &lower)
@@ -174,6 +175,7 @@ pub async fn ai_chat(
             .start(program_id, agent_id, goal.clone())
             .await
             .map_err(ApiError::BadRequest)?;
+        execution = to_latest_execution_view(&session);
         state
             .autonomous_runner
             .start(state.clone(), program_id, agent_id);
@@ -195,6 +197,7 @@ pub async fn ai_chat(
             )
             .await
             .map_err(ApiError::BadRequest)?;
+        execution = to_latest_execution_view(&session);
         state.autonomous_runner.stop(program_id, agent_id);
         ctx.selected_project_agent_id = Some(session.agent_id);
         actions.push(format!(
@@ -228,6 +231,7 @@ pub async fn ai_chat(
         ctx.selected_project_agent_id = Some(session.agent_id);
         transcript = Some(to_transcript_view(&session.transcript));
         planner = planner_outcome;
+        execution = to_latest_execution_view(&session);
         actions.push(format!(
             "Delegated chat to agent {} for project {}.",
             agent_id.0, program_id
@@ -244,6 +248,7 @@ pub async fn ai_chat(
         actions,
         transcript,
         planner,
+        execution,
     }))
 }
 
