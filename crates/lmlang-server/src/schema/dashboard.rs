@@ -29,6 +29,7 @@ pub struct DashboardAiChatResponse {
     pub actions: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript: Option<Vec<AgentChatMessageView>>,
+    /// Planner outcome metadata for non-command prompts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub planner: Option<PlannerOutcomeView>,
 }

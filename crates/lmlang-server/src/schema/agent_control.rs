@@ -68,6 +68,7 @@ pub struct ChatWithProgramAgentResponse {
     pub session: ProgramAgentSessionView,
     pub reply: String,
     pub transcript: Vec<AgentChatMessageView>,
+    /// Planner outcome metadata for non-command prompts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub planner: Option<PlannerOutcomeView>,
 }

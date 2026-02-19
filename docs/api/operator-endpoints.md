@@ -54,9 +54,19 @@ Response:
   "selected_agent_id": "uuid",
   "selected_project_agent_id": "uuid",
   "actions": ["..."],
-  "transcript": []
+  "transcript": [],
+  "planner": {
+    "status": "accepted",
+    "version": "2026-02-19",
+    "actions": [
+      { "kind": "inspect", "summary": "query='calculator plan', max_results=4" },
+      { "kind": "verify", "summary": "scope=Some(Local)" }
+    ]
+  }
 }
 ```
+
+`planner` is omitted for explicit command-style prompts and included for non-command planner-routed prompts.
 
 Supported orchestration prompts include:
 - `create project <name>`
@@ -84,7 +94,7 @@ Natural-language build requests are represented by a versioned planner envelope:
     {
       "type": "mutate_batch",
       "request": {
-        "mutations": [{ "type": "add_function", "name": "add", "module": 0, "params": [], "return_type": "I32", "visibility": "Public" }],
+        "mutations": [{ "type": "AddFunction", "name": "add", "module": 0, "params": [], "return_type": 3, "visibility": "Public" }],
         "dry_run": false
       }
     },
@@ -255,13 +265,49 @@ Command-style prompts:
 - `run program`: compiles (if needed) and executes produced binary.
 
 Non-command prompts:
-- If provider config is complete (`provider` + `model` + `api_key`), server calls configured OpenAI-compatible `/chat/completions` endpoint.
-- If provider config is absent, server returns local fallback guidance text.
+- Route through planner contract path (`AUT-01`) and return structured planner metadata in response payloads.
+- Planner success includes normalized action summaries (`planner.status = accepted`, `planner.actions[]`).
+- Planner failure includes explicit reason code/message (`planner.status = failed`, `planner.failure.code`, `planner.failure.message`).
+- No plain external-chat fallback is used for non-command execution intent.
+
+Success response shape (non-command prompt):
+
+```json
+{
+  "success": true,
+  "reply": "Planner accepted 2 action(s) for goal 'build a simple calculator'...",
+  "planner": {
+    "status": "accepted",
+    "version": "2026-02-19",
+    "actions": [
+      { "kind": "inspect", "summary": "query='calculator requirements', max_results=5" },
+      { "kind": "verify", "summary": "scope=Some(Full)" }
+    ]
+  }
+}
+```
+
+Failure response shape (invalid planner JSON):
+
+```json
+{
+  "success": true,
+  "reply": "Planner rejected request [planner_invalid_json]: ...",
+  "planner": {
+    "status": "failed",
+    "failure": {
+      "code": "planner_invalid_json",
+      "message": "Planner response was not valid JSON: ...",
+      "retryable": true
+    }
+  }
+}
+```
 
 Autonomous run behavior:
 - Starting a build run (`POST /programs/{id}/agents/{agent_id}/start`) spawns a background loop.
 - The loop can execute known build commands (`create hello world program`, `compile program`, `run program`) without waiting for a chat turn.
-- If the provider response asks for clarification, the loop records the question, applies a default assumption, and continues autonomously.
+- For non-hello-world goals, the loop now evaluates planner outcomes and records structured acceptance/failure notes.
 
 ## Observe integration
 
