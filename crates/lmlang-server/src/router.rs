@@ -73,6 +73,11 @@ pub fn build_router(state: AppState) -> Router {
             "/programs/{id}/compile",
             post(handlers::compile::compile_program),
         )
+        // Property testing (CNTR-05)
+        .route(
+            "/programs/{id}/property-test",
+            post(handlers::contracts::property_test),
+        )
         // History (STORE-03)
         .route(
             "/programs/{id}/history",

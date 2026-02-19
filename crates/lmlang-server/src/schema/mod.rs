@@ -5,6 +5,7 @@
 
 pub mod common;
 pub mod compile;
+pub mod contracts;
 pub mod diagnostics;
 pub mod history;
 pub mod mutations;

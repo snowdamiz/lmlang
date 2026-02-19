@@ -1069,6 +1069,151 @@ impl ProgramService {
     }
 
     // -----------------------------------------------------------------------
+    // Property testing method (CNTR-05)
+    // -----------------------------------------------------------------------
+
+    /// Runs property-based tests on a function's contracts.
+    ///
+    /// Converts JSON seed inputs to interpreter Values, builds a PropertyTestConfig,
+    /// runs the harness, and converts results to the API response format.
+    pub fn property_test(
+        &self,
+        request: crate::schema::contracts::PropertyTestRequest,
+    ) -> Result<crate::schema::contracts::PropertyTestResponse, ApiError> {
+        use lmlang_check::contracts::property::{PropertyTestConfig, run_property_tests};
+        use crate::schema::contracts::{
+            ContractViolationView, PropertyTestFailureView, PropertyTestResponse,
+            TraceEntryView,
+        };
+
+        let func_id = FunctionId(request.function_id);
+
+        // Verify function exists and get param types for seed conversion
+        let func_def = self
+            .graph
+            .get_function(func_id)
+            .ok_or_else(|| {
+                ApiError::NotFound(format!("function {} not found", request.function_id))
+            })?;
+
+        let param_types: Vec<Option<TypeId>> = func_def
+            .params
+            .iter()
+            .map(|(_, t)| Some(*t))
+            .collect();
+
+        // Convert JSON seeds to interpreter Values
+        let mut seeds = Vec::new();
+        for seed_json in &request.seeds {
+            let mut seed_values = Vec::new();
+            for (i, json_val) in seed_json.iter().enumerate() {
+                let type_hint = param_types.get(i).copied().flatten();
+                let value = json_to_value(json_val, type_hint);
+                seed_values.push(value);
+            }
+            seeds.push(seed_values);
+        }
+
+        // Generate random seed if not provided
+        let random_seed = request.random_seed.unwrap_or_else(|| {
+            use std::time::SystemTime;
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(42)
+        });
+
+        let config = PropertyTestConfig {
+            seeds,
+            iterations: request.iterations,
+            random_seed,
+        };
+
+        let result = run_property_tests(&self.graph, func_id, config)
+            .map_err(|e| ApiError::InternalError(format!("property test failed: {}", e)))?;
+
+        // Convert to API response
+        let failures: Vec<PropertyTestFailureView> = result
+            .failures
+            .iter()
+            .map(|f| {
+                let violation = &f.violation;
+                let violation_view = ContractViolationView {
+                    kind: match violation.kind {
+                        lmlang_check::contracts::ContractKind::Precondition => "precondition".to_string(),
+                        lmlang_check::contracts::ContractKind::Postcondition => "postcondition".to_string(),
+                        lmlang_check::contracts::ContractKind::Invariant => "invariant".to_string(),
+                    },
+                    contract_node: violation.contract_node.0,
+                    function_id: violation.function_id.0,
+                    message: violation.message.clone(),
+                    inputs: violation
+                        .inputs
+                        .iter()
+                        .filter_map(|v| serde_json::to_value(v).ok())
+                        .collect(),
+                    actual_return: violation
+                        .actual_return
+                        .as_ref()
+                        .and_then(|v| serde_json::to_value(v).ok()),
+                    counterexample: violation
+                        .counterexample
+                        .iter()
+                        .filter_map(|(nid, v)| {
+                            serde_json::to_value(v).ok().map(|jv| (nid.0, jv))
+                        })
+                        .collect(),
+                };
+
+                let trace = if request.trace_failures {
+                    Some(
+                        f.trace
+                            .iter()
+                            .map(|t| TraceEntryView {
+                                node_id: t.node_id,
+                                op: t.op_description.clone(),
+                                inputs: t
+                                    .inputs
+                                    .iter()
+                                    .map(|(port, val)| {
+                                        (*port, serde_json::to_value(val).unwrap_or_default())
+                                    })
+                                    .collect(),
+                                output: t
+                                    .output
+                                    .as_ref()
+                                    .and_then(|v| serde_json::to_value(v).ok()),
+                            })
+                            .collect(),
+                    )
+                } else {
+                    None
+                };
+
+                PropertyTestFailureView {
+                    inputs: f
+                        .inputs
+                        .iter()
+                        .filter_map(|v| serde_json::to_value(v).ok())
+                        .collect(),
+                    violation: violation_view,
+                    trace,
+                }
+            })
+            .collect();
+
+        let failed = failures.len() as u32;
+
+        Ok(PropertyTestResponse {
+            total_run: result.total_run,
+            passed: result.passed,
+            failed,
+            random_seed: result.random_seed,
+            failures,
+        })
+    }
+
+    // -----------------------------------------------------------------------
     // Compile method (EXEC-03/04)
     // -----------------------------------------------------------------------
 

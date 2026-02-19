@@ -893,3 +893,197 @@ async fn store03_list_history_and_checkpoints() {
     assert!(checkpoint["timestamp"].is_string(), "checkpoint should have timestamp");
     assert!(checkpoint["edit_position"].is_number(), "checkpoint should have edit_position");
 }
+
+// ===========================================================================
+// CNTR-05: Property-based contract testing
+// ===========================================================================
+
+/// Test 14: Property test on function with precondition finds violations.
+///
+/// Builds checked_fn(a: i32) -> i32 with precondition (a >= 0), where the
+/// function body returns a. Random i32 inputs will include negatives, causing
+/// precondition violations that the property test harness should detect.
+#[tokio::test]
+async fn cntr05_property_test_finds_violations() {
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    // Create checked_fn(a: i32) -> i32
+    let func_id = add_typed_function(
+        &app, pid, "checked_fn",
+        json!([["a", 3]]),
+        3,
+    ).await;
+
+    // Add parameter node
+    let param_a = insert_param(&app, pid, func_id, 0).await;
+
+    // Build: Const(0), Compare(Ge, a, 0), Precondition, Return
+    // Precondition -> Return (control edge ensures contract checked before return)
+    let const_zero_id = param_a + 1;
+    let cmp_node_id = param_a + 2;
+    let precond_id = param_a + 3;
+    let ret_id = param_a + 4;
+
+    let body = batch_mutate(&app, pid, json!([
+        // Const(0)
+        {
+            "type": "InsertNode",
+            "op": {"Core": {"Const": {"value": {"I32": 0}}}},
+            "owner": func_id
+        },
+        // Compare(Ge)
+        {
+            "type": "InsertNode",
+            "op": {"Core": {"Compare": {"op": "Ge"}}},
+            "owner": func_id
+        },
+        // Precondition
+        {
+            "type": "InsertNode",
+            "op": {"Core": {"Precondition": {"message": "a must be non-negative"}}},
+            "owner": func_id
+        },
+        // Return
+        {
+            "type": "InsertNode",
+            "op": {"Core": "Return"},
+            "owner": func_id
+        },
+        // Data edges: a -> Compare port 0, Const(0) -> Compare port 1
+        {
+            "type": "AddEdge",
+            "from": param_a, "to": cmp_node_id,
+            "source_port": 0, "target_port": 0,
+            "value_type": 3
+        },
+        {
+            "type": "AddEdge",
+            "from": const_zero_id, "to": cmp_node_id,
+            "source_port": 0, "target_port": 1,
+            "value_type": 3
+        },
+        // Data edge: Compare -> Precondition port 0 (condition)
+        {
+            "type": "AddEdge",
+            "from": cmp_node_id, "to": precond_id,
+            "source_port": 0, "target_port": 0,
+            "value_type": 0
+        },
+        // Data edge: a -> Return port 0
+        {
+            "type": "AddEdge",
+            "from": param_a, "to": ret_id,
+            "source_port": 0, "target_port": 0,
+            "value_type": 3
+        },
+        // Control edge: Precondition -> Return (ensures contract checked before return)
+        {
+            "type": "AddControlEdge",
+            "from": precond_id, "to": ret_id,
+            "branch_index": null
+        }
+    ])).await;
+    assert!(body["valid"].as_bool().unwrap(), "function build should be valid: {:?}", body);
+    assert!(body["committed"].as_bool().unwrap(), "should commit: {:?}", body);
+
+    // Run property test with seed containing a known negative
+    let (status, test_body) = post_json(
+        &app,
+        &format!("/programs/{}/property-test", pid),
+        json!({
+            "function_id": func_id,
+            "seeds": [[-1], [0], [5]],
+            "iterations": 50,
+            "random_seed": 42,
+            "trace_failures": true
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "property test request failed: {:?}", test_body);
+
+    // Should have total_run = 3 seeds + 50 random = 53
+    assert_eq!(test_body["total_run"].as_u64().unwrap(), 53);
+
+    // Should find at least the seed(-1) failure
+    assert!(test_body["failed"].as_u64().unwrap() >= 1, "expected at least 1 failure");
+
+    let failures = test_body["failures"].as_array().unwrap();
+    assert!(!failures.is_empty(), "should have failure details");
+
+    // First failure should be from seed input -1
+    // Values are serialized as {"I32": -1} (serde Value enum format)
+    let first_failure = &failures[0];
+    assert_eq!(
+        first_failure["inputs"][0]["I32"].as_i64().unwrap(), -1,
+        "first failure input should be -1"
+    );
+
+    // Violation details
+    let violation = &first_failure["violation"];
+    assert_eq!(violation["kind"].as_str().unwrap(), "precondition");
+    assert_eq!(
+        violation["message"].as_str().unwrap(),
+        "a must be non-negative"
+    );
+    assert!(violation["contract_node"].is_number(), "should have contract_node");
+    assert!(violation["function_id"].is_number(), "should have function_id");
+    assert!(violation["counterexample"].is_array(), "should have counterexample");
+
+    // Trace should be present (trace_failures=true)
+    assert!(first_failure["trace"].is_array(), "trace should be present");
+    assert!(!first_failure["trace"].as_array().unwrap().is_empty(), "trace should have entries");
+
+    // Random seed should be returned for reproducibility
+    assert_eq!(test_body["random_seed"].as_u64().unwrap(), 42);
+}
+
+/// Test 15: Property test with all valid inputs reports zero failures.
+#[tokio::test]
+async fn cntr05_property_test_all_pass() {
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    // Create simple_fn(a: i32) -> i32 with NO contracts
+    let func_id = add_typed_function(
+        &app, pid, "simple_fn",
+        json!([["a", 3]]),
+        3,
+    ).await;
+
+    let param_a = insert_param(&app, pid, func_id, 0).await;
+
+    let ret_id = param_a + 1;
+    let body = batch_mutate(&app, pid, json!([
+        {
+            "type": "InsertNode",
+            "op": {"Core": "Return"},
+            "owner": func_id
+        },
+        {
+            "type": "AddEdge",
+            "from": param_a, "to": ret_id,
+            "source_port": 0, "target_port": 0,
+            "value_type": 3
+        }
+    ])).await;
+    assert!(body["valid"].as_bool().unwrap(), "function build should be valid: {:?}", body);
+
+    let (status, test_body) = post_json(
+        &app,
+        &format!("/programs/{}/property-test", pid),
+        json!({
+            "function_id": func_id,
+            "seeds": [[0], [42], [-1]],
+            "iterations": 20,
+            "random_seed": 99
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "property test request failed: {:?}", test_body);
+
+    assert_eq!(test_body["total_run"].as_u64().unwrap(), 23);
+    assert_eq!(test_body["passed"].as_u64().unwrap(), 23);
+    assert_eq!(test_body["failed"].as_u64().unwrap(), 0);
+    assert!(test_body["failures"].as_array().unwrap().is_empty());
+}

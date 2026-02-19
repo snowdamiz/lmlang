@@ -5,6 +5,7 @@
 //! No business logic lives in handlers.
 
 pub mod compile;
+pub mod contracts;
 pub mod history;
 pub mod mutations;
 pub mod programs;
