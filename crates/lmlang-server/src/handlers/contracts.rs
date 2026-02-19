@@ -17,7 +17,7 @@ pub async fn property_test(
     Path(program_id): Path<i64>,
     Json(req): Json<PropertyTestRequest>,
 ) -> Result<Json<PropertyTestResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {

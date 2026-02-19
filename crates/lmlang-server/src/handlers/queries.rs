@@ -30,7 +30,7 @@ pub async fn program_overview(
     State(state): State<AppState>,
     Path(program_id): Path<i64>,
 ) -> Result<Json<ProgramOverviewResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {
@@ -52,7 +52,7 @@ pub async fn get_node(
     Path((program_id, node_id)): Path<(i64, u32)>,
     Query(params): Query<DetailQuery>,
 ) -> Result<Json<NodeView>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {
@@ -75,7 +75,7 @@ pub async fn get_function(
     Path((program_id, func_id)): Path<(i64, u32)>,
     Query(params): Query<DetailQuery>,
 ) -> Result<Json<GetFunctionResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {
@@ -98,7 +98,7 @@ pub async fn neighborhood(
     Path(program_id): Path<i64>,
     Json(req): Json<NeighborhoodRequest>,
 ) -> Result<Json<NeighborhoodResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {
@@ -121,7 +121,7 @@ pub async fn search(
     Path(program_id): Path<i64>,
     Json(req): Json<SearchRequest>,
 ) -> Result<Json<SearchResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {

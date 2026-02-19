@@ -15,7 +15,7 @@ pub async fn compile_program(
     Path(program_id): Path<i64>,
     Json(request): Json<CompileRequest>,
 ) -> Result<Json<CompileResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {
@@ -39,7 +39,7 @@ pub async fn dirty_status(
     State(state): State<AppState>,
     Path(program_id): Path<i64>,
 ) -> Result<Json<DirtyStatusResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {

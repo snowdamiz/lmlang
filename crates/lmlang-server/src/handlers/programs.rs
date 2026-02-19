@@ -15,7 +15,7 @@ use crate::state::AppState;
 pub async fn list_programs(
     State(state): State<AppState>,
 ) -> Result<Json<ProgramListResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
     let programs = service.list_programs()?;
     Ok(Json(ProgramListResponse { programs }))
 }
@@ -27,7 +27,7 @@ pub async fn create_program(
     State(state): State<AppState>,
     Json(req): Json<CreateProgramRequest>,
 ) -> Result<Json<CreateProgramResponse>, ApiError> {
-    let mut service = state.service.lock().unwrap();
+    let mut service = state.service.lock().await;
     let id = service.create_program(&req.name)?;
     Ok(Json(CreateProgramResponse {
         id,
@@ -42,7 +42,7 @@ pub async fn delete_program(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let mut service = state.service.lock().unwrap();
+    let mut service = state.service.lock().await;
     service.delete_program(lmlang_storage::ProgramId(id))?;
     Ok(Json(serde_json::json!({ "success": true })))
 }
@@ -54,7 +54,7 @@ pub async fn load_program(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let mut service = state.service.lock().unwrap();
+    let mut service = state.service.lock().await;
     service.load_program(lmlang_storage::ProgramId(id))?;
     Ok(Json(serde_json::json!({
         "success": true,

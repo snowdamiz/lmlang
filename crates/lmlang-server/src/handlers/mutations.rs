@@ -18,7 +18,7 @@ pub async fn propose_edit(
     Path(program_id): Path<i64>,
     Json(req): Json<ProposeEditRequest>,
 ) -> Result<Json<ProposeEditResponse>, ApiError> {
-    let mut service = state.service.lock().unwrap();
+    let mut service = state.service.lock().await;
 
     // Verify the request targets the active program
     let active_id = service.program_id();

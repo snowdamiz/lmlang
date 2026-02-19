@@ -18,7 +18,7 @@ pub async fn list_history(
     State(state): State<AppState>,
     Path(program_id): Path<i64>,
 ) -> Result<Json<ListHistoryResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {
@@ -39,7 +39,7 @@ pub async fn undo(
     State(state): State<AppState>,
     Path(program_id): Path<i64>,
 ) -> Result<Json<UndoResponse>, ApiError> {
-    let mut service = state.service.lock().unwrap();
+    let mut service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {
@@ -60,7 +60,7 @@ pub async fn redo(
     State(state): State<AppState>,
     Path(program_id): Path<i64>,
 ) -> Result<Json<RedoResponse>, ApiError> {
-    let mut service = state.service.lock().unwrap();
+    let mut service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {
@@ -82,7 +82,7 @@ pub async fn create_checkpoint(
     Path(program_id): Path<i64>,
     Json(req): Json<CreateCheckpointRequest>,
 ) -> Result<Json<CreateCheckpointResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {
@@ -103,7 +103,7 @@ pub async fn list_checkpoints(
     State(state): State<AppState>,
     Path(program_id): Path<i64>,
 ) -> Result<Json<ListCheckpointsResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {
@@ -124,7 +124,7 @@ pub async fn restore_checkpoint(
     State(state): State<AppState>,
     Path((program_id, name)): Path<(i64, String)>,
 ) -> Result<Json<RestoreCheckpointResponse>, ApiError> {
-    let mut service = state.service.lock().unwrap();
+    let mut service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {
@@ -146,7 +146,7 @@ pub async fn diff_versions(
     Path(program_id): Path<i64>,
     Json(req): Json<DiffRequest>,
 ) -> Result<Json<DiffResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {

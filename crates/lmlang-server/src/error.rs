@@ -8,6 +8,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 
+use crate::concurrency::lock_manager::{LockDenial, LockError};
 use crate::schema::diagnostics::DiagnosticError;
 
 /// Structured error detail in API responses.
@@ -47,6 +48,22 @@ pub enum ApiError {
     /// Resource conflict (409).
     #[error("conflict: {0}")]
     Conflict(String),
+
+    /// Lock denied -- another agent holds the lock (423 Locked).
+    #[error("lock denied")]
+    LockDenied(LockDenial),
+
+    /// Lock required but not held (428 Precondition Required).
+    #[error("lock required: {0}")]
+    LockRequired(String),
+
+    /// Missing X-Agent-Id header (400).
+    #[error("agent required: {0}")]
+    AgentRequired(String),
+
+    /// Too many retries (429).
+    #[error("too many retries: {0}")]
+    TooManyRetries(String),
 }
 
 impl IntoResponse for ApiError {
@@ -88,6 +105,41 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 ApiErrorDetail {
                     code: "CONFLICT".to_string(),
+                    message: msg.clone(),
+                    details: None,
+                },
+            ),
+            ApiError::LockDenied(denial) => (
+                StatusCode::LOCKED,
+                ApiErrorDetail {
+                    code: "LOCK_DENIED".to_string(),
+                    message: format!(
+                        "function {} is locked by another agent",
+                        denial.function_id.0
+                    ),
+                    details: serde_json::to_value(denial).ok(),
+                },
+            ),
+            ApiError::LockRequired(msg) => (
+                StatusCode::from_u16(428).unwrap_or(StatusCode::BAD_REQUEST),
+                ApiErrorDetail {
+                    code: "LOCK_REQUIRED".to_string(),
+                    message: msg.clone(),
+                    details: None,
+                },
+            ),
+            ApiError::AgentRequired(msg) => (
+                StatusCode::BAD_REQUEST,
+                ApiErrorDetail {
+                    code: "AGENT_REQUIRED".to_string(),
+                    message: msg.clone(),
+                    details: None,
+                },
+            ),
+            ApiError::TooManyRetries(msg) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                ApiErrorDetail {
+                    code: "TOO_MANY_RETRIES".to_string(),
                     message: msg.clone(),
                     details: None,
                 },
@@ -138,6 +190,25 @@ impl From<lmlang_storage::StorageError> for ApiError {
                 ApiError::Conflict(err.to_string())
             }
             _ => ApiError::InternalError(err.to_string()),
+        }
+    }
+}
+
+impl From<LockError> for ApiError {
+    fn from(err: LockError) -> Self {
+        match err {
+            LockError::AlreadyHeldBy(denial) => ApiError::LockDenied(denial),
+            LockError::NotHeld {
+                function_id,
+                agent_id,
+            } => ApiError::BadRequest(format!(
+                "agent {} does not hold lock on function {}",
+                agent_id, function_id
+            )),
+            LockError::FunctionNotFound(func_id) => {
+                ApiError::NotFound(format!("function {} not found", func_id))
+            }
+            LockError::BatchPartialFailure { failed, .. } => ApiError::LockDenied(failed),
         }
     }
 }

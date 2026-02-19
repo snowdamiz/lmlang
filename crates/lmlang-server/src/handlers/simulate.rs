@@ -15,7 +15,7 @@ pub async fn simulate(
     Path(program_id): Path<i64>,
     Json(req): Json<SimulateRequest>,
 ) -> Result<Json<SimulateResponse>, ApiError> {
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     let active_id = service.program_id();
     if active_id.0 != program_id {

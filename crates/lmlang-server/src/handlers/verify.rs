@@ -40,7 +40,7 @@ pub async fn verify(
         }
     };
 
-    let service = state.service.lock().unwrap();
+    let service = state.service.lock().await;
 
     // Verify the request targets the active program
     let active_id = service.program_id();
