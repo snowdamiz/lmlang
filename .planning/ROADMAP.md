@@ -8,7 +8,7 @@ This milestone closes the core capability gap: agents currently route through fi
 
 - [x] **Phase 14: Action Protocol and Planner Contract** - Define and implement a strict, versioned planning schema and routing contract for autonomous build intents (completed 2026-02-19)
 - [x] **Phase 15: Generic Graph Build Executor** - Implement deterministic execution of planner-produced mutation/tool action sequences with bounded retries and stop reasons (completed 2026-02-19)
-- [ ] **Phase 16: Verify/Compile Repair Loop** - Integrate automatic verification/compile feedback and targeted repair iteration logic
+- [x] **Phase 16: Verify/Compile Repair Loop** - Integrate automatic verification/compile feedback and targeted repair iteration logic (completed 2026-02-19)
 - [ ] **Phase 17: Acceptance Benchmarks and Attempt Visibility** - Validate autonomy on calculator and other benchmark prompts with clear timeline observability
 
 ## Phase Details
@@ -55,5 +55,5 @@ This milestone closes the core capability gap: agents currently route through fi
 |-------|----------------|--------|-----------|
 | 14. Action Protocol and Planner Contract | 3/3 | Complete | 2026-02-19 |
 | 15. Generic Graph Build Executor | 3/3 | Complete    | 2026-02-19 |
-| 16. Verify/Compile Repair Loop | 2/3 | In Progress | - |
+| 16. Verify/Compile Repair Loop | 3/3 | Complete | 2026-02-19 |
 | 17. Acceptance Benchmarks and Attempt Visibility | 0/0 | Planned | - |

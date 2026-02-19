@@ -9,12 +9,12 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 
 ## Current Position
 
-Phase: 16 - Verify/Compile Repair Loop
-Plan: 02/03 complete
-Status: Phase 16 in progress; completed 16-02 targeted repair loop integration
-Last activity: 2026-02-19 - Executed 16-02 (diagnostics-aware replanning + operator projection), ready for 16-03
+Phase: 17 - Acceptance Benchmarks and Attempt Visibility
+Plan: 00/00 planned
+Status: Phase 16 complete (verified); ready to plan phase 17 benchmark acceptance flow
+Last activity: 2026-02-19 - Executed and verified Phase 16 (plans 16-01 through 16-03)
 
-Progress: [#######---] 63%
+Progress: [########--] 70%
 
 ## Performance Metrics
 
@@ -26,6 +26,7 @@ Progress: [#######---] 63%
 - 2026-02-19 - Phase 15 / Plan 03 complete (11 min, 2 tasks, 2 files, commits: 5ebfa9d, c5ed032)
 - 2026-02-19 - Phase 16 / Plan 01 complete (34 min, 2 tasks, 4 files, commits: aee09d4, bb6c286)
 - 2026-02-19 - Phase 16 / Plan 02 complete (9 min, 2 tasks, 7 files, commits: 1417bbb, 1554cab)
+- 2026-02-19 - Phase 16 / Plan 03 complete (6 min, 2 tasks, 3 files, commits: 2855795, 7683583)
 
 ## Accumulated Context
 
@@ -48,14 +49,16 @@ Progress: [#######---] 63%
 - [Phase 16]: Verify-gate and compile failure diagnostics persist in session attempt history for targeted repair planning
 - [Phase 16]: Retry planner prompts now include deterministic `Latest execution diagnostics` context from latest failed attempt evidence
 - [Phase 16]: Agent and dashboard execution projections now expose optional diagnostics summaries for operator triage
+- [Phase 16]: Deterministic phase16 integration tests now protect diagnostics feedback chaining and terminal detail behavior
+- [Phase 16]: Operator endpoint docs now document AUT-07/AUT-08 diagnostics fields and troubleshooting flow
 
 ### Pending Todos
 
-- Design phase16 integration tests for verify+compile feedback chaining
+- Define phase17 benchmark prompts and acceptance assertions for calculator + two additional tasks
 
 ### Blockers/Concerns
 
-- Main risk: phase16-03 integration assertions may reveal additional diagnostics-shaping needs across benchmark scenarios
+- Main risk: phase17 benchmark prompts may require tighter success/quality thresholds for reliable acceptance scoring
 
 ### Quick Tasks Completed
 
@@ -66,5 +69,5 @@ Progress: [#######---] 63%
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed `16-02-PLAN.md`; next action is executing `16-03-PLAN.md`
+Stopped at: Completed `16-03-PLAN.md` and `16-VERIFICATION.md`; next action is planning phase 17
 Resume file: None

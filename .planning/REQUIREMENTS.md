@@ -51,8 +51,8 @@
 | AUT-04 | Phase 15 | Complete (15-01, 15-03) |
 | AUT-05 | Phase 15 | Complete (15-02, 15-03) |
 | AUT-06 | Phase 15 | Complete (15-01, 15-02, 15-03) |
-| AUT-07 | Phase 16 | Complete (16-01) |
-| AUT-08 | Phase 16 | Complete (16-01) |
+| AUT-07 | Phase 16 | Complete (16-01, 16-02, 16-03) |
+| AUT-08 | Phase 16 | Complete (16-01, 16-02, 16-03) |
 | AUT-09 | Phase 17 | Planned |
 | AUT-10 | Phase 17 | Planned |
 | AUT-11 | Phase 17 | Planned |
