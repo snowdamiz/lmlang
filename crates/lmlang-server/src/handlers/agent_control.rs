@@ -251,7 +251,11 @@ fn to_session_view(session: ProjectAgentSession) -> ProgramAgentSessionView {
         .stop_reason
         .as_ref()
         .map(to_stop_reason_view)
-        .or_else(|| execution.as_ref().and_then(|value| value.stop_reason.clone()));
+        .or_else(|| {
+            execution
+                .as_ref()
+                .and_then(|value| value.stop_reason.clone())
+        });
 
     ProgramAgentSessionView {
         program_id: session.program_id,
@@ -550,7 +554,10 @@ fn planner_outcome_to_reply(outcome: &PlannerOutcome) -> String {
             )
         }
         PlannerOutcome::Rejected(rejected) => {
-            let mut message = format!("Planner rejected request [{}]: {}", rejected.code, rejected.message);
+            let mut message = format!(
+                "Planner rejected request [{}]: {}",
+                rejected.code, rejected.message
+            );
             if !rejected.validation_errors.is_empty() {
                 let first = &rejected.validation_errors[0];
                 message.push_str(&format!(
@@ -601,7 +608,9 @@ fn planner_outcome_to_view(outcome: &PlannerOutcome) -> PlannerOutcomeView {
     }
 }
 
-pub(crate) fn to_latest_execution_view(session: &ProjectAgentSession) -> Option<ExecutionSummaryView> {
+pub(crate) fn to_latest_execution_view(
+    session: &ProjectAgentSession,
+) -> Option<ExecutionSummaryView> {
     let latest = session.execution_attempts.last()?;
     Some(ExecutionSummaryView {
         attempt: latest.attempt,
@@ -628,7 +637,9 @@ pub(crate) fn to_latest_execution_view(session: &ProjectAgentSession) -> Option<
     })
 }
 
-fn to_stop_reason_view(reason: &crate::schema::autonomy_execution::StopReason) -> ExecutionStopReasonView {
+fn to_stop_reason_view(
+    reason: &crate::schema::autonomy_execution::StopReason,
+) -> ExecutionStopReasonView {
     ExecutionStopReasonView {
         code: enum_to_string(&reason.code),
         message: reason.message.clone(),

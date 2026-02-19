@@ -238,7 +238,13 @@ fn planner_rejected_from_failure(
         AutonomyPlanFailureCode::ValidationFailed => "validation_failed",
     };
 
-    planner_rejected(code, &failure.message, failure.retryable, version, Vec::new())
+    planner_rejected(
+        code,
+        &failure.message,
+        failure.retryable,
+        version,
+        Vec::new(),
+    )
 }
 
 fn planner_rejected(
@@ -367,9 +373,10 @@ mod tests {
         match outcome {
             PlannerOutcome::Rejected(rejected) => {
                 assert_eq!(rejected.code, "planner_validation_failed");
-                assert!(rejected.validation_errors.iter().any(
-                    |e| e.field.as_deref() == Some("request.entry_function")
-                ));
+                assert!(rejected
+                    .validation_errors
+                    .iter()
+                    .any(|e| e.field.as_deref() == Some("request.entry_function")));
                 assert!(rejected
                     .validation_errors
                     .iter()

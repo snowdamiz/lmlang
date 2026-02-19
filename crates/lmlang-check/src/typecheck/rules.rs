@@ -1061,7 +1061,7 @@ mod tests {
     fn const_f64_output_type() {
         let (graph, func_id) = test_graph_with_function();
         let op = ComputeNodeOp::Core(ComputeOp::Const {
-            value: ConstValue::F64(3.14),
+            value: ConstValue::F64(std::f64::consts::PI),
         });
         let rule = resolve_type_rule(&op, &[], &graph, NodeId(0), func_id).unwrap();
         assert_eq!(rule.output_type, Some(TypeId::F64));

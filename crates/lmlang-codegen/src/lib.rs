@@ -28,9 +28,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// Maps directly to LLVM's `default<ON>` pass pipeline.
 /// Default is `O0` (no optimization, fastest compilation).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum OptLevel {
     /// No optimization (fastest compilation, easiest debugging).
+    #[default]
     O0,
     /// Basic optimizations (inlining, simple loop opts).
     O1,
@@ -38,12 +39,6 @@ pub enum OptLevel {
     O2,
     /// Aggressive optimizations (including vectorization).
     O3,
-}
-
-impl Default for OptLevel {
-    fn default() -> Self {
-        OptLevel::O0
-    }
 }
 
 /// Options controlling the compilation pipeline.

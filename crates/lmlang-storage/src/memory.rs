@@ -299,8 +299,8 @@ impl GraphStore for InMemoryStore {
             let tgt = NodeId::from(edge_ref.target());
             let src_node = graph.compute().node_weight(edge_ref.source());
             let tgt_node = graph.compute().node_weight(edge_ref.target());
-            if src_node.map_or(false, |n| n.owner == func_id)
-                || tgt_node.map_or(false, |n| n.owner == func_id)
+            if src_node.is_some_and(|n| n.owner == func_id)
+                || tgt_node.is_some_and(|n| n.owner == func_id)
             {
                 let eid = EdgeId(edge_ref.id().index() as u32);
                 stored
@@ -651,7 +651,7 @@ impl GraphStore for InMemoryStore {
         // Find nodes whose edges carry the given type
         // First collect node IDs that have edges with this type
         let mut node_ids_with_type = std::collections::HashSet::new();
-        for (_, (src, tgt, edge)) in &stored.edges {
+        for (src, tgt, edge) in stored.edges.values() {
             if edge.value_type() == Some(type_id) {
                 node_ids_with_type.insert(*src);
                 node_ids_with_type.insert(*tgt);

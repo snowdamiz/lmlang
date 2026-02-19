@@ -147,7 +147,7 @@ fn type_size_bytes(context: &Context, ty: BasicTypeEnum<'_>) -> u32 {
         BasicTypeEnum::IntType(t) => {
             let bits = t.get_bit_width();
             // Round up to next byte
-            (bits + 7) / 8
+            bits.div_ceil(8)
         }
         BasicTypeEnum::FloatType(t) => {
             // Check if it's f32 or f64 by comparing with known types

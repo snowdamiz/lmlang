@@ -285,8 +285,8 @@ mod tests {
             ConstValue::I16(1000),
             ConstValue::I32(100_000),
             ConstValue::I64(1_000_000_000),
-            ConstValue::F32(3.14),
-            ConstValue::F64(2.718281828),
+            ConstValue::F32(f64::from(std::f32::consts::PI)),
+            ConstValue::F64(std::f64::consts::E),
             ConstValue::Unit,
         ];
 

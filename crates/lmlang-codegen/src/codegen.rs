@@ -308,6 +308,7 @@ fn count_data_inputs(graph: &ProgramGraph, node_id: NodeId) -> usize {
 ///
 /// Returns the result value. If overflow is detected, branches to a runtime
 /// error block.
+#[allow(clippy::too_many_arguments)]
 fn emit_checked_int_arith<'ctx>(
     context: &'ctx Context,
     module: &Module<'ctx>,
@@ -1158,6 +1159,7 @@ fn emit_const<'ctx>(
 // Binary arithmetic emission
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn emit_binary_arith<'ctx>(
     context: &'ctx Context,
     module: &Module<'ctx>,
@@ -1481,11 +1483,8 @@ fn emit_loop<'ctx>(
     for edge in compute.edges_directed(idx, Direction::Outgoing) {
         if let FlowEdge::Control { branch_index } = edge.weight() {
             let target_nid = NodeId::from(edge.target());
-            match branch_index {
-                Some(0) => {
-                    basic_blocks.insert(target_nid, body_bb);
-                }
-                _ => {}
+            if let Some(0) = branch_index {
+                basic_blocks.insert(target_nid, body_bb);
             }
         }
     }
@@ -1523,15 +1522,16 @@ fn emit_match<'ctx>(
     let mut cases: Vec<(IntValue<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = Vec::new();
 
     for edge in compute.edges_directed(idx, Direction::Outgoing) {
-        if let FlowEdge::Control { branch_index } = edge.weight() {
-            if let Some(arm_idx) = branch_index {
-                let target_nid = NodeId::from(edge.target());
-                let arm_bb = context
-                    .append_basic_block(function, &format!("match_arm_{}_{}", node_id, arm_idx));
-                basic_blocks.insert(target_nid, arm_bb);
-                let case_val = disc_int.get_type().const_int(*arm_idx as u64, false);
-                cases.push((case_val, arm_bb));
-            }
+        if let FlowEdge::Control {
+            branch_index: Some(arm_idx),
+        } = edge.weight()
+        {
+            let target_nid = NodeId::from(edge.target());
+            let arm_bb =
+                context.append_basic_block(function, &format!("match_arm_{}_{}", node_id, arm_idx));
+            basic_blocks.insert(target_nid, arm_bb);
+            let case_val = disc_int.get_type().const_int(*arm_idx as u64, false);
+            cases.push((case_val, arm_bb));
         }
     }
 
@@ -1732,7 +1732,7 @@ fn build_env_struct_type<'ctx>(
         .map_err(|_| CodegenError::LlvmError("invalid function name encoding".into()))?;
 
     // Look up the FunctionDef by name
-    for (_, func_def) in graph.functions() {
+    for func_def in graph.functions().values() {
         if func_def.name == fn_name && func_def.is_closure {
             let capture_types: Vec<BasicTypeEnum<'ctx>> = func_def
                 .captures

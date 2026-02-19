@@ -761,8 +761,8 @@ impl GraphStore for SqliteStore {
             for edge_ref in graph.compute().edge_references() {
                 let src_node = graph.compute().node_weight(edge_ref.source());
                 let tgt_node = graph.compute().node_weight(edge_ref.target());
-                if src_node.map_or(false, |n| n.owner == func_id)
-                    || tgt_node.map_or(false, |n| n.owner == func_id)
+                if src_node.is_some_and(|n| n.owner == func_id)
+                    || tgt_node.is_some_and(|n| n.owner == func_id)
                 {
                     let edge_json = serde_json::to_string(edge_ref.weight())?;
                     stmt.execute(params![

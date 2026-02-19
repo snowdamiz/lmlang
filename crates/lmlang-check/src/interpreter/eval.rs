@@ -65,24 +65,24 @@ fn eval_core_op(
         ComputeOp::Compare { op: cmp_op } => {
             let lhs = get_input(inputs, 0, node_id)?;
             let rhs = get_input(inputs, 1, node_id)?;
-            Ok(Some(eval_compare(cmp_op, &lhs, &rhs, node_id)?))
+            Ok(Some(eval_compare(cmp_op, lhs, rhs, node_id)?))
         }
 
         ComputeOp::BinaryLogic { op: logic_op } => {
             let lhs = get_input(inputs, 0, node_id)?;
             let rhs = get_input(inputs, 1, node_id)?;
-            Ok(Some(eval_binary_logic(logic_op, &lhs, &rhs, node_id)?))
+            Ok(Some(eval_binary_logic(logic_op, lhs, rhs, node_id)?))
         }
 
         ComputeOp::Not => {
             let val = get_input(inputs, 0, node_id)?;
-            Ok(Some(eval_not(&val, node_id)?))
+            Ok(Some(eval_not(val, node_id)?))
         }
 
         ComputeOp::Shift { op: shift_op } => {
             let val = get_input(inputs, 0, node_id)?;
             let amount = get_input(inputs, 1, node_id)?;
-            Ok(Some(eval_shift(shift_op, &val, &amount, node_id)?))
+            Ok(Some(eval_shift(shift_op, val, amount, node_id)?))
         }
 
         // Control flow, function, memory, I/O, and closure ops are handled
@@ -205,7 +205,7 @@ fn eval_structured_op(
             let idx_val = get_input(inputs, 1, node_id)?;
             match arr {
                 Value::Array(elements) => {
-                    let idx = value_to_usize(&idx_val, node_id)?;
+                    let idx = value_to_usize(idx_val, node_id)?;
                     if idx >= elements.len() {
                         Err(RuntimeError::OutOfBoundsAccess {
                             node: node_id,
@@ -230,7 +230,7 @@ fn eval_structured_op(
             let new_val = get_input(inputs, 2, node_id)?;
             match arr {
                 Value::Array(elements) => {
-                    let idx = value_to_usize(&idx_val, node_id)?;
+                    let idx = value_to_usize(idx_val, node_id)?;
                     if idx >= elements.len() {
                         Err(RuntimeError::OutOfBoundsAccess {
                             node: node_id,
@@ -253,7 +253,7 @@ fn eval_structured_op(
 
         StructuredOp::Cast { target_type } => {
             let val = get_input(inputs, 0, node_id)?;
-            Ok(Some(eval_cast(&val, *target_type, node_id)?))
+            Ok(Some(eval_cast(val, *target_type, node_id)?))
         }
 
         StructuredOp::EnumCreate { variant_index, .. } => {
@@ -743,11 +743,7 @@ fn eval_cast(
 // ---------------------------------------------------------------------------
 
 /// Gets an input value by port number.
-fn get_input<'a>(
-    inputs: &'a [(u16, Value)],
-    port: u16,
-    node_id: NodeId,
-) -> Result<&'a Value, RuntimeError> {
+fn get_input(inputs: &[(u16, Value)], port: u16, node_id: NodeId) -> Result<&Value, RuntimeError> {
     inputs
         .iter()
         .find(|(p, _)| *p == port)

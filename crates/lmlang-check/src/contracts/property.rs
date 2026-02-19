@@ -13,7 +13,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
 use lmlang_core::graph::ProgramGraph;
-use lmlang_core::id::{FunctionId, NodeId};
+use lmlang_core::id::FunctionId;
 use lmlang_core::type_id::TypeId;
 
 use crate::contracts::ContractViolation;

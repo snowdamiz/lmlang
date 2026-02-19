@@ -796,7 +796,11 @@ mod tests {
     #[test]
     fn validation_accepts_multi_step_plan() {
         let result = valid_minimal_plan().validate();
-        assert!(result.valid, "expected valid plan, got: {:?}", result.errors);
+        assert!(
+            result.valid,
+            "expected valid plan, got: {:?}",
+            result.errors
+        );
     }
 
     #[test]

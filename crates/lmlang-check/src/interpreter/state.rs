@@ -447,19 +447,9 @@ impl<'g> Interpreter<'g> {
         &self.memory
     }
 
-    /// Returns a mutable reference to the interpreter's memory.
-    pub(crate) fn memory_mut(&mut self) -> &mut Vec<Value> {
-        &mut self.memory
-    }
-
     /// Returns the call stack depth.
     pub fn call_depth(&self) -> usize {
         self.call_stack.len()
-    }
-
-    /// Returns the program graph reference.
-    pub(crate) fn graph(&self) -> &'g ProgramGraph {
-        self.graph
     }
 
     /// Returns the config.
@@ -1078,9 +1068,9 @@ impl<'g> Interpreter<'g> {
                 .graph
                 .compute()
                 .edges_directed(node_idx, Direction::Outgoing)
-                .filter_map(|edge_ref| match edge_ref.weight() {
-                    FlowEdge::Data { .. } => Some((NodeId::from(edge_ref.target()), true)),
-                    FlowEdge::Control { .. } => Some((NodeId::from(edge_ref.target()), false)),
+                .map(|edge_ref| match edge_ref.weight() {
+                    FlowEdge::Data { .. } => (NodeId::from(edge_ref.target()), true),
+                    FlowEdge::Control { .. } => (NodeId::from(edge_ref.target()), false),
                 })
                 .collect();
 
@@ -1641,14 +1631,14 @@ mod tests {
             Value::I64(1_000_000)
         ));
         // F32: stored as f64, converted to f32
-        let f32_val = Value::from_const(&ConstValue::F32(3.14));
+        let f32_val = Value::from_const(&ConstValue::F32(f64::from(std::f32::consts::PI)));
         match f32_val {
-            Value::F32(v) => assert!((v - 3.14f32).abs() < 0.01),
+            Value::F32(v) => assert!((v - std::f32::consts::PI).abs() < 0.01),
             _ => panic!("Expected F32"),
         }
         assert!(matches!(
-            Value::from_const(&ConstValue::F64(2.718)),
-            Value::F64(v) if (v - 2.718).abs() < 0.001
+            Value::from_const(&ConstValue::F64(std::f64::consts::E)),
+            Value::F64(v) if (v - std::f64::consts::E).abs() < 0.001
         ));
         assert!(matches!(Value::from_const(&ConstValue::Unit), Value::Unit));
     }

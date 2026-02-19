@@ -674,11 +674,7 @@ impl ProgramGraph {
     pub fn function_nodes(&self, id: FunctionId) -> Vec<NodeId> {
         self.compute
             .node_indices()
-            .filter(|&idx| {
-                self.compute
-                    .node_weight(idx)
-                    .map_or(false, |n| n.owner == id)
-            })
+            .filter(|&idx| self.compute.node_weight(idx).is_some_and(|n| n.owner == id))
             .map(NodeId::from)
             .collect()
     }

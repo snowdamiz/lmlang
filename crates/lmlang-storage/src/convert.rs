@@ -340,12 +340,10 @@ fn rebuild_semantic_graph(
                 let src_idx = NodeIndex::<u32>::new(*source as usize);
                 let tgt_idx = NodeIndex::<u32>::new(*target as usize);
                 graph.add_edge(src_idx, tgt_idx, *weight);
-            } else {
-                if let Some(first_node) = sorted_nodes.first() {
-                    let idx = NodeIndex::<u32>::new(first_node.0 as usize);
-                    graph.add_edge(idx, idx, SemanticEdge::Contains);
-                    edge_gap_indices.push(i);
-                }
+            } else if let Some(first_node) = sorted_nodes.first() {
+                let idx = NodeIndex::<u32>::new(first_node.0 as usize);
+                graph.add_edge(idx, idx, SemanticEdge::Contains);
+                edge_gap_indices.push(i);
             }
         }
 

@@ -28,21 +28,19 @@ pub fn find_contract_nodes(
         .into_iter()
         .filter(|node_id| {
             if let Some(node) = graph.get_compute_node(*node_id) {
-                match (&node.op, kind) {
+                matches!(
+                    (&node.op, kind),
                     (
-                        lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Precondition { .. }),
+                        ComputeNodeOp::Core(ComputeOp::Precondition { .. }),
                         ContractKind::Precondition,
-                    ) => true,
-                    (
-                        lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Postcondition { .. }),
+                    ) | (
+                        ComputeNodeOp::Core(ComputeOp::Postcondition { .. }),
                         ContractKind::Postcondition,
-                    ) => true,
-                    (
-                        lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Invariant { .. }),
+                    ) | (
+                        ComputeNodeOp::Core(ComputeOp::Invariant { .. }),
                         ContractKind::Invariant,
-                    ) => true,
-                    _ => false,
-                }
+                    )
+                )
             } else {
                 false
             }
@@ -403,11 +401,8 @@ fn evaluate_subgraph_node(
 
             // Evaluate using the existing eval_op for arithmetic/comparison/etc.
             use crate::interpreter::eval::eval_op;
-            match eval_op(&op, &inputs, node_id, graph)? {
-                Some(value) => {
-                    local_values.insert(node_id, value);
-                }
-                None => {} // Ops like contract nodes produce no value
+            if let Some(value) = eval_op(&op, &inputs, node_id, graph)? {
+                local_values.insert(node_id, value);
             }
         }
     }

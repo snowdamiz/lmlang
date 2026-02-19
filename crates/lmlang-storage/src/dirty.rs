@@ -9,8 +9,6 @@ use std::collections::{HashMap, HashSet};
 use lmlang_core::graph::ProgramGraph;
 use lmlang_core::id::FunctionId;
 
-use crate::hash::hash_function_for_compilation;
-
 /// The set of functions that need recompilation.
 ///
 /// Tracks three categories: new (no previous hash), modified (hash changed),
@@ -45,7 +43,7 @@ impl DirtySet {
 /// Compute the dirty set by comparing previous compilation hashes against
 /// the current graph.
 ///
-/// Uses [`hash_function_for_compilation`] which excludes contract nodes,
+/// Uses [`crate::hash::hash_function_for_compilation`] which excludes contract nodes,
 /// so adding/modifying/removing contracts does NOT produce a dirty function.
 ///
 /// # Arguments
@@ -97,7 +95,7 @@ pub fn compute_dirty_set(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lmlang_core::ops::{ArithOp, CmpOp, ComputeOp};
+    use lmlang_core::ops::{CmpOp, ComputeOp};
     use lmlang_core::type_id::TypeId;
     use lmlang_core::types::{ConstValue, Visibility};
 
@@ -127,7 +125,7 @@ mod tests {
 
     #[test]
     fn test_clean_set_when_nothing_changed() {
-        let (graph, func_id) = build_single_function_graph();
+        let (graph, _func_id) = build_single_function_graph();
         let hashes = crate::hash::hash_all_functions_for_compilation(&graph);
 
         let dirty = compute_dirty_set(&graph, &hashes);
@@ -310,7 +308,7 @@ mod tests {
         let func_b = graph
             .add_function("g".into(), root, vec![], TypeId::UNIT, Visibility::Public)
             .unwrap();
-        let ret_b = graph.add_core_op(ComputeOp::Return, func_b).unwrap();
+        let _ret_b = graph.add_core_op(ComputeOp::Return, func_b).unwrap();
 
         // Modify existing function
         graph

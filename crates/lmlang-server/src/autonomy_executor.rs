@@ -3,6 +3,7 @@
 //! The executor consumes a validated planner envelope and dispatches each
 //! action through existing `ProgramService` primitives. It normalizes success
 //! and failures into typed execution evidence for transcript/API projection.
+#![allow(clippy::result_large_err)]
 
 use serde::Serialize;
 

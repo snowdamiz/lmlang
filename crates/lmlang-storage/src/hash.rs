@@ -479,7 +479,7 @@ mod tests {
         let full_hash_before = hash_function(&graph, func_id);
 
         // Add a precondition (contract node)
-        let precond = graph
+        let _precond = graph
             .add_core_op(
                 ComputeOp::Precondition {
                     message: "x > 0".into(),

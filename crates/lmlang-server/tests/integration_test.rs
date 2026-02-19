@@ -86,7 +86,9 @@ async fn start_mock_planner_server(
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("failed to bind mock planner server");
-    let addr = listener.local_addr().expect("failed to read mock server addr");
+    let addr = listener
+        .local_addr()
+        .expect("failed to read mock server addr");
     let handle = tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
     });
@@ -859,7 +861,7 @@ async fn tool05_http_json_format() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/programs/{}/overview", pid))
+                .uri(format!("/programs/{}/overview", pid))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -884,7 +886,7 @@ async fn tool05_http_json_format() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(&format!("/programs/{}/mutations", pid))
+                .uri(format!("/programs/{}/mutations", pid))
                 .header("content-type", "application/json")
                 .body(Body::from("this is not json"))
                 .unwrap(),
@@ -1813,21 +1815,21 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
 
     let (status, root_html) = get_text(&app, "/dashboard").await;
     assert_eq!(status, StatusCode::OK, "top-level dashboard not served");
-    assert!(root_html.contains("Unified Dashboard"));
-    assert!(root_html.contains("Create Project"));
-    assert!(root_html.contains("Create Hello World Scaffold"));
-    assert!(root_html.contains("Assign To Project"));
-    assert!(root_html.contains("OpenRouter"));
-    assert!(root_html.contains("Save Agent Config"));
-    assert!(root_html.contains("First-Time AI Setup"));
-    assert!(root_html.contains("Complete Setup"));
-    assert!(root_html.contains("Start Build"));
-    assert!(root_html.contains("Send"));
+    assert!(root_html.contains("lmlang Dashboard"));
+    assert!(root_html.contains("id=\"projectList\""));
+    assert!(root_html.contains("id=\"createProjectBtn\""));
+    assert!(root_html.contains("id=\"createHelloWorldBtn\""));
+    assert!(root_html.contains("id=\"saveAgentConfigBtn\""));
+    assert!(root_html.contains("id=\"projectAgentList\""));
+    assert!(root_html.contains("id=\"setupWizard\""));
+    assert!(root_html.contains("id=\"setupCompleteBtn\""));
+    assert!(root_html.contains("id=\"startBuildBtn\""));
+    assert!(root_html.contains("id=\"sendChatBtn\""));
     assert!(root_html.contains("data-initial-program-id=\"\""));
 
     let (status, html) = get_text(&app, &format!("/programs/{}/dashboard", pid)).await;
     assert_eq!(status, StatusCode::OK, "dashboard index not served");
-    assert!(html.contains("Unified Dashboard"));
+    assert!(html.contains("lmlang Dashboard"));
     assert!(html.contains(&format!("data-initial-program-id=\"{}\"", pid)));
     assert!(html.contains("projectList"));
     assert!(html.contains("projectAgentList"));
@@ -1853,9 +1855,9 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
 
     let (status, css) = get_text(&app, "/dashboard/styles.css").await;
     assert_eq!(status, StatusCode::OK, "dashboard styles.css not served");
-    assert!(css.contains(".page-shell"));
-    assert!(css.contains(".workspace"));
-    assert!(css.contains(".panel-chat"));
+    assert!(css.contains(".shell"));
+    assert!(css.contains(".content"));
+    assert!(css.contains(".chat-container"));
     assert!(css.contains(".chat-log"));
 }
 
@@ -2361,7 +2363,7 @@ async fn phase10_dashboard_and_observe_routes_coexist_with_reuse_contract() {
         StatusCode::OK,
         "dashboard route should be available"
     );
-    assert!(dashboard_html.contains("Unified Dashboard"));
+    assert!(dashboard_html.contains("lmlang Dashboard"));
     assert!(dashboard_html.contains("/dashboard/app.js"));
 
     let (status, observe_html) = get_text(&app, &format!("/programs/{}/observability", pid)).await;
@@ -2436,12 +2438,7 @@ async fn phase14_program_agent_chat_routes_non_command_to_planner() {
         }),
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::OK,
-        "planner chat failed: {:?}",
-        chat
-    );
+    assert_eq!(status, StatusCode::OK, "planner chat failed: {:?}", chat);
     assert_eq!(chat["planner"]["status"], json!("accepted"));
     assert_eq!(chat["planner"]["version"], json!("2026-02-19"));
     assert!(
@@ -2455,7 +2452,10 @@ async fn phase14_program_agent_chat_routes_non_command_to_planner() {
         .contains("Planner accepted"));
 
     let requests_guard = requests.lock().unwrap();
-    assert!(!requests_guard.is_empty(), "mock planner received no requests");
+    assert!(
+        !requests_guard.is_empty(),
+        "mock planner received no requests"
+    );
     assert_eq!(
         requests_guard[0]["response_format"]["type"],
         json!("json_object")
@@ -2681,9 +2681,18 @@ async fn assign_agent_to_program(app: &Router, program_id: i64, agent_id: &str) 
     assert_eq!(status, StatusCode::OK, "assign failed: {:?}", assign);
 }
 
-async fn wait_for_run_status(app: &Router, program_id: i64, agent_id: &str, status: &str) -> serde_json::Value {
+async fn wait_for_run_status(
+    app: &Router,
+    program_id: i64,
+    agent_id: &str,
+    status: &str,
+) -> serde_json::Value {
     for _ in 0..40 {
-        let (_, detail) = get_json(app, &format!("/programs/{}/agents/{}", program_id, agent_id)).await;
+        let (_, detail) = get_json(
+            app,
+            &format!("/programs/{}/agents/{}", program_id, agent_id),
+        )
+        .await;
         if detail["session"]["run_status"] == json!(status) {
             return detail;
         }
@@ -2745,9 +2754,13 @@ async fn phase15_autonomous_runner_executes_planner_actions_and_records_complete
             .unwrap_or_default()
             >= 2
     );
-    let actions = detail["session"]["execution"]["actions"].as_array().unwrap();
+    let actions = detail["session"]["execution"]["actions"]
+        .as_array()
+        .unwrap();
     assert!(
-        actions.iter().any(|row| row["kind"] == json!("mutate_batch")),
+        actions
+            .iter()
+            .any(|row| row["kind"] == json!("mutate_batch")),
         "expected mutate_batch execution row: {:?}",
         detail["session"]["execution"]
     );
@@ -2769,7 +2782,10 @@ async fn phase15_autonomous_runner_executes_planner_actions_and_records_complete
     assert_eq!(chat["execution"]["stop_reason"]["code"], json!("completed"));
 
     let requests_guard = requests.lock().unwrap();
-    assert!(!requests_guard.is_empty(), "mock planner received no requests");
+    assert!(
+        !requests_guard.is_empty(),
+        "mock planner received no requests"
+    );
     drop(requests_guard);
     server.abort();
 }

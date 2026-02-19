@@ -337,11 +337,8 @@ impl AutonomousRunner {
                     execute_plan(&mut service, &accepted.envelope)
                 };
 
-                let mut attempt_summary = execution_outcome
-                    .attempts
-                    .first()
-                    .cloned()
-                    .unwrap_or(AutonomyExecutionAttemptSummary {
+                let mut attempt_summary = execution_outcome.attempts.first().cloned().unwrap_or(
+                    AutonomyExecutionAttemptSummary {
                         attempt,
                         max_attempts,
                         planner_status: "accepted".to_string(),
@@ -349,7 +346,8 @@ impl AutonomousRunner {
                         succeeded_actions: 0,
                         action_results: Vec::new(),
                         stop_reason: None,
-                    });
+                    },
+                );
                 attempt_summary.attempt = attempt;
                 attempt_summary.max_attempts = max_attempts;
                 attempt_summary.planner_status = "accepted".to_string();
@@ -367,7 +365,8 @@ impl AutonomousRunner {
 
                     match decision {
                         TransitionDecision::Continue => {
-                            attempt_summary.stop_reason = Some(execution_outcome.stop_reason.clone());
+                            attempt_summary.stop_reason =
+                                Some(execution_outcome.stop_reason.clone());
                             AttemptResolution {
                                 attempt: attempt_summary,
                                 version: Some(accepted.version),
@@ -416,7 +415,9 @@ impl AutonomousRunner {
                                 "verify_gate",
                                 "post-execution verify passed",
                             )
-                            .with_detail(serde_json::to_value(&verify).unwrap_or(serde_json::Value::Null));
+                            .with_detail(
+                                serde_json::to_value(&verify).unwrap_or(serde_json::Value::Null),
+                            );
                             attempt_summary.action_results.push(verify_result);
                             attempt_summary.action_count += 1;
                             attempt_summary.succeeded_actions += 1;
@@ -430,7 +431,8 @@ impl AutonomousRunner {
                                 ),
                                 TransitionDecision::Terminal { status, code } => (status, code),
                             };
-                            let stop_reason = StopReason::new(code, "autonomous execution completed");
+                            let stop_reason =
+                                StopReason::new(code, "autonomous execution completed");
                             attempt_summary.stop_reason = Some(stop_reason.clone());
 
                             AttemptResolution {
@@ -440,8 +442,8 @@ impl AutonomousRunner {
                                 transition: AttemptTransition::Terminal {
                                     status,
                                     stop_reason,
-                                    run_status_note:
-                                        "Autonomous loop completed successfully.".to_string(),
+                                    run_status_note: "Autonomous loop completed successfully."
+                                        .to_string(),
                                 },
                             }
                         }
@@ -464,7 +466,9 @@ impl AutonomousRunner {
                                 ),
                                 verify_error,
                             )
-                            .with_detail(serde_json::to_value(&verify).unwrap_or(serde_json::Value::Null));
+                            .with_detail(
+                                serde_json::to_value(&verify).unwrap_or(serde_json::Value::Null),
+                            );
                             attempt_summary.action_results.push(verify_result);
                             attempt_summary.action_count += 1;
 
@@ -472,9 +476,14 @@ impl AutonomousRunner {
                                 StopReasonCode::VerifyFailed,
                                 "post-execution verify gate failed",
                             )
-                            .with_detail(serde_json::to_value(&verify).unwrap_or(serde_json::Value::Null));
-                            let decision =
-                                decide_transition(AttemptEvent::VerifyFailed, attempt, max_attempts);
+                            .with_detail(
+                                serde_json::to_value(&verify).unwrap_or(serde_json::Value::Null),
+                            );
+                            let decision = decide_transition(
+                                AttemptEvent::VerifyFailed,
+                                attempt,
+                                max_attempts,
+                            );
 
                             match decision {
                                 TransitionDecision::Continue => {
@@ -549,6 +558,7 @@ impl AutonomousRunner {
         service.verify(VerifyScope::Full, None)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn finish_with_outcome(
         &self,
         state: &AppState,
@@ -624,6 +634,7 @@ impl Default for AutonomousRunner {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 enum StepDecision {
     Command(String),
     Planner(PlannerOutcome),
@@ -721,7 +732,11 @@ fn decide_transition(event: AttemptEvent, attempt: u32, max_attempts: u32) -> Tr
     }
 }
 
-fn stop_reason_from_api_error(code: StopReasonCode, context: &str, err: crate::error::ApiError) -> StopReason {
+fn stop_reason_from_api_error(
+    code: StopReasonCode,
+    context: &str,
+    err: crate::error::ApiError,
+) -> StopReason {
     StopReason::new(code, format!("{}: {}", context, err))
 }
 

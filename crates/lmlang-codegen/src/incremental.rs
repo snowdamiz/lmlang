@@ -182,8 +182,7 @@ impl IncrementalState {
 
     /// Save incremental state to a JSON file.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 
@@ -203,7 +202,7 @@ impl IncrementalState {
 pub fn build_call_graph(graph: &ProgramGraph) -> HashMap<FunctionId, Vec<FunctionId>> {
     let mut call_graph: HashMap<FunctionId, Vec<FunctionId>> = HashMap::new();
 
-    for (&func_id, _func_def) in graph.functions() {
+    for &func_id in graph.functions().keys() {
         let mut callees: Vec<FunctionId> = Vec::new();
         let func_nodes = graph.function_nodes(func_id);
 

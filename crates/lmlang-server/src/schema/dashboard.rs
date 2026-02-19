@@ -3,7 +3,9 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::schema::agent_control::{AgentChatMessageView, ExecutionSummaryView, PlannerOutcomeView};
+use crate::schema::agent_control::{
+    AgentChatMessageView, ExecutionSummaryView, PlannerOutcomeView,
+};
 
 /// Request body for the dashboard AI chat endpoint.
 #[derive(Debug, Clone, Deserialize)]

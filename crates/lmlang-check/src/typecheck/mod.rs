@@ -414,7 +414,7 @@ mod tests {
         let const_f64 = graph
             .add_core_op(
                 ComputeOp::Const {
-                    value: lmlang_core::ConstValue::F64(3.14),
+                    value: lmlang_core::ConstValue::F64(std::f64::consts::PI),
                 },
                 func_id,
             )
@@ -698,7 +698,7 @@ mod tests {
         let const_f64 = graph
             .add_core_op(
                 ComputeOp::Const {
-                    value: lmlang_core::ConstValue::F64(3.14),
+                    value: lmlang_core::ConstValue::F64(std::f64::consts::PI),
                 },
                 func_id,
             )
@@ -1003,6 +1003,12 @@ mod tests {
         let errors = validate_graph(&graph);
         // Call has flexible input count checking (it varies by function),
         // but the specific edge types should still be checked
-        assert!(!errors.is_empty() || true); // Call input count is not strictly enforced in check_input_count
+        assert!(
+            errors
+                .iter()
+                .all(|e| !matches!(e, TypeError::TypeMismatch { .. })),
+            "Expected no type mismatch for provided call argument, got: {:?}",
+            errors
+        );
     }
 }
