@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 5 of 9 (LLVM Compilation Pipeline)
-Plan: 2 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: Executing Phase 5
-Last activity: 2026-02-19 — Completed 05-02-PLAN.md
+Last activity: 2026-02-19 — Completed 05-03-PLAN.md
 
-Progress: [██████░░░░] 59%
+Progress: [██████░░░░] 63%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 16
+- Total plans completed: 17
 - Average duration: 7min
-- Total execution time: 1.84 hours
+- Total execution time: 1.92 hours
 
 **By Phase:**
 
@@ -31,11 +31,11 @@ Progress: [██████░░░░] 59%
 | 02 | 3/3 | 18min | 6min |
 | 03 | 3/3 | 35min | 12min |
 | 04 | 4/4 | 24min | 6min |
-| 05 | 2/4 | 19min | 10min |
+| 05 | 3/4 | 24min | 8min |
 
 **Recent Trend:**
-- Last 5 plans: 04-02 (15min), 04-03 (3min), 04-04 (1min), 05-01 (7min), 05-02 (12min)
-- Trend: Per-function codegen with 39 ops took 12min; heavier plan but inline with complexity
+- Last 5 plans: 04-03 (3min), 04-04 (1min), 05-01 (7min), 05-02 (12min), 05-03 (5min)
+- Trend: Pipeline integration (3 tasks, 12 files) completed in 5min; clean orchestration of existing pieces
 
 *Updated after each plan completion*
 
@@ -115,6 +115,10 @@ Recent decisions affecting current work:
 - [Phase 05]: Integer add/sub/mul use LLVM overflow intrinsics (sadd/ssub/smul.with.overflow) for checked arithmetic
 - [Phase 05]: Closures use {fn_ptr, env_ptr} struct pair with stack-allocated environment; CaptureAccess uses GEP into env struct
 - [Phase 05]: AggregateValueEnum from build_insert_value converted via explicit match helper (not blanket Into)
+- [Phase 05]: Entry function auto-detect: 'main' first, then first public, then first function; must be zero-arg
+- [Phase 05]: If entry function returns integer, use as exit code; otherwise return 0
+- [Phase 05]: CLI outputs CompileResult as JSON to stdout for machine-readable agent integration
+- [Phase 05]: TypeCheckFailed maps to 422 (HTTP) / exit code 2 (CLI)
 
 ### Pending Todos
 
@@ -129,5 +133,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed 05-02-PLAN.md
-Resume file: .planning/phases/05-llvm-compilation-pipeline/05-02-SUMMARY.md
+Stopped at: Completed 05-03-PLAN.md
+Resume file: .planning/phases/05-llvm-compilation-pipeline/05-03-SUMMARY.md
