@@ -1,63 +1,65 @@
 # Requirements: lmlang
 
 **Defined:** 2026-02-19
-**Milestone:** v1.1 Agent Control Dashboard
-**Core Value:** AI agents can build, modify, and verify programs of arbitrary size with perfect local and global awareness
+**Milestone:** v1.2 Autonomous Program Synthesis
+**Core Value:** AI agents can build, modify, verify, and execute programs from natural-language goals with full graph-level awareness
 
-## v1.1 Requirements
+## v1.2 Requirements
 
-### Unified Dashboard (Operate + Observe)
+### Natural-Language Goal to Plan
 
-- [x] **UI-01**: User can view all registered agents and active sessions in the `Operate` tab with status (`idle`, `running`, `blocked`, `error`)
-- [x] **UI-02**: User can spawn a new agent run from `Operate` by selecting target program, workflow template, and task prompt
-- [ ] **UI-03**: User can pause, resume, and stop an active agent run from the dashboard once run lifecycle APIs are available
+- [ ] **AUT-01**: User can submit a natural-language build request and receive a structured autonomous execution attempt instead of a chat-only response.
+- [ ] **AUT-02**: Planner output must conform to a versioned JSON schema that is validated server-side before any execution.
+- [ ] **AUT-03**: Planner can decompose a request into multi-step graph/tool actions spanning more than one function or edit batch.
 
-### Human-in-the-Loop Change Control
+### Generic Autonomous Execution
 
-- [ ] **UI-04**: User can review proposed graph mutations as a structured diff before apply
-- [ ] **UI-05**: User can approve or reject a proposed change with a recorded reason
-- [ ] **UI-06**: User can undo or rollback from the dashboard using existing checkpoint/history mechanisms
+- [ ] **AUT-04**: Executor can apply generic mutation batches from planner output (not limited to hello-world command heuristics).
+- [ ] **AUT-05**: Executor runs a bounded loop (`plan -> apply -> verify -> replan`) until success or retry budget exhaustion.
+- [ ] **AUT-06**: Execution failures produce explicit stop reason codes and transcript evidence for operator inspection.
 
-### Run Monitoring and Diagnostics
+### Verification, Compile, and Repair
 
-- [ ] **UI-07**: User can inspect a run timeline that includes lifecycle transitions, tool calls, verification steps, and errors
-- [ ] **UI-08**: User can view lock/conflict state for agent sessions and identify blocked operations
-- [ ] **UI-09**: User can trigger verify/simulate/compile actions and see results linked to the run
+- [ ] **AUT-07**: After each mutation batch, verify runs automatically and feeds diagnostics back into the next planning step.
+- [ ] **AUT-08**: Compile and optional run results are captured and can trigger targeted repair iterations when failures occur.
 
-### Workflow Templates
+### Acceptance and Observability
 
-- [ ] **UI-10**: User can create and reuse workflow templates for common tasks (plan phase, execute phase, verify work)
+- [ ] **AUT-09**: Timeline/history records each autonomous step (prompt context, planned actions, applied mutations, verify/compile outputs, terminal status).
+- [ ] **AUT-10**: Prompt `Create a simple calculator` triggers a real autonomous build attempt that creates calculator-related program structure and reaches verify/compile attempt.
+- [ ] **AUT-11**: At least two additional non-trivial benchmark prompts (for example string utility and state-machine tasks) trigger autonomous build attempts through the same generic path.
 
 ## Future Requirements
 
-- Multi-user collaboration and permissions
-- Remote/cloud worker pools for agents
-- Fully autonomous background execution policies
+- Natural-language test-case generation and auto-evaluation harness
+- Automatic retrieval of reusable graph patterns across existing programs
+- Multi-agent decomposition for parallel autonomous construction
 
-## Out of Scope (v1.1)
+## Out of Scope (v1.2)
 
-- Enterprise auth/RBAC
-- Billing/quotas
-- Distributed control plane
+- Unbounded fully autonomous operation without operator stop controls
+- Arbitrary host shell command execution from model output
+- Cross-tenant/cloud scheduler and fleet orchestration
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| UI-01 | Phase 10 | Complete |
-| UI-02 | Phase 10 | Complete |
-| UI-03 | Phase 12 | Planned |
-| UI-04 | Phase 11 | Planned |
-| UI-05 | Phase 11 | Planned |
-| UI-06 | Phase 11 | Planned |
-| UI-07 | Phase 12 | Planned |
-| UI-08 | Phase 12 | Planned |
-| UI-09 | Phase 12 | Planned |
-| UI-10 | Phase 13 | Planned |
+| AUT-01 | Phase 14 | Planned |
+| AUT-02 | Phase 14 | Planned |
+| AUT-03 | Phase 14 | Planned |
+| AUT-04 | Phase 15 | Planned |
+| AUT-05 | Phase 15 | Planned |
+| AUT-06 | Phase 15 | Planned |
+| AUT-07 | Phase 16 | Planned |
+| AUT-08 | Phase 16 | Planned |
+| AUT-09 | Phase 17 | Planned |
+| AUT-10 | Phase 17 | Planned |
+| AUT-11 | Phase 17 | Planned |
 
 **Coverage:**
-- v1.1 requirements: 10 total
-- Mapped to phases: 10
+- v1.2 requirements: 11 total
+- Mapped to phases: 11
 - Unmapped: 0
 
 ---

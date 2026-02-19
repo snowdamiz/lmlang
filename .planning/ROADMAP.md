@@ -1,63 +1,59 @@
-# Roadmap: lmlang (v1.1 Agent Control Dashboard)
+# Roadmap: lmlang (v1.2 Autonomous Program Synthesis)
 
 ## Overview
 
-This milestone upgrades the existing graph visibility UI into a unified operator dashboard at `/programs/{id}/dashboard`. The current observability UI is reused as the `Observe` module, while new agent/workflow controls are added in `Operate` using existing backend endpoints first.
+This milestone closes the core capability gap: agents currently route through fixed hello-world commands or plain text chat. v1.2 introduces a structured planner/executor architecture so the system can autonomously attempt open-ended program creation tasks from natural-language requests.
 
 ## Phases
 
-- [x] **Phase 10: Unified Dashboard Shell & Endpoint-First Operate Tab** - Build `/programs/{id}/dashboard` with `Operate` + `Observe`, reusing observability and existing APIs (completed 2026-02-19)
-- [ ] **Phase 11: Approval Gates & Change Control** - Add diff review, approval/rejection, and rollback controls inside `Operate`
-- [ ] **Phase 12: Run Lifecycle, Timeline, and Diagnostics** - Add only missing lifecycle/timeline APIs and wire full run control + diagnostics
-- [ ] **Phase 13: Workflow Templates & UX Hardening** - Add reusable templates and polish the full operator workflow across both tabs
+- [ ] **Phase 14: Action Protocol and Planner Contract** - Define and implement a strict, versioned planning schema and routing contract for autonomous build intents
+- [ ] **Phase 15: Generic Graph Build Executor** - Implement deterministic execution of planner-produced mutation/tool action sequences with bounded retries and stop reasons
+- [ ] **Phase 16: Verify/Compile Repair Loop** - Integrate automatic verification/compile feedback and targeted repair iteration logic
+- [ ] **Phase 17: Acceptance Benchmarks and Attempt Visibility** - Validate autonomy on calculator and other benchmark prompts with clear timeline observability
 
 ## Phase Details
 
-### Phase 10: Unified Dashboard Shell & Endpoint-First Operate Tab
-**Goal**: Users can access one dashboard per program with `Operate` and `Observe` modules
-**Depends on**: v1.0 tool API, v1.0 observability UI
-**Requirements**: UI-01, UI-02
+### Phase 14: Action Protocol and Planner Contract
+**Goal**: Convert natural-language requests into schema-valid, executable action plans.
+**Depends on**: Existing v1.0/v1.1 backend baseline
+**Requirements**: AUT-01, AUT-02, AUT-03
 **Success Criteria**:
-1. `/programs/{id}/dashboard` serves a unified shell with `Operate` and `Observe` tabs
-2. `Observe` tab reuses existing observability graph/query UX and endpoints
-3. `Operate` tab uses existing endpoints for orchestration primitives: `/agents/register`, `/agents`, `/agents/{agent_id}`, `/programs/{id}/locks`, `/programs/{id}/mutations`, `/programs/{id}/verify`, `/programs/{id}/simulate`, `/programs/{id}/compile`, `/programs/{id}/history`
+1. Planner response schema is versioned, documented, and validated server-side before execution
+2. Non-command prompts route through planner path and produce executable plans or explicit structured failure
+3. Plan format supports multi-step edits and tool calls beyond hello-world hardcoded commands
 
-### Phase 11: Approval Gates & Change Control
-**Goal**: Agent edits are safely gated by human review inside the unified dashboard
-**Depends on**: Phase 10
-**Requirements**: UI-04, UI-05, UI-06
+### Phase 15: Generic Graph Build Executor
+**Goal**: Execute planner actions as safe deterministic server operations against program graphs.
+**Depends on**: Phase 14
+**Requirements**: AUT-04, AUT-05, AUT-06
 **Success Criteria**:
-1. Proposed changes render as structured before/after diffs
-2. Approval/rejection actions are persisted with actor and reason
-3. Undo/rollback controls are exposed in the same `Operate` run context
+1. Executor applies generic mutation batches from plan actions through existing edit APIs
+2. Bounded autonomy loop (`plan -> apply -> verify -> replan`) runs with configurable retry budget
+3. Terminal states include explicit reason codes and actionable transcript artifacts
 
-### Phase 12: Run Lifecycle, Timeline, and Diagnostics
-**Goal**: Operators can control run lifecycle and diagnose progress/failures quickly
-**Depends on**: Phase 10
-**Requirements**: UI-03, UI-07, UI-08, UI-09
+### Phase 16: Verify/Compile Repair Loop
+**Goal**: Make autonomous attempts resilient by integrating verification and compiler feedback.
+**Depends on**: Phase 15
+**Requirements**: AUT-07, AUT-08
 **Success Criteria**:
-1. Pause/resume/stop controls work end-to-end via dedicated run lifecycle APIs
-2. Timeline view shows ordered run events (tool calls, verification actions, errors, approvals)
-3. Lock/conflict dashboard highlights blocked runs and impacted resources using existing lock data plus run timeline context
+1. Verify runs automatically after each batch and diagnostics flow back into the next planning step
+2. Compile/run failure diagnostics are captured and used for targeted repair attempts
+3. Loop exits cleanly on success, exhausted retries, or unsafe conditions
 
-**API Strategy**:
-- Reuse existing endpoints first (`/agents`, `/locks`, `/mutations`, `/verify`, `/simulate`, `/compile`, `/history`)
-- Add backend APIs only for missing concepts: run lifecycle (pause/resume/stop) and timeline events
-
-### Phase 13: Workflow Templates & UX Hardening
-**Goal**: Repeated AI workflows become fast, consistent, and reliable in the unified dashboard
-**Depends on**: Phase 10, Phase 11, Phase 12
-**Requirements**: UI-10
+### Phase 17: Acceptance Benchmarks and Attempt Visibility
+**Goal**: Prove user-facing autonomous capability with benchmark tasks and transparent attempt history.
+**Depends on**: Phase 16
+**Requirements**: AUT-09, AUT-10, AUT-11
 **Success Criteria**:
-1. Users can create/select templates for common operations
-2. Template launch pre-fills run settings and reduces setup errors
-3. End-to-end UI flow (`Operate` -> `Observe` -> review -> verify) is covered by integration tests
+1. `Create a simple calculator` produces a real autonomous build attempt with calculator-specific structure and verify/compile attempt
+2. Two additional benchmark prompts run through the same generic pipeline with persisted attempt records
+3. Timeline/history views expose each autonomous step, outputs, and final outcome for operator review
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 10. Unified Dashboard Shell & Endpoint-First Operate Tab | 4/4 | Complete | 2026-02-19 |
-| 11. Approval Gates & Change Control | 0/0 | Planned | — |
-| 12. Run Lifecycle, Timeline, and Diagnostics | 0/0 | Planned | — |
-| 13. Workflow Templates & UX Hardening | 0/0 | Planned | — |
+| 14. Action Protocol and Planner Contract | 0/0 | Planned | - |
+| 15. Generic Graph Build Executor | 0/0 | Planned | - |
+| 16. Verify/Compile Repair Loop | 0/0 | Planned | - |
+| 17. Acceptance Benchmarks and Attempt Visibility | 0/0 | Planned | - |
