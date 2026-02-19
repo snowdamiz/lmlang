@@ -44,6 +44,8 @@ pub struct AutonomyExecutionError {
     pub retryable: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<AutonomyDiagnostics>,
 }
 
 impl AutonomyExecutionError {
@@ -57,11 +59,65 @@ impl AutonomyExecutionError {
             message: message.into(),
             retryable,
             details: None,
+            diagnostics: None,
         }
     }
 
     pub fn with_details(mut self, details: serde_json::Value) -> Self {
         self.details = Some(details);
+        self
+    }
+
+    pub fn with_diagnostics(mut self, diagnostics: AutonomyDiagnostics) -> Self {
+        self.diagnostics = Some(diagnostics);
+        self
+    }
+}
+
+/// Canonical diagnostic class emitted for autonomous repair feedback.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyDiagnosticsClass {
+    VerifyFailure,
+    CompileFailure,
+    ActionFailure,
+}
+
+/// Compact, machine-readable diagnostics metadata for targeted repair.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AutonomyDiagnostics {
+    pub class: AutonomyDiagnosticsClass,
+    pub retryable: bool,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub messages: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<serde_json::Value>,
+}
+
+impl AutonomyDiagnostics {
+    pub fn new(
+        class: AutonomyDiagnosticsClass,
+        retryable: bool,
+        summary: impl Into<String>,
+    ) -> Self {
+        Self {
+            class,
+            retryable,
+            summary: summary.into(),
+            messages: Vec::new(),
+            detail: None,
+        }
+    }
+
+    pub fn with_messages(mut self, messages: Vec<String>) -> Self {
+        self.messages = messages;
+        self
+    }
+
+    pub fn with_detail(mut self, detail: serde_json::Value) -> Self {
+        self.detail = Some(detail);
         self
     }
 }
@@ -78,6 +134,8 @@ pub struct AutonomyActionExecutionResult {
     pub error: Option<AutonomyExecutionError>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<AutonomyDiagnostics>,
 }
 
 impl AutonomyActionExecutionResult {
@@ -93,6 +151,7 @@ impl AutonomyActionExecutionResult {
             summary: summary.into(),
             error: None,
             detail: None,
+            diagnostics: None,
         }
     }
 
@@ -109,11 +168,17 @@ impl AutonomyActionExecutionResult {
             summary: summary.into(),
             error: Some(error),
             detail: None,
+            diagnostics: None,
         }
     }
 
     pub fn with_detail(mut self, detail: serde_json::Value) -> Self {
         self.detail = Some(detail);
+        self
+    }
+
+    pub fn with_diagnostics(mut self, diagnostics: AutonomyDiagnostics) -> Self {
+        self.diagnostics = Some(diagnostics);
         self
     }
 }

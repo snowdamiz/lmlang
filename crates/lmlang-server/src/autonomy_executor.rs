@@ -9,9 +9,10 @@ use serde::Serialize;
 
 use crate::error::ApiError;
 use crate::schema::autonomy_execution::{
-    AutonomyActionExecutionResult, AutonomyActionStatus, AutonomyExecutionAttemptSummary,
-    AutonomyExecutionError, AutonomyExecutionErrorCode, AutonomyExecutionOutcome,
-    AutonomyExecutionStatus, StopReason, StopReasonCode,
+    AutonomyActionExecutionResult, AutonomyActionStatus, AutonomyDiagnostics,
+    AutonomyDiagnosticsClass, AutonomyExecutionAttemptSummary, AutonomyExecutionError,
+    AutonomyExecutionErrorCode, AutonomyExecutionOutcome, AutonomyExecutionStatus, StopReason,
+    StopReasonCode,
 };
 use crate::schema::autonomy_plan::{
     AutonomyPlanAction, AutonomyPlanCompileRequest, AutonomyPlanEnvelope,
@@ -21,6 +22,7 @@ use crate::schema::autonomy_plan::{
 use crate::schema::compile::CompileRequest;
 use crate::schema::queries::{DetailLevel, SearchRequest};
 use crate::schema::simulate::SimulateRequest;
+use crate::schema::verify::VerifyResponse;
 use crate::service::ProgramService;
 
 /// Execute all actions in one validated planner envelope.
@@ -155,23 +157,25 @@ fn execute_mutate_batch(
         })?;
 
     if !response.valid {
+        let summary = format!(
+            "mutation batch rejected by validator with {} error(s)",
+            response.errors.len()
+        );
+        let error = AutonomyExecutionError::new(
+            AutonomyExecutionErrorCode::ValidationFailed,
+            "mutation batch rejected by service validation",
+            true,
+        )
+        .with_details(serde_json::to_value(&response.errors).unwrap_or(serde_json::Value::Null));
+        let diagnostics = diagnostics_from_error("mutate_batch", &summary, &error);
         return Err(AutonomyActionExecutionResult::failed(
             action_index,
             "mutate_batch",
-            format!(
-                "mutation batch rejected by validator with {} error(s)",
-                response.errors.len()
-            ),
-            AutonomyExecutionError::new(
-                AutonomyExecutionErrorCode::ValidationFailed,
-                "mutation batch rejected by service validation",
-                true,
-            )
-            .with_details(
-                serde_json::to_value(&response.errors).unwrap_or(serde_json::Value::Null),
-            ),
+            summary,
+            error.with_diagnostics(diagnostics.clone()),
         )
-        .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)));
+        .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null))
+        .with_diagnostics(diagnostics));
     }
 
     Ok(AutonomyActionExecutionResult::succeeded(
@@ -207,23 +211,7 @@ fn execute_verify(
         .map_err(|err| api_error_result(action_index, "verify", "verify action failed", err))?;
 
     if !response.valid {
-        return Err(AutonomyActionExecutionResult::failed(
-            action_index,
-            "verify",
-            format!(
-                "verification failed with {} error(s)",
-                response.errors.len()
-            ),
-            AutonomyExecutionError::new(
-                AutonomyExecutionErrorCode::ValidationFailed,
-                "verify action reported type errors",
-                true,
-            )
-            .with_details(
-                serde_json::to_value(&response.errors).unwrap_or(serde_json::Value::Null),
-            ),
-        )
-        .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)));
+        return Err(verify_failure_result(action_index, &response));
     }
 
     Ok(
@@ -295,18 +283,25 @@ fn execute_simulate(
         .map_err(|err| api_error_result(action_index, "simulate", "simulate action failed", err))?;
 
     if !response.success {
+        let error = AutonomyExecutionError::new(
+            AutonomyExecutionErrorCode::ValidationFailed,
+            "simulation returned success=false",
+            true,
+        )
+        .with_details(serde_json::to_value(&response.error).unwrap_or(serde_json::Value::Null));
+        let diagnostics = diagnostics_from_error(
+            "simulate",
+            "simulation reported unsuccessful status",
+            &error,
+        );
         return Err(AutonomyActionExecutionResult::failed(
             action_index,
             "simulate",
             "simulation reported unsuccessful status".to_string(),
-            AutonomyExecutionError::new(
-                AutonomyExecutionErrorCode::ValidationFailed,
-                "simulation returned success=false",
-                true,
-            )
-            .with_details(serde_json::to_value(&response.error).unwrap_or(serde_json::Value::Null)),
+            error.with_diagnostics(diagnostics.clone()),
         )
-        .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)));
+        .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null))
+        .with_diagnostics(diagnostics));
     }
 
     Ok(
@@ -510,16 +505,19 @@ fn invalid_payload_result(
     kind: &str,
     message: &str,
 ) -> AutonomyActionExecutionResult {
+    let error = AutonomyExecutionError::new(
+        AutonomyExecutionErrorCode::InvalidActionPayload,
+        message,
+        false,
+    );
+    let diagnostics = diagnostics_from_error(kind, message, &error);
     AutonomyActionExecutionResult::failed(
         action_index,
         kind,
         message,
-        AutonomyExecutionError::new(
-            AutonomyExecutionErrorCode::InvalidActionPayload,
-            message,
-            false,
-        ),
+        error.with_diagnostics(diagnostics.clone()),
     )
+    .with_diagnostics(diagnostics)
 }
 
 fn api_error_result(
@@ -529,7 +527,14 @@ fn api_error_result(
     error: ApiError,
 ) -> AutonomyActionExecutionResult {
     let classified = classify_api_error(error);
-    AutonomyActionExecutionResult::failed(action_index, kind, summary, classified)
+    let diagnostics = diagnostics_from_error(kind, summary, &classified);
+    AutonomyActionExecutionResult::failed(
+        action_index,
+        kind,
+        summary,
+        classified.with_diagnostics(diagnostics.clone()),
+    )
+    .with_diagnostics(diagnostics)
 }
 
 fn classify_api_error(error: ApiError) -> AutonomyExecutionError {
@@ -578,6 +583,80 @@ fn _json_detail<T: Serialize>(value: &T) -> serde_json::Value {
     serde_json::to_value(value).unwrap_or(serde_json::Value::Null)
 }
 
+fn verify_failure_result(
+    action_index: usize,
+    response: &VerifyResponse,
+) -> AutonomyActionExecutionResult {
+    let diagnostics = verify_failure_diagnostics(response);
+    let error = AutonomyExecutionError::new(
+        AutonomyExecutionErrorCode::ValidationFailed,
+        "verify action reported type errors",
+        true,
+    )
+    .with_details(serde_json::to_value(&response.errors).unwrap_or(serde_json::Value::Null))
+    .with_diagnostics(diagnostics.clone());
+
+    AutonomyActionExecutionResult::failed(
+        action_index,
+        "verify",
+        format!(
+            "verification failed with {} error(s)",
+            response.errors.len()
+        ),
+        error,
+    )
+    .with_detail(serde_json::to_value(response).unwrap_or(serde_json::Value::Null))
+    .with_diagnostics(diagnostics)
+}
+
+fn verify_failure_diagnostics(response: &VerifyResponse) -> AutonomyDiagnostics {
+    let messages = response
+        .errors
+        .iter()
+        .take(3)
+        .map(|error| format!("[{}] {}", error.code, error.message))
+        .collect::<Vec<_>>();
+    let sample_codes = response
+        .errors
+        .iter()
+        .take(5)
+        .map(|error| error.code.clone())
+        .collect::<Vec<_>>();
+    AutonomyDiagnostics::new(
+        AutonomyDiagnosticsClass::VerifyFailure,
+        true,
+        format!("verify reported {} diagnostic(s)", response.errors.len()),
+    )
+    .with_messages(messages)
+    .with_detail(serde_json::json!({
+        "error_count": response.errors.len(),
+        "warning_count": response.warnings.len(),
+        "sample_codes": sample_codes,
+    }))
+}
+
+fn diagnostics_from_error(
+    kind: &str,
+    summary: &str,
+    error: &AutonomyExecutionError,
+) -> AutonomyDiagnostics {
+    AutonomyDiagnostics::new(diagnostics_class_for_action(kind), error.retryable, summary)
+        .with_messages(vec![error.message.clone()])
+        .with_detail(serde_json::json!({
+            "kind": kind,
+            "error_code": error.code,
+            "error_details": error.details.clone(),
+        }))
+}
+
+fn diagnostics_class_for_action(kind: &str) -> AutonomyDiagnosticsClass {
+    match kind {
+        "verify" => AutonomyDiagnosticsClass::VerifyFailure,
+        "compile" => AutonomyDiagnosticsClass::CompileFailure,
+        _ => AutonomyDiagnosticsClass::ActionFailure,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use lmlang_core::id::ModuleId;
@@ -590,6 +669,7 @@ mod tests {
         AutonomyPlanMetadata, AutonomyPlanMutationRequest, AutonomyPlanSimulateRequest,
         AutonomyPlanVerifyRequest,
     };
+    use crate::schema::diagnostics::DiagnosticError;
     use crate::schema::mutations::Mutation;
     use crate::schema::verify::VerifyScope;
 
@@ -713,11 +793,84 @@ mod tests {
 
         let outcome = execute_plan(&mut service, &envelope);
         let action = &outcome.attempts[0].action_results[0];
+        let error = action
+            .error
+            .as_ref()
+            .expect("compile failure has error payload");
+        let action_diagnostics = action
+            .diagnostics
+            .as_ref()
+            .expect("compile failure includes diagnostics");
+        let error_diagnostics = error
+            .diagnostics
+            .as_ref()
+            .expect("compile failure error includes diagnostics");
         assert_eq!(action.status, AutonomyActionStatus::Failed);
+        assert_eq!(error.code, AutonomyExecutionErrorCode::BadRequest);
         assert_eq!(
-            action.error.as_ref().map(|err| err.code),
-            Some(AutonomyExecutionErrorCode::BadRequest)
+            action_diagnostics.class,
+            AutonomyDiagnosticsClass::CompileFailure
         );
+        assert_eq!(action_diagnostics.retryable, error.retryable);
+        assert_eq!(
+            error_diagnostics.class,
+            AutonomyDiagnosticsClass::CompileFailure
+        );
+        assert_eq!(error_diagnostics.retryable, error.retryable);
+    }
+
+    #[test]
+    fn verify_failure_result_emits_deterministic_diagnostics() {
+        let response = VerifyResponse {
+            valid: false,
+            errors: vec![
+                DiagnosticError {
+                    code: "TYPE_MISMATCH".to_string(),
+                    message: "type mismatch at node 10".to_string(),
+                    details: None,
+                },
+                DiagnosticError {
+                    code: "MISSING_INPUT".to_string(),
+                    message: "input 0 missing".to_string(),
+                    details: None,
+                },
+            ],
+            warnings: Vec::new(),
+        };
+
+        let action = verify_failure_result(3, &response);
+        let error = action
+            .error
+            .as_ref()
+            .expect("verify failure has error payload");
+        let action_diagnostics = action
+            .diagnostics
+            .as_ref()
+            .expect("verify failure has diagnostics");
+        let error_diagnostics = error
+            .diagnostics
+            .as_ref()
+            .expect("verify failure error has diagnostics");
+
+        assert_eq!(action.status, AutonomyActionStatus::Failed);
+        assert_eq!(error.code, AutonomyExecutionErrorCode::ValidationFailed);
+        assert!(error.retryable);
+        assert_eq!(
+            action_diagnostics.class,
+            AutonomyDiagnosticsClass::VerifyFailure
+        );
+        assert_eq!(action_diagnostics.retryable, error.retryable);
+        assert_eq!(
+            action_diagnostics.summary,
+            "verify reported 2 diagnostic(s)"
+        );
+        assert_eq!(action_diagnostics.messages.len(), 2);
+        assert_eq!(
+            error_diagnostics.class,
+            AutonomyDiagnosticsClass::VerifyFailure
+        );
+        assert_eq!(error_diagnostics.retryable, error.retryable);
+        assert_eq!(error_diagnostics.summary, "verify reported 2 diagnostic(s)");
     }
 
     #[test]
