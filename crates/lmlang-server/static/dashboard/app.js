@@ -109,6 +109,14 @@
     };
   }
 
+  function contextSummary() {
+    return {
+      selected_agent: state.selectedAgentId,
+      run_setup: runSetupSnapshot(),
+      active_tab: state.activeTab,
+    };
+  }
+
   function safeJsonParse(raw, fieldName) {
     try {
       return { ok: true, value: JSON.parse(raw) };
@@ -147,6 +155,7 @@
           </div>
         </div>
         <p class="output-hint">Use "Open in Observe" to inspect graph/query state after actions.</p>
+        <a class="output-link" href="${ENDPOINTS.OBSERVE(programId)}" target="_blank" rel="noopener noreferrer">Open current program in Observe</a>
       </section>
     `;
   }
@@ -340,7 +349,7 @@
       updateRunSetup({ template: nextTemplate, prompt: nextPrompt });
       writeOutput("Run context preview", {
         request: { action: "preview-run-context" },
-        response: runSetupSnapshot(),
+        response: contextSummary(),
       });
       setGlobalStatus("Run context preview updated.", "idle");
       pushTimeline({ title: "Run context preview", endpoint: "local", status: "ok", detail: nextTemplate });
@@ -468,10 +477,22 @@
     if (tab === "observe") {
       ensureObserveEmbedded();
       setGlobalStatus("Observe tab active. Existing observability route reused.", "idle");
+      pushTimeline({
+        title: "Tab switch",
+        endpoint: ENDPOINTS.OBSERVE(programId),
+        status: "ok",
+        detail: `context preserved (${state.selectedAgentId || "no-agent"}, ${state.runSetup.template})`,
+      });
       return;
     }
 
     setGlobalStatus("Operate tab active.", "idle");
+    pushTimeline({
+      title: "Tab switch",
+      endpoint: "operate",
+      status: "ok",
+      detail: `context preserved (${state.selectedAgentId || "no-agent"}, ${state.runSetup.template})`,
+    });
   }
 
   async function refreshAgents() {
@@ -747,6 +768,7 @@
         template: state.runSetup.template,
       },
       response: {
+        context: contextSummary(),
         observe_path: ENDPOINTS.OBSERVE(programId),
         endpoint_hooks: {
           agents: [ENDPOINTS.REGISTER_AGENT, ENDPOINTS.LIST_AGENTS, ENDPOINTS.DEREGISTER_AGENT("{agent_id}")],
