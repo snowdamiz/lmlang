@@ -700,12 +700,10 @@ dependencies = [
 name = "lmlang-codegen"
 version = "0.1.0"
 dependencies = [
- "blake3",
  "indexmap",
  "inkwell",
  "lmlang-check",
  "lmlang-core",
- "lmlang-storage",
  "petgraph",
  "serde",
  "serde_json",

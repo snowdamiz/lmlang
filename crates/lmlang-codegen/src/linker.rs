@@ -73,6 +73,57 @@ pub fn link_executable(
     Ok(())
 }
 
+/// Link multiple object files into a standalone executable.
+///
+/// Same as [`link_executable`] but accepts multiple `.o` files,
+/// used by incremental compilation to link per-function object files.
+pub fn link_objects(
+    obj_paths: &[&Path],
+    output_path: &Path,
+    debug_symbols: bool,
+) -> Result<(), CodegenError> {
+    if obj_paths.is_empty() {
+        return Err(CodegenError::LinkerFailed(
+            "no object files to link".to_string(),
+        ));
+    }
+
+    // Ensure output directory exists
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let mut cmd = std::process::Command::new("cc");
+    for obj_path in obj_paths {
+        cmd.arg(obj_path);
+    }
+    cmd.arg("-o").arg(output_path);
+
+    if cfg!(target_os = "linux") {
+        cmd.arg("-static");
+    } else if cfg!(target_os = "macos") {
+        cmd.arg("-lSystem");
+    }
+
+    if !debug_symbols {
+        cmd.arg("-Wl,-S");
+    }
+
+    let output = cmd.output().map_err(|e| {
+        CodegenError::LinkerFailed(format!("failed to invoke cc: {}", e))
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(CodegenError::LinkerFailed(format!(
+            "cc exited with status {}: {}",
+            output.status, stderr
+        )));
+    }
+
+    Ok(())
+}
+
 /// Build the linker command for inspection/testing without executing.
 ///
 /// Returns the `Command` that would be invoked by `link_executable`.

@@ -75,6 +75,46 @@ pub fn declare_runtime_functions<'ctx>(context: &'ctx Context, module: &Module<'
     emit_runtime_error_fn(context, module);
 }
 
+/// Declare runtime functions as external (no function body for lmlang_runtime_error).
+///
+/// Used by incremental compilation where each per-function module only needs
+/// external declarations, and the runtime body is emitted in a separate module.
+pub fn declare_runtime_functions_extern<'ctx>(context: &'ctx Context, module: &Module<'ctx>) {
+    let i32_type = context.i32_type();
+    let i8_ptr_type = context.ptr_type(AddressSpace::default());
+    let void_type = context.void_type();
+
+    // printf(i8*, ...) -> i32
+    let printf_type = i32_type.fn_type(&[i8_ptr_type.into()], true);
+    module.add_function("printf", printf_type, Some(Linkage::External));
+
+    // exit(i32) -> void
+    let exit_type = void_type.fn_type(&[i32_type.into()], false);
+    let exit_fn = module.add_function("exit", exit_type, Some(Linkage::External));
+    exit_fn.add_attribute(
+        inkwell::attributes::AttributeLoc::Function,
+        context.create_enum_attribute(
+            inkwell::attributes::Attribute::get_named_enum_kind_id("noreturn"),
+            0,
+        ),
+    );
+
+    // fprintf(i8*, i8*, ...) -> i32
+    let fprintf_type = i32_type.fn_type(&[i8_ptr_type.into(), i8_ptr_type.into()], true);
+    module.add_function("fprintf", fprintf_type, Some(Linkage::External));
+
+    // lmlang_runtime_error(i32, i32) -> void (external declaration only, no body)
+    let err_fn_type = void_type.fn_type(&[i32_type.into(), i32_type.into()], false);
+    let err_fn = module.add_function("lmlang_runtime_error", err_fn_type, Some(Linkage::External));
+    err_fn.add_attribute(
+        inkwell::attributes::AttributeLoc::Function,
+        context.create_enum_attribute(
+            inkwell::attributes::Attribute::get_named_enum_kind_id("noreturn"),
+            0,
+        ),
+    );
+}
+
 /// Emit the `lmlang_runtime_error` function body in LLVM IR.
 ///
 /// Takes `(i32 error_kind, i32 node_id)` parameters, builds a switch

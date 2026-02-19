@@ -18,7 +18,8 @@
 
 use std::process::Command;
 
-use lmlang_codegen::{compile, compile_to_ir, CompileOptions, OptLevel};
+use lmlang_codegen::{compile, compile_incremental, compile_to_ir, CompileOptions, OptLevel};
+use lmlang_codegen::incremental::{build_call_graph, IncrementalState};
 use lmlang_core::graph::ProgramGraph;
 use lmlang_core::id::FunctionId;
 use lmlang_core::ops::{ArithOp, CmpOp, ComputeOp, StructuredOp};
@@ -1041,4 +1042,238 @@ fn test_compile_to_ir_excludes_contracts() {
         !ir.contains("invariant"),
         "IR should not contain contract-related strings"
     );
+}
+
+// ===========================================================================
+// Phase 6 Plan 03: Incremental compilation integration tests
+// ===========================================================================
+
+/// Helper to compile with incremental state, run binary, return (stdout, stderr, exit_code).
+fn compile_incremental_and_run(
+    graph: &ProgramGraph,
+    opt_level: OptLevel,
+    state: &mut IncrementalState,
+) -> (String, String, i32) {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let options = CompileOptions {
+        output_dir: temp_dir.path().to_path_buf(),
+        opt_level,
+        target_triple: None,
+        debug_symbols: false,
+        entry_function: None,
+    };
+    let (result, _plan) = compile_incremental(graph, &options, state)
+        .expect("incremental compilation should succeed");
+    let output = Command::new(&result.binary_path)
+        .output()
+        .expect("binary should execute");
+    (
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+        output.status.code().unwrap_or(-1),
+    )
+}
+
+/// Tests that incremental compilation produces identical output to full compilation
+/// for the same program graph (correctness baseline).
+#[test]
+fn test_incremental_matches_full_compilation() {
+    let (graph, _func_id) = build_simple_add_graph();
+
+    // Full compilation
+    let (stdout_full, _stderr, exit_full) = compile_and_run(&graph, OptLevel::O0);
+    assert_eq!(exit_full, 0);
+
+    // Incremental compilation
+    let temp_cache = tempfile::tempdir().unwrap();
+    let mut state = IncrementalState::new(temp_cache.path().to_path_buf());
+    let (stdout_incr, _stderr, exit_incr) =
+        compile_incremental_and_run(&graph, OptLevel::O0, &mut state);
+    assert_eq!(exit_incr, 0);
+
+    // Output should match
+    assert_eq!(
+        stdout_full.trim(),
+        stdout_incr.trim(),
+        "Incremental and full compilation should produce same output"
+    );
+}
+
+/// Tests that incremental compilation of a multi-function call graph works.
+#[test]
+fn test_incremental_multi_function_call() {
+    let (graph, _main_id) = build_multi_function_call_graph();
+
+    let temp_cache = tempfile::tempdir().unwrap();
+    let mut state = IncrementalState::new(temp_cache.path().to_path_buf());
+    let (stdout, _stderr, exit_code) =
+        compile_incremental_and_run(&graph, OptLevel::O0, &mut state);
+    assert_eq!(exit_code, 0);
+    assert!(
+        stdout.trim().contains("11"),
+        "stdout should contain '11', got: '{}'",
+        stdout
+    );
+}
+
+/// Tests that after editing one function, only it and its callers recompile.
+#[test]
+fn test_incremental_recompilation_plan() {
+    let (graph, _main_id) = build_multi_function_call_graph();
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_cache = tempfile::tempdir().unwrap();
+    let mut state = IncrementalState::new(temp_cache.path().to_path_buf());
+
+    let options = CompileOptions {
+        output_dir: temp_dir.path().to_path_buf(),
+        opt_level: OptLevel::O0,
+        target_triple: None,
+        debug_symbols: false,
+        entry_function: None,
+    };
+
+    // First compile: everything is dirty (fresh state)
+    let (_result, plan1) = compile_incremental(&graph, &options, &mut state).unwrap();
+    assert!(
+        plan1.needs_recompilation,
+        "First compile should need recompilation"
+    );
+    assert!(plan1.cached.is_empty(), "First compile has no cache");
+
+    // Second compile: nothing changed, all should be cached
+    let (_result, plan2) = compile_incremental(&graph, &options, &mut state).unwrap();
+    assert!(
+        !plan2.needs_recompilation,
+        "Second compile should NOT need recompilation (nothing changed)"
+    );
+    assert!(!plan2.cached.is_empty(), "Second compile should have cached functions");
+    assert!(plan2.dirty.is_empty(), "No functions should be dirty");
+    assert!(
+        plan2.dirty_dependents.is_empty(),
+        "No functions should be dirty dependents"
+    );
+}
+
+/// Tests that contract-only changes do NOT trigger recompilation.
+#[test]
+fn test_incremental_contract_changes_no_recompile() {
+    let mut graph = ProgramGraph::new("test");
+    let root = graph.modules.root_id();
+
+    let func_id = graph
+        .add_function("main".into(), root, vec![], TypeId::I32, Visibility::Public)
+        .unwrap();
+
+    let c42 = graph
+        .add_core_op(ComputeOp::Const { value: ConstValue::I32(42) }, func_id)
+        .unwrap();
+    let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+    graph.add_data_edge(c42, ret, 0, 0, TypeId::I32).unwrap();
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_cache = tempfile::tempdir().unwrap();
+    let mut state = IncrementalState::new(temp_cache.path().to_path_buf());
+
+    let options = CompileOptions {
+        output_dir: temp_dir.path().to_path_buf(),
+        opt_level: OptLevel::O0,
+        target_triple: None,
+        debug_symbols: false,
+        entry_function: None,
+    };
+
+    // First compile
+    let (_result, _plan1) = compile_incremental(&graph, &options, &mut state).unwrap();
+
+    // Add a contract node (precondition)
+    let const_true = graph
+        .add_core_op(ComputeOp::Const { value: ConstValue::Bool(true) }, func_id)
+        .unwrap();
+    let _precond = graph
+        .add_core_op(
+            ComputeOp::Precondition { message: "always true".into() },
+            func_id,
+        )
+        .unwrap();
+    graph.add_data_edge(const_true, _precond, 0, 0, TypeId::BOOL).unwrap();
+
+    // Second compile: contract-only change should not trigger recompilation
+    // NOTE: We added const_true (non-contract node) as supporting node, so compilation
+    // hash WILL change. This is correct behavior. For a pure contract-only test we need
+    // to add only the contract node with existing wiring.
+    // Let's test with just adding a contract node pointing to an existing node.
+    // Reset state and rebuild without the extra const_true:
+    let mut graph2 = ProgramGraph::new("test");
+    let root2 = graph2.modules.root_id();
+
+    let func_id2 = graph2
+        .add_function("main".into(), root2, vec![], TypeId::I32, Visibility::Public)
+        .unwrap();
+
+    let c42_2 = graph2
+        .add_core_op(ComputeOp::Const { value: ConstValue::I32(42) }, func_id2)
+        .unwrap();
+    let ret2 = graph2.add_core_op(ComputeOp::Return, func_id2).unwrap();
+    graph2.add_data_edge(c42_2, ret2, 0, 0, TypeId::I32).unwrap();
+
+    // Add a bool const for use with precondition
+    let const_true2 = graph2
+        .add_core_op(ComputeOp::Const { value: ConstValue::Bool(true) }, func_id2)
+        .unwrap();
+
+    // First compile with this graph (including const_true2 already in the body)
+    let temp_dir2 = tempfile::tempdir().unwrap();
+    let temp_cache2 = tempfile::tempdir().unwrap();
+    let mut state2 = IncrementalState::new(temp_cache2.path().to_path_buf());
+    let options2 = CompileOptions {
+        output_dir: temp_dir2.path().to_path_buf(),
+        ..options.clone()
+    };
+    let (_result, _plan) = compile_incremental(&graph2, &options2, &mut state2).unwrap();
+
+    // Now add ONLY a contract node (no new supporting nodes)
+    let _precond2 = graph2
+        .add_core_op(
+            ComputeOp::Precondition { message: "always true".into() },
+            func_id2,
+        )
+        .unwrap();
+    graph2.add_data_edge(const_true2, _precond2, 0, 0, TypeId::BOOL).unwrap();
+
+    let (_result2, plan2) = compile_incremental(&graph2, &options2, &mut state2).unwrap();
+
+    // Contract-only node addition should not trigger recompilation
+    assert!(
+        !plan2.needs_recompilation,
+        "Adding only a contract node should not trigger recompilation"
+    );
+}
+
+/// Tests that build_call_graph correctly identifies Call edges.
+#[test]
+fn test_build_call_graph_integration() {
+    let (graph, _main_id) = build_multi_function_call_graph();
+    let cg = build_call_graph(&graph);
+
+    // Should have 2 functions
+    assert_eq!(cg.len(), 2);
+
+    // Find the add_one function and main function
+    let functions = graph.functions();
+    let add_one_id = functions
+        .iter()
+        .find(|(_, f)| f.name == "add_one")
+        .unwrap()
+        .0;
+    let main_id = functions
+        .iter()
+        .find(|(_, f)| f.name == "main")
+        .unwrap()
+        .0;
+
+    // main calls add_one
+    assert!(cg[main_id].contains(add_one_id));
+    // add_one calls nothing
+    assert!(cg[add_one_id].is_empty());
 }

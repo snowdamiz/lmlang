@@ -211,6 +211,254 @@ pub fn compile_to_ir(graph: &ProgramGraph, options: &CompileOptions) -> Result<S
     Ok(module.print_to_string().to_string())
 }
 
+/// Compile a program graph incrementally, recompiling only dirty functions.
+///
+/// Uses [`IncrementalState`] to track per-function hashes and determine which
+/// functions need recompilation. Clean functions reuse cached `.o` files.
+///
+/// On first invocation (empty state), performs a full compilation and populates
+/// the cache. On subsequent invocations, only dirty functions and their
+/// transitive callers are recompiled.
+///
+/// If compilation settings change (opt level, target triple, debug flag), the
+/// entire cache is invalidated and a full rebuild is performed.
+///
+/// Returns a tuple of (CompileResult, RecompilationPlan) so the caller can
+/// inspect what was recompiled.
+pub fn compile_incremental(
+    graph: &ProgramGraph,
+    options: &CompileOptions,
+    state: &mut crate::incremental::IncrementalState,
+) -> Result<(CompileResult, crate::incremental::RecompilationPlan), CodegenError> {
+    let start = Instant::now();
+
+    // 1. Type check
+    let type_errors = typecheck::validate_graph(graph);
+    if !type_errors.is_empty() {
+        return Err(CodegenError::TypeCheckFailed(type_errors));
+    }
+
+    // 2. Create output and cache directories
+    std::fs::create_dir_all(&options.output_dir)?;
+    std::fs::create_dir_all(state.cache_dir())?;
+
+    // 3. Check if settings changed -- if so, clear hashes (force full rebuild)
+    if state.is_settings_changed(options) {
+        state.update_hashes(std::collections::HashMap::new());
+        state.update_settings_hash(options);
+    }
+
+    // 4. Compute current hashes using hash_all_functions_for_compilation
+    let blake_hashes = lmlang_storage::hash::hash_all_functions_for_compilation(graph);
+    let current_hashes: std::collections::HashMap<lmlang_core::id::FunctionId, [u8; 32]> =
+        blake_hashes
+            .iter()
+            .map(|(&fid, h)| (fid, *h.as_bytes()))
+            .collect();
+
+    // 5. Build call graph and compute dirty plan
+    let call_graph = crate::incremental::build_call_graph(graph);
+    let plan = state.compute_dirty(&current_hashes, &call_graph);
+
+    // 6. Initialize LLVM
+    if options.target_triple.is_some() {
+        Target::initialize_all(&InitializationConfig::default());
+    } else {
+        Target::initialize_native(&InitializationConfig::default())
+            .map_err(|e| CodegenError::LlvmError(format!("failed to initialize native target: {}", e)))?;
+    }
+
+    let triple = match &options.target_triple {
+        Some(t) => TargetTriple::create(t),
+        None => TargetMachine::get_default_triple(),
+    };
+
+    let target = Target::from_triple(&triple)
+        .map_err(|e| CodegenError::LlvmError(format!("failed to create target from triple: {}", e)))?;
+
+    // 7. Determine which functions need compilation
+    let functions_to_compile: Vec<lmlang_core::id::FunctionId> = plan
+        .dirty
+        .iter()
+        .chain(plan.dirty_dependents.iter())
+        .copied()
+        .collect();
+
+    // 8. Emit runtime module (contains lmlang_runtime_error body)
+    {
+        let context = Context::create();
+        let module = context.create_module("runtime");
+        module.set_triple(&triple);
+
+        // Emit the full runtime (with function body)
+        runtime::declare_runtime_functions(&context, &module);
+
+        module
+            .verify()
+            .map_err(|e| CodegenError::LlvmError(format!("runtime module verification failed: {}", e)))?;
+
+        let target_machine = target
+            .create_target_machine(
+                &triple,
+                "generic",
+                "",
+                opt_to_llvm(options.opt_level),
+                RelocMode::Default,
+                CodeModel::Default,
+            )
+            .ok_or_else(|| CodegenError::LlvmError("failed to create target machine".to_string()))?;
+
+        let runtime_obj = state.cache_dir().join("runtime.o");
+        target_machine
+            .write_to_file(&module, FileType::Object, &runtime_obj)
+            .map_err(|e| CodegenError::LlvmError(format!("failed to write runtime object: {}", e)))?;
+    }
+
+    // 9. Compile each dirty function to its own .o file
+    for &func_id in &functions_to_compile {
+        let func_def = graph
+            .get_function(func_id)
+            .ok_or_else(|| CodegenError::InvalidGraph(format!("function {} not found", func_id.0)))?;
+
+        // Create a fresh Context and Module for this function
+        let context = Context::create();
+        let module = context.create_module(&format!("func_{}", func_id.0));
+        let builder = context.create_builder();
+        module.set_triple(&triple);
+
+        // Declare runtime functions as external (body is in runtime.o)
+        runtime::declare_runtime_functions_extern(&context, &module);
+
+        // Forward-declare ALL function signatures for cross-module references
+        forward_declare_functions(&context, &module, graph)?;
+
+        // Compile only this function's body
+        codegen::compile_function(&context, &module, &builder, graph, func_id, func_def)?;
+
+        // If this is the entry function named "main", rename it to __lmlang_main
+        // so it doesn't conflict with the main wrapper's @main symbol.
+        if func_def.name == "main" {
+            if let Some(main_fn) = module.get_function("main") {
+                main_fn.as_global_value().set_name("__lmlang_main");
+            }
+        }
+
+        // Verify the module
+        module
+            .verify()
+            .map_err(|e| CodegenError::LlvmError(format!("module verification failed for func {}: {}", func_id.0, e)))?;
+
+        // Create target machine for this function
+        let target_machine = target
+            .create_target_machine(
+                &triple,
+                "generic",
+                "",
+                opt_to_llvm(options.opt_level),
+                RelocMode::Default,
+                CodeModel::Default,
+            )
+            .ok_or_else(|| CodegenError::LlvmError("failed to create target machine".to_string()))?;
+
+        // Run optimization passes
+        let pass_options = PassBuilderOptions::create();
+        let pass_str = match options.opt_level {
+            OptLevel::O0 => "default<O0>",
+            OptLevel::O1 => "default<O1>",
+            OptLevel::O2 => "default<O2>",
+            OptLevel::O3 => "default<O3>",
+        };
+        module
+            .run_passes(pass_str, &target_machine, pass_options)
+            .map_err(|e| CodegenError::LlvmError(format!("optimization passes failed: {}", e)))?;
+
+        // Emit to per-function .o file
+        let obj_path = state.cached_object_path(func_id);
+        target_machine
+            .write_to_file(&module, FileType::Object, &obj_path)
+            .map_err(|e| CodegenError::LlvmError(format!("failed to write object file: {}", e)))?;
+    }
+
+    // 10. Compile main wrapper module
+    {
+        let context = Context::create();
+        let module = context.create_module("main_wrapper");
+        let builder = context.create_builder();
+        module.set_triple(&triple);
+
+        runtime::declare_runtime_functions_extern(&context, &module);
+        forward_declare_functions(&context, &module, graph)?;
+
+        generate_main_wrapper(&context, &module, &builder, graph, options)?;
+
+        module
+            .verify()
+            .map_err(|e| CodegenError::LlvmError(format!("main wrapper verification failed: {}", e)))?;
+
+        let target_machine = target
+            .create_target_machine(
+                &triple,
+                "generic",
+                "",
+                opt_to_llvm(options.opt_level),
+                RelocMode::Default,
+                CodeModel::Default,
+            )
+            .ok_or_else(|| CodegenError::LlvmError("failed to create target machine".to_string()))?;
+
+        let pass_options = PassBuilderOptions::create();
+        let pass_str = match options.opt_level {
+            OptLevel::O0 => "default<O0>",
+            OptLevel::O1 => "default<O1>",
+            OptLevel::O2 => "default<O2>",
+            OptLevel::O3 => "default<O3>",
+        };
+        module
+            .run_passes(pass_str, &target_machine, pass_options)
+            .map_err(|e| CodegenError::LlvmError(format!("optimization passes failed: {}", e)))?;
+
+        let main_obj = state.cache_dir().join("main_wrapper.o");
+        target_machine
+            .write_to_file(&module, FileType::Object, &main_obj)
+            .map_err(|e| CodegenError::LlvmError(format!("failed to write main wrapper object: {}", e)))?;
+    }
+
+    // 11. Collect all .o files (fresh + cached) for linking
+    let all_func_ids: Vec<lmlang_core::id::FunctionId> =
+        graph.functions().keys().copied().collect();
+    let mut obj_paths: Vec<std::path::PathBuf> = Vec::new();
+    for &func_id in &all_func_ids {
+        obj_paths.push(state.cached_object_path(func_id));
+    }
+    obj_paths.push(state.cache_dir().join("main_wrapper.o"));
+    obj_paths.push(state.cache_dir().join("runtime.o"));
+
+    let obj_refs: Vec<&std::path::Path> = obj_paths.iter().map(|p| p.as_path()).collect();
+
+    // 12. Link into final executable
+    let binary_name = determine_binary_name(graph, options);
+    let output_path = options.output_dir.join(&binary_name);
+    linker::link_objects(&obj_refs, &output_path, options.debug_symbols)?;
+
+    // 13. Update state with new hashes
+    state.update_hashes(current_hashes);
+    state.update_settings_hash(options);
+
+    let binary_size = std::fs::metadata(&output_path)?.len();
+    let compilation_time_ms = start.elapsed().as_millis() as u64;
+    let target_triple_str = triple.as_str().to_string_lossy().to_string();
+
+    Ok((
+        CompileResult {
+            binary_path: output_path,
+            target_triple: target_triple_str,
+            binary_size,
+            compilation_time_ms,
+        },
+        plan,
+    ))
+}
+
 /// Generate the `main` wrapper function that calls the program's entry function.
 ///
 /// Entry function selection:
