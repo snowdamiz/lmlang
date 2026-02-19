@@ -68,6 +68,8 @@ pub struct ChatWithProgramAgentResponse {
     pub session: ProgramAgentSessionView,
     pub reply: String,
     pub transcript: Vec<AgentChatMessageView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub planner: Option<PlannerOutcomeView>,
 }
 
 /// Detailed session view for one assigned agent.
@@ -75,4 +77,44 @@ pub struct ChatWithProgramAgentResponse {
 pub struct ProgramAgentDetailResponse {
     pub session: ProgramAgentSessionView,
     pub transcript: Vec<AgentChatMessageView>,
+}
+
+/// Structured planner outcome for chat responses.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlannerOutcomeView {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<PlannerActionView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure: Option<PlannerFailureView>,
+}
+
+/// Planner action summary shown in API responses.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlannerActionView {
+    pub kind: String,
+    pub summary: String,
+}
+
+/// Structured planner failure details.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlannerFailureView {
+    pub code: String,
+    pub message: String,
+    pub retryable: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub validation_errors: Vec<PlannerValidationErrorView>,
+}
+
+/// Planner validation error projection for response payloads.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlannerValidationErrorView {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
 }

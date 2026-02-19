@@ -6,9 +6,9 @@ use std::time::Duration;
 use dashmap::DashMap;
 use tokio::task::JoinHandle;
 
+use crate::autonomy_planner::{plan_for_prompt, PlannerOutcome};
 use crate::concurrency::AgentId;
 use crate::handlers::agent_control::maybe_execute_agent_chat_command;
-use crate::llm_provider::run_external_chat;
 use crate::project_agent::ProjectAgentSession;
 use crate::state::AppState;
 
@@ -120,29 +120,56 @@ impl AutonomousRunner {
                         }
                     }
                 }
-                StepDecision::Clarification(question) => {
-                    let assumption = default_assumption(&goal, &question);
+                StepDecision::PlannerAccepted(summary) => {
                     let _ = state
                         .project_agent_manager
                         .append_message(
                             program_id,
                             agent_id,
                             "assistant",
-                            format!("Autonomous clarification requested: {}", question),
+                            format!("Autonomous planner accepted structured plan: {}", summary),
                         )
                         .await;
+                    let _ = state
+                        .project_agent_manager
+                        .set_run_status(
+                            program_id,
+                            agent_id,
+                            "idle",
+                            Some(
+                                "Autonomous planner produced structured plan. Execution awaits generic planner action executor."
+                                    .to_string(),
+                            ),
+                        )
+                        .await;
+                    break;
+                }
+                StepDecision::PlannerRejected(reason) => {
+                    failures = failures.saturating_add(1);
                     let _ = state
                         .project_agent_manager
                         .append_message(
                             program_id,
                             agent_id,
                             "system",
-                            format!(
-                                "Autonomous assumption applied (no operator chat turn required): {}",
-                                assumption
-                            ),
+                            format!("Autonomous planner rejected current goal: {}", reason),
                         )
                         .await;
+                    if failures >= 3 {
+                        let _ = state
+                            .project_agent_manager
+                            .set_run_status(
+                                program_id,
+                                agent_id,
+                                "stopped",
+                                Some(
+                                    "Autonomous loop stopped after repeated planner rejections."
+                                        .to_string(),
+                                ),
+                            )
+                            .await;
+                        break;
+                    }
                 }
                 StepDecision::Done => {
                     let _ = state
@@ -186,42 +213,23 @@ impl AutonomousRunner {
             .take(8)
             .rev()
             .map(|m| format!("{}: {}", m.role, m.content))
-            .collect::<Vec<_>>()
-            .join("\n");
+            .collect::<Vec<_>>();
 
-        let prompt = format!(
-            "You are running as an autonomous background build agent.\n\
-             Goal: {}\n\
-             Recent transcript:\n{}\n\
-             Return exactly one line in one of these forms:\n\
-             - create hello world program\n\
-             - compile program\n\
-             - run program\n\
-             - done\n\
-             - clarify: <single blocking question>\n\
-             Prefer assumptions and progress over asking questions.",
-            goal, transcript
-        );
-
-        let first = match run_external_chat(&agent.llm, &prompt).await {
-            Ok(text) => text,
-            Err(_) => return StepDecision::Noop,
-        };
-
-        match parse_step_decision(&first) {
-            StepDecision::Clarification(question) => {
-                let assumption = default_assumption(goal, &question);
-                let followup = format!(
-                    "Use this assumption and continue without operator intervention: {}\n\
-                     Return one line command now.",
-                    assumption
-                );
-                match run_external_chat(&agent.llm, &followup).await {
-                    Ok(second) => parse_step_decision(&second),
-                    Err(_) => StepDecision::Clarification(question),
-                }
+        match plan_for_prompt(&agent.llm, goal, &transcript).await {
+            PlannerOutcome::Accepted(accepted) => StepDecision::PlannerAccepted(format!(
+                "{} action(s) validated for '{}': {}",
+                accepted.action_count,
+                accepted.goal,
+                accepted
+                    .actions
+                    .iter()
+                    .map(|action| format!("{} ({})", action.kind, action.summary))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )),
+            PlannerOutcome::Rejected(rejected) => {
+                StepDecision::PlannerRejected(format!("[{}] {}", rejected.code, rejected.message))
             }
-            other => other,
         }
     }
 }
@@ -234,7 +242,8 @@ impl Default for AutonomousRunner {
 
 enum StepDecision {
     Command(String),
-    Clarification(String),
+    PlannerAccepted(String),
+    PlannerRejected(String),
     Done,
     Noop,
 }
@@ -277,43 +286,4 @@ fn deterministic_hello_world_step(
     }
 
     Some(StepDecision::Done)
-}
-
-fn parse_step_decision(raw: &str) -> StepDecision {
-    let text = raw.trim();
-    if text.is_empty() {
-        return StepDecision::Noop;
-    }
-    let lower = text.to_ascii_lowercase();
-
-    if let Some(rest) = lower.strip_prefix("clarify:") {
-        let question = rest.trim();
-        if !question.is_empty() {
-            return StepDecision::Clarification(question.to_string());
-        }
-    }
-    if text.ends_with('?') {
-        return StepDecision::Clarification(text.to_string());
-    }
-    if lower.contains("create hello world") {
-        return StepDecision::Command("create hello world program".to_string());
-    }
-    if lower.contains("compile") {
-        return StepDecision::Command("compile program".to_string());
-    }
-    if lower.contains("run") || lower.contains("execute") {
-        return StepDecision::Command("run program".to_string());
-    }
-    if lower.contains("done") || lower.contains("complete") {
-        return StepDecision::Done;
-    }
-
-    StepDecision::Noop
-}
-
-fn default_assumption(goal: &str, question: &str) -> String {
-    format!(
-        "For goal '{}', assume minimal safe defaults and proceed without waiting. Blocking question was: {}",
-        goal, question
-    )
 }

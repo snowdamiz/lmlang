@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::schema::agent_control::AgentChatMessageView;
+use crate::schema::agent_control::{AgentChatMessageView, PlannerOutcomeView};
 
 /// Request body for the dashboard AI chat endpoint.
 #[derive(Debug, Clone, Deserialize)]
@@ -29,6 +29,8 @@ pub struct DashboardAiChatResponse {
     pub actions: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript: Option<Vec<AgentChatMessageView>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub planner: Option<PlannerOutcomeView>,
 }
 
 /// Query params for OpenRouter connectivity status checks.

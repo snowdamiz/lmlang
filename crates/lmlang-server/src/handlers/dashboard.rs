@@ -104,6 +104,7 @@ pub async fn ai_chat(
     };
     let mut actions = Vec::new();
     let mut transcript = None;
+    let mut planner = None;
 
     let reply = if lower.contains("create project") || lower.contains("new project") {
         let name = parse_project_name(&message, &lower)
@@ -222,10 +223,11 @@ pub async fn ai_chat(
             .await?;
         }
 
-        let (session, reply) =
+        let (session, reply, planner_outcome) =
             execute_program_agent_chat(&state, program_id, agent_id, message).await?;
         ctx.selected_project_agent_id = Some(session.agent_id);
         transcript = Some(to_transcript_view(&session.transcript));
+        planner = planner_outcome;
         actions.push(format!(
             "Delegated chat to agent {} for project {}.",
             agent_id.0, program_id
@@ -241,6 +243,7 @@ pub async fn ai_chat(
         selected_project_agent_id: ctx.selected_project_agent_id.map(|id| id.0),
         actions,
         transcript,
+        planner,
     }))
 }
 

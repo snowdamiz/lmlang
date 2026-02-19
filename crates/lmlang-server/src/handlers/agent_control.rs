@@ -10,13 +10,14 @@ use lmlang_core::type_id::TypeId;
 use lmlang_core::types::Visibility;
 use uuid::Uuid;
 
+use crate::autonomy_planner::{plan_for_prompt, PlannerOutcome};
 use crate::concurrency::AgentId;
 use crate::error::ApiError;
-use crate::llm_provider::run_external_chat;
 use crate::project_agent::{ProjectAgentMessage, ProjectAgentSession};
 use crate::schema::agent_control::{
     AgentChatMessageView, ChatWithProgramAgentRequest, ChatWithProgramAgentResponse,
     ListProgramAgentsResponse, ProgramAgentActionResponse, ProgramAgentDetailResponse,
+    PlannerActionView, PlannerFailureView, PlannerOutcomeView, PlannerValidationErrorView,
     ProgramAgentSessionView, StartProgramAgentRequest, StopProgramAgentRequest,
 };
 use crate::schema::compile::CompileRequest;
@@ -158,7 +159,7 @@ pub async fn chat_with_program_agent(
     Json(req): Json<ChatWithProgramAgentRequest>,
 ) -> Result<Json<ChatWithProgramAgentResponse>, ApiError> {
     let agent_id = parse_agent_id(&agent_id)?;
-    let (session, reply) =
+    let (session, reply, planner) =
         execute_program_agent_chat(&state, program_id, agent_id, req.message).await?;
 
     Ok(Json(ChatWithProgramAgentResponse {
@@ -166,6 +167,7 @@ pub async fn chat_with_program_agent(
         session: to_session_view(session.clone()),
         reply,
         transcript: to_transcript_view(&session.transcript),
+        planner,
     }))
 }
 
@@ -174,7 +176,7 @@ pub(crate) async fn execute_program_agent_chat(
     program_id: i64,
     agent_id: AgentId,
     message: String,
-) -> Result<(ProjectAgentSession, String), ApiError> {
+) -> Result<(ProjectAgentSession, String, Option<PlannerOutcomeView>), ApiError> {
     ensure_program_exists(state, program_id).await?;
     ensure_agent_exists(state, agent_id)?;
 
@@ -185,8 +187,12 @@ pub(crate) async fn execute_program_agent_chat(
     }
 
     let action_note = maybe_execute_agent_chat_command(state, program_id, message.as_str()).await?;
+    let mut planner = None;
     let assistant_override = if action_note.is_none() {
-        maybe_execute_external_chat(state, agent_id, message.as_str()).await?
+        let (reply, planner_outcome) =
+            plan_non_command_prompt(state, program_id, agent_id, message.as_str()).await?;
+        planner = Some(planner_outcome);
+        Some(reply)
     } else {
         None
     };
@@ -203,7 +209,7 @@ pub(crate) async fn execute_program_agent_chat(
         .await
         .map_err(ApiError::BadRequest)?;
 
-    Ok((session, reply))
+    Ok((session, reply, planner))
 }
 
 fn parse_agent_id(raw: &str) -> Result<AgentId, ApiError> {
@@ -478,27 +484,117 @@ fn ensure_function_exists(
     }
 }
 
-async fn maybe_execute_external_chat(
+async fn plan_non_command_prompt(
     state: &AppState,
+    program_id: i64,
     agent_id: AgentId,
     user_message: &str,
-) -> Result<Option<String>, ApiError> {
-    let session = state
+) -> Result<(String, PlannerOutcomeView), ApiError> {
+    let agent = state
         .agent_registry
         .get(&agent_id)
         .ok_or_else(|| ApiError::NotFound(format!("agent {} not found", agent_id.0)))?;
+    let transcript_context = state
+        .project_agent_manager
+        .get(program_id, agent_id)
+        .await
+        .map(|session| {
+            session
+                .transcript
+                .iter()
+                .rev()
+                .take(8)
+                .rev()
+                .map(|entry| format!("{}: {}", entry.role, entry.content))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
-    let llm = session.llm;
-    if !llm.is_configured() {
-        if llm.provider.is_some() || llm.model.is_some() || llm.api_key.is_some() {
-            return Err(ApiError::BadRequest(
-                "agent LLM config is incomplete: provider, model, and api_key are all required"
-                    .to_string(),
-            ));
+    let outcome = plan_for_prompt(&agent.llm, user_message, &transcript_context).await;
+    let view = planner_outcome_to_view(&outcome);
+    let reply = planner_outcome_to_reply(&outcome);
+    Ok((reply, view))
+}
+
+fn planner_outcome_to_reply(outcome: &PlannerOutcome) -> String {
+    match outcome {
+        PlannerOutcome::Accepted(accepted) => {
+            let summary = accepted
+                .actions
+                .iter()
+                .map(|action| format!("{} ({})", action.kind, action.summary))
+                .collect::<Vec<_>>()
+                .join("; ");
+
+            format!(
+                "Planner accepted {} action(s) for goal '{}'. Contract version {}. {}",
+                accepted.action_count,
+                accepted.goal,
+                accepted.version,
+                if summary.is_empty() {
+                    "No action summary available.".to_string()
+                } else {
+                    format!("Actions: {}", summary)
+                }
+            )
         }
-        return Ok(None);
+        PlannerOutcome::Rejected(rejected) => {
+            let mut message = format!("Planner rejected request [{}]: {}", rejected.code, rejected.message);
+            if !rejected.validation_errors.is_empty() {
+                let first = &rejected.validation_errors[0];
+                message.push_str(&format!(
+                    " First validation error: {} ({:?}).",
+                    first.message, first.field
+                ));
+            }
+            message
+        }
     }
+}
 
-    let reply = run_external_chat(&llm, user_message).await?;
-    Ok(Some(reply))
+fn planner_outcome_to_view(outcome: &PlannerOutcome) -> PlannerOutcomeView {
+    match outcome {
+        PlannerOutcome::Accepted(accepted) => PlannerOutcomeView {
+            status: outcome.status().to_string(),
+            version: Some(accepted.version.clone()),
+            actions: accepted
+                .actions
+                .iter()
+                .map(|action| PlannerActionView {
+                    kind: action.kind.clone(),
+                    summary: action.summary.clone(),
+                })
+                .collect(),
+            failure: None,
+        },
+        PlannerOutcome::Rejected(rejected) => PlannerOutcomeView {
+            status: outcome.status().to_string(),
+            version: rejected.version.clone(),
+            actions: Vec::new(),
+            failure: Some(PlannerFailureView {
+                code: rejected.code.clone(),
+                message: rejected.message.clone(),
+                retryable: rejected.retryable,
+                validation_errors: rejected
+                    .validation_errors
+                    .iter()
+                    .map(|error| PlannerValidationErrorView {
+                        code: validation_code_to_string(&error.code),
+                        message: error.message.clone(),
+                        action_index: error.action_index,
+                        field: error.field.clone(),
+                    })
+                    .collect(),
+            }),
+        },
+    }
+}
+
+fn validation_code_to_string(
+    code: &crate::schema::autonomy_plan::AutonomyPlanValidationCode,
+) -> String {
+    serde_json::to_value(code)
+        .ok()
+        .and_then(|value| value.as_str().map(ToString::to_string))
+        .unwrap_or_else(|| "unknown_validation_code".to_string())
 }
