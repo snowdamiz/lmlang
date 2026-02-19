@@ -5,6 +5,7 @@
 //! API schema types, error handling, and route definitions.
 
 pub mod agent_config_store;
+pub mod autonomy_planner;
 pub mod autonomous_runner;
 pub mod concurrency;
 pub mod error;

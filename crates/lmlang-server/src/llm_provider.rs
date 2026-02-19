@@ -1,6 +1,7 @@
 //! Shared OpenAI-compatible provider chat client.
 
 use serde::Deserialize;
+use serde_json::json;
 
 use crate::concurrency::AgentLlmConfig;
 use crate::error::ApiError;
@@ -8,6 +9,24 @@ use crate::error::ApiError;
 pub async fn run_external_chat(
     llm: &AgentLlmConfig,
     user_message: &str,
+) -> Result<String, ApiError> {
+    run_external_chat_internal(llm, user_message, false).await
+}
+
+/// Runs chat with JSON-mode preference enabled.
+///
+/// The provider is asked to return a JSON object payload in assistant content.
+pub async fn run_external_chat_json(
+    llm: &AgentLlmConfig,
+    user_message: &str,
+) -> Result<String, ApiError> {
+    run_external_chat_internal(llm, user_message, true).await
+}
+
+async fn run_external_chat_internal(
+    llm: &AgentLlmConfig,
+    user_message: &str,
+    json_mode: bool,
 ) -> Result<String, ApiError> {
     let provider = llm.provider.as_deref().unwrap_or_default();
     let base_url = match provider {
@@ -48,11 +67,18 @@ pub async fn run_external_chat(
     let mut req = client
         .post(endpoint)
         .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
-        .json(&serde_json::json!({
+        .header("Content-Type", "application/json");
+
+    let mut body = json!({
             "model": model,
             "messages": messages
-        }));
+    });
+
+    if json_mode {
+        body["response_format"] = json!({ "type": "json_object" });
+    }
+
+    req = req.json(&body);
 
     if provider == "openrouter" {
         req = req
