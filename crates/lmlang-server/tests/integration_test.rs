@@ -1873,6 +1873,8 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
     assert!(html.contains("projectList"));
     assert!(html.contains("projectAgentList"));
     assert!(html.contains("chatLog"));
+    assert!(html.contains("executionTimeline"));
+    assert!(html.contains("timelineStatus"));
 
     let (status, js) = get_text(&app, "/dashboard/app.js").await;
     assert_eq!(status, StatusCode::OK, "dashboard app.js not served");
@@ -1891,6 +1893,8 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
     assert!(js.contains("/observability"));
     assert!(js.contains("Create project failed"));
     assert!(js.contains("Start build failed"));
+    assert!(js.contains("renderExecutionTimeline"));
+    assert!(js.contains("execution_attempts"));
 
     let (status, css) = get_text(&app, "/dashboard/styles.css").await;
     assert_eq!(status, StatusCode::OK, "dashboard styles.css not served");
@@ -1898,6 +1902,8 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
     assert!(css.contains(".content"));
     assert!(css.contains(".chat-container"));
     assert!(css.contains(".chat-log"));
+    assert!(css.contains(".timeline-panel"));
+    assert!(css.contains(".timeline-attempt"));
 }
 
 #[tokio::test]
@@ -3207,6 +3213,236 @@ async fn phase17_attempt_timeline_contract_is_exposed_in_agent_and_dashboard_res
         dashboard_attempts[0]["stop_reason"]["code"],
         json!("completed")
     );
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn phase17_calculator_benchmark_records_structure_markers_and_verify_compile_visibility() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "Create a simple calculator",
+        "actions": [
+            {
+                "type": "mutate_batch",
+                "request": {
+                    "mutations": [
+                        {
+                            "type": "AddFunction",
+                            "name": "calculator_add",
+                            "module": 0,
+                            "params": [["lhs", 3], ["rhs", 3]],
+                            "return_type": 3,
+                            "visibility": "Public"
+                        }
+                    ],
+                    "dry_run": false
+                }
+            },
+            {
+                "type": "verify",
+                "request": { "scope": "Full" }
+            },
+            {
+                "type": "compile",
+                "request": {
+                    "entry_function": "missing_entry",
+                    "opt_level": "O0"
+                }
+            }
+        ]
+    }"#;
+    let (base_url, requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id = register_mock_planner_agent(&app, &base_url, "phase17-calculator-agent").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "Create a simple calculator" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+
+    let detail = wait_for_run_status(&app, pid, &agent_id, "stopped").await;
+    assert_eq!(
+        detail["session"]["stop_reason"]["code"],
+        json!("retry_budget_exhausted")
+    );
+
+    let attempts = detail["session"]["execution_attempts"]
+        .as_array()
+        .expect("execution attempts should be persisted");
+    assert_eq!(attempts.len(), 3);
+    let latest = attempts.last().unwrap();
+    assert_eq!(latest["attempt"], json!(3));
+    assert_eq!(latest["max_attempts"], json!(3));
+    assert_eq!(
+        latest["stop_reason"]["code"],
+        json!("retry_budget_exhausted")
+    );
+
+    let actions = latest["actions"].as_array().unwrap();
+    assert!(actions.iter().any(|row| {
+        row["kind"] == json!("mutate_batch")
+            && row["summary"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("calculator_add")
+    }));
+    assert!(actions.iter().any(|row| row["kind"] == json!("verify")));
+    assert!(actions.iter().any(|row| row["kind"] == json!("compile")));
+
+    let requests_guard = requests.lock().unwrap();
+    assert!(
+        requests_guard.len() >= 3,
+        "expected calculator benchmark retries"
+    );
+    let first_prompt = planner_prompt_content(&requests_guard[0]).to_ascii_lowercase();
+    assert!(first_prompt.contains("create a simple calculator"));
+    drop(requests_guard);
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn phase17_string_utility_benchmark_runs_generic_pipeline_and_persists_attempts() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "build string utility",
+        "actions": [
+            {
+                "type": "mutate_batch",
+                "request": {
+                    "mutations": [
+                        {
+                            "type": "AddFunction",
+                            "name": "string_normalize",
+                            "module": 0,
+                            "params": [["input", 7]],
+                            "return_type": 7,
+                            "visibility": "Public"
+                        }
+                    ],
+                    "dry_run": false
+                }
+            },
+            {
+                "type": "verify",
+                "request": { "scope": "Full" }
+            }
+        ]
+    }"#;
+    let (base_url, requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id = register_mock_planner_agent(&app, &base_url, "phase17-string-agent").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "Build a string utility for trimming and lowercasing" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+
+    let detail = wait_for_run_status(&app, pid, &agent_id, "idle").await;
+    assert_eq!(detail["session"]["stop_reason"]["code"], json!("completed"));
+
+    let attempts = detail["session"]["execution_attempts"]
+        .as_array()
+        .expect("execution attempts should be present");
+    assert_eq!(attempts.len(), 1);
+    let actions = attempts[0]["actions"].as_array().unwrap();
+    assert!(actions.iter().any(|row| {
+        row["kind"] == json!("mutate_batch")
+            && row["summary"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("string_normalize")
+    }));
+    assert!(actions.iter().any(|row| row["kind"] == json!("verify")));
+
+    let requests_guard = requests.lock().unwrap();
+    assert!(!requests_guard.is_empty(), "planner should be invoked");
+    let first_prompt = planner_prompt_content(&requests_guard[0]).to_ascii_lowercase();
+    assert!(first_prompt.contains("build a string utility"));
+    drop(requests_guard);
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn phase17_state_machine_benchmark_runs_generic_pipeline_and_persists_attempts() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "build ticket state machine",
+        "actions": [
+            {
+                "type": "mutate_batch",
+                "request": {
+                    "mutations": [
+                        {
+                            "type": "AddFunction",
+                            "name": "ticket_state_transition",
+                            "module": 0,
+                            "params": [["current", 7], ["event", 7]],
+                            "return_type": 7,
+                            "visibility": "Public"
+                        }
+                    ],
+                    "dry_run": false
+                }
+            },
+            {
+                "type": "verify",
+                "request": { "scope": "Full" }
+            }
+        ]
+    }"#;
+    let (base_url, requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id =
+        register_mock_planner_agent(&app, &base_url, "phase17-state-machine-agent").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "Create a ticket approval state machine workflow" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+
+    let detail = wait_for_run_status(&app, pid, &agent_id, "idle").await;
+    assert_eq!(detail["session"]["stop_reason"]["code"], json!("completed"));
+
+    let attempts = detail["session"]["execution_attempts"]
+        .as_array()
+        .expect("execution attempts should be persisted");
+    assert_eq!(attempts.len(), 1);
+    let actions = attempts[0]["actions"].as_array().unwrap();
+    assert!(actions.iter().any(|row| {
+        row["kind"] == json!("mutate_batch")
+            && row["summary"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("ticket_state_transition")
+    }));
+    assert!(actions.iter().any(|row| row["kind"] == json!("verify")));
+
+    let requests_guard = requests.lock().unwrap();
+    assert!(!requests_guard.is_empty(), "planner should be invoked");
+    let first_prompt = planner_prompt_content(&requests_guard[0]).to_ascii_lowercase();
+    assert!(first_prompt.contains("state machine"));
+    drop(requests_guard);
 
     server.abort();
 }
