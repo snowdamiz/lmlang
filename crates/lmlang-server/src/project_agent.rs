@@ -370,7 +370,10 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::schema::autonomy_execution::{AutonomyExecutionStatus, StopReasonCode};
+    use crate::schema::autonomy_execution::{
+        AutonomyDiagnostics, AutonomyDiagnosticsClass, AutonomyExecutionError,
+        AutonomyExecutionErrorCode, AutonomyExecutionStatus, StopReasonCode,
+    };
 
     #[tokio::test]
     async fn execution_evidence_can_be_recorded_on_session() {
@@ -481,5 +484,125 @@ mod tests {
             .transcript
             .iter()
             .any(|msg| { msg.role == "assistant" && msg.content == "continuing autonomous loop" }));
+    }
+
+    #[tokio::test]
+    async fn verify_failure_diagnostics_are_persisted_in_session_attempts() {
+        let manager = ProjectAgentManager::new();
+        let program_id = 77;
+        let agent_id = AgentId(Uuid::new_v4());
+        manager.assign(program_id, agent_id, None).await;
+
+        let diagnostics = AutonomyDiagnostics::new(
+            AutonomyDiagnosticsClass::VerifyFailure,
+            true,
+            "verify gate reported 1 diagnostic(s)",
+        )
+        .with_messages(vec!["[TYPE_MISMATCH] type mismatch at node 3".to_string()]);
+        let error = AutonomyExecutionError::new(
+            AutonomyExecutionErrorCode::ValidationFailed,
+            "post-execution verify failed",
+            true,
+        )
+        .with_diagnostics(diagnostics.clone());
+        let attempt = AutonomyExecutionAttemptSummary {
+            attempt: 1,
+            max_attempts: 3,
+            planner_status: "accepted".to_string(),
+            action_count: 1,
+            succeeded_actions: 0,
+            action_results: vec![
+                crate::schema::autonomy_execution::AutonomyActionExecutionResult::failed(
+                    0,
+                    "verify_gate",
+                    "post-execution verify failed with 1 diagnostic(s)",
+                    error,
+                )
+                .with_diagnostics(diagnostics),
+            ],
+            stop_reason: Some(StopReason::new(
+                StopReasonCode::VerifyFailed,
+                "post-execution verify gate failed",
+            )),
+        };
+
+        let session = manager
+            .append_execution_attempt(program_id, agent_id, attempt)
+            .await
+            .expect("append attempt");
+        let persisted = session.execution_attempts[0].action_results[0]
+            .diagnostics
+            .as_ref()
+            .expect("verify diagnostics persisted");
+        assert_eq!(persisted.class, AutonomyDiagnosticsClass::VerifyFailure);
+        assert!(persisted.retryable);
+    }
+
+    #[tokio::test]
+    async fn compile_failure_diagnostics_survive_outcome_projection() {
+        let manager = ProjectAgentManager::new();
+        let program_id = 78;
+        let agent_id = AgentId(Uuid::new_v4());
+        manager
+            .assign(program_id, agent_id, Some("runner".to_string()))
+            .await;
+        manager
+            .start(program_id, agent_id, "build calculator".to_string())
+            .await
+            .expect("start");
+
+        let diagnostics = AutonomyDiagnostics::new(
+            AutonomyDiagnosticsClass::CompileFailure,
+            false,
+            "compile action failed",
+        )
+        .with_messages(vec!["bad request: unsupported opt level O9".to_string()]);
+        let error = AutonomyExecutionError::new(
+            AutonomyExecutionErrorCode::BadRequest,
+            "bad request: invalid opt level `O9`",
+            false,
+        )
+        .with_diagnostics(diagnostics.clone());
+        let attempt = AutonomyExecutionAttemptSummary {
+            attempt: 1,
+            max_attempts: 3,
+            planner_status: "accepted".to_string(),
+            action_count: 1,
+            succeeded_actions: 0,
+            action_results: vec![
+                crate::schema::autonomy_execution::AutonomyActionExecutionResult::failed(
+                    0,
+                    "compile",
+                    "compile action failed",
+                    error,
+                )
+                .with_diagnostics(diagnostics),
+            ],
+            stop_reason: Some(StopReason::new(
+                StopReasonCode::ActionFailedNonRetryable,
+                "compile action failed",
+            )),
+        };
+        let outcome = AutonomyExecutionOutcome::from_single_attempt(
+            "build calculator",
+            "2026-02-19",
+            AutonomyExecutionStatus::Failed,
+            attempt,
+            StopReason::new(
+                StopReasonCode::ActionFailedNonRetryable,
+                "compile action failed",
+            ),
+        );
+
+        let session = manager
+            .set_execution_outcome(program_id, agent_id, outcome)
+            .await
+            .expect("set outcome");
+        let persisted = session.execution_attempts[0].action_results[0]
+            .diagnostics
+            .as_ref()
+            .expect("compile diagnostics persisted");
+        assert_eq!(persisted.class, AutonomyDiagnosticsClass::CompileFailure);
+        assert!(!persisted.retryable);
     }
 }

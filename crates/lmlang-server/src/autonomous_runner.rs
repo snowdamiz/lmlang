@@ -13,9 +13,9 @@ use crate::concurrency::AgentId;
 use crate::handlers::agent_control::maybe_execute_agent_chat_command;
 use crate::project_agent::ProjectAgentSession;
 use crate::schema::autonomy_execution::{
-    AutonomyActionExecutionResult, AutonomyExecutionAttemptSummary, AutonomyExecutionError,
-    AutonomyExecutionErrorCode, AutonomyExecutionOutcome, AutonomyExecutionStatus, StopReason,
-    StopReasonCode,
+    AutonomyActionExecutionResult, AutonomyDiagnostics, AutonomyDiagnosticsClass,
+    AutonomyExecutionAttemptSummary, AutonomyExecutionError, AutonomyExecutionErrorCode,
+    AutonomyExecutionOutcome, AutonomyExecutionStatus, StopReason, StopReasonCode,
 };
 use crate::schema::verify::VerifyScope;
 use crate::state::AppState;
@@ -448,6 +448,25 @@ impl AutonomousRunner {
                             }
                         }
                         Ok(verify) => {
+                            let diagnostic_messages = verify
+                                .errors
+                                .iter()
+                                .take(3)
+                                .map(|error| format!("[{}] {}", error.code, error.message))
+                                .collect::<Vec<_>>();
+                            let diagnostics = AutonomyDiagnostics::new(
+                                AutonomyDiagnosticsClass::VerifyFailure,
+                                true,
+                                format!(
+                                    "verify gate reported {} diagnostic(s)",
+                                    verify.errors.len()
+                                ),
+                            )
+                            .with_messages(diagnostic_messages)
+                            .with_detail(serde_json::json!({
+                                "error_count": verify.errors.len(),
+                                "warning_count": verify.warnings.len(),
+                            }));
                             let verify_error = AutonomyExecutionError::new(
                                 AutonomyExecutionErrorCode::ValidationFailed,
                                 "post-execution verify failed",
@@ -456,7 +475,8 @@ impl AutonomousRunner {
                             .with_details(
                                 serde_json::to_value(&verify.errors)
                                     .unwrap_or(serde_json::Value::Null),
-                            );
+                            )
+                            .with_diagnostics(diagnostics.clone());
                             let verify_result = AutonomyActionExecutionResult::failed(
                                 attempt_summary.action_results.len(),
                                 "verify_gate",
@@ -468,7 +488,8 @@ impl AutonomousRunner {
                             )
                             .with_detail(
                                 serde_json::to_value(&verify).unwrap_or(serde_json::Value::Null),
-                            );
+                            )
+                            .with_diagnostics(diagnostics);
                             attempt_summary.action_results.push(verify_result);
                             attempt_summary.action_count += 1;
 
