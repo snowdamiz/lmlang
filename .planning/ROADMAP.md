@@ -120,7 +120,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — Contract node types (Precondition/Postcondition/Invariant), interpreter contract checking, codegen filtering, contract-aware hashing
+- [x] 06-01-PLAN.md — Contract node types (Precondition/Postcondition/Invariant), interpreter contract checking, codegen filtering, contract-aware hashing
 - [ ] 06-02-PLAN.md — Property-based testing harness with random input generation and API endpoint
 - [ ] 06-03-PLAN.md — Incremental compilation with dirty tracking, per-function object caching, and dirty query API
 
@@ -183,7 +183,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 3. Type Checking & Graph Interpreter | 2/3 | Complete    | 2026-02-18 |
 | 4. AI Agent Tool API | 3/4 | Complete    | 2026-02-18 |
 | 5. LLVM Compilation Pipeline | 4/4 | Complete    | 2026-02-19 |
-| 6. Full Contract System & Incremental Compilation | 0/? | Not started | - |
+| 6. Full Contract System & Incremental Compilation | 1/3 | In Progress|  |
 | 7. Multi-Agent Concurrency | 0/? | Not started | - |
 | 8. Dual-Layer Semantic Architecture | 0/? | Not started | - |
 | 9. Human Observability | 0/? | Not started | - |

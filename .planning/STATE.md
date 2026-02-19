@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core value:** AI agents can build, modify, and verify programs of arbitrary size with perfect local and global awareness
-**Current focus:** Phase 5: LLVM Compilation Pipeline
+**Current focus:** Phase 6: Full Contract System & Incremental Compilation
 
 ## Current Position
 
-Phase: 5 of 9 (LLVM Compilation Pipeline)
-Plan: 4 of 4 in current phase
-Status: Phase 5 Complete
-Last activity: 2026-02-18 — Completed 05-04-PLAN.md
+Phase: 6 of 9 (Full Contract System & Incremental Compilation)
+Plan: 1 of 5 in current phase
+Status: Executing Phase 6
+Last activity: 2026-02-19 — Completed 06-01-PLAN.md
 
-Progress: [██████░░░░] 64%
+Progress: [██████░░░░] 68%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 18
+- Total plans completed: 19
 - Average duration: 7min
-- Total execution time: 2.12 hours
+- Total execution time: 2.32 hours
 
 **By Phase:**
 
@@ -32,10 +32,11 @@ Progress: [██████░░░░] 64%
 | 03 | 3/3 | 35min | 12min |
 | 04 | 4/4 | 24min | 6min |
 | 05 | 4/4 | 36min | 9min |
+| 06 | 1/5 | 12min | 12min |
 
 **Recent Trend:**
-- Last 5 plans: 04-04 (1min), 05-01 (7min), 05-02 (12min), 05-03 (5min), 05-04 (12min)
-- Trend: Integration test plan took 12min; found and fixed 2 compiler bugs (void main exit code, forward declaration ordering)
+- Last 5 plans: 05-01 (7min), 05-02 (12min), 05-03 (5min), 05-04 (12min), 06-01 (12min)
+- Trend: Contract foundation plan touched 4 crates (14 files), all 348 tests pass
 
 *Updated after each plan completion*
 
@@ -122,6 +123,12 @@ Recent decisions affecting current work:
 - [Phase 05]: Main wrapper always generated (entry renamed to __lmlang_main) to ensure i32 @main() for C runtime
 - [Phase 05]: Forward-declare all function signatures before compiling bodies (handles HashMap iteration order)
 
+- [Phase 06]: Contract ops as ComputeOp variants (not separate tier) for minimal type system disruption
+- [Phase 06]: Contracts filtered before topological sort in codegen (not at emit_node) for clean separation
+- [Phase 06]: Contract-aware hashing excludes contract nodes entirely so contract edits never trigger recompilation
+- [Phase 06]: ContractViolation includes counterexample values from failing subgraph for agent debugging
+- [Phase 06]: Added PartialEq to Value for test assertions (f32/f64 PartialEq sufficient)
+
 ### Pending Todos
 
 None yet.
@@ -134,6 +141,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-18
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-full-contract-system-incremental-compilation/06-CONTEXT.md
+Last session: 2026-02-19
+Stopped at: Completed 06-01-PLAN.md
+Resume file: .planning/phases/06-full-contract-system-incremental-compilation/06-01-SUMMARY.md
