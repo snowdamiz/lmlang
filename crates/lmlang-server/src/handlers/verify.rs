@@ -6,7 +6,9 @@ use lmlang_core::id::NodeId;
 use serde::Deserialize;
 
 use crate::error::ApiError;
-use crate::schema::verify::{VerifyResponse, VerifyScope};
+use crate::schema::verify::{
+    FlushPropagationRequest, FlushPropagationResponse, VerifyResponse, VerifyScope,
+};
 use crate::state::AppState;
 
 /// Handler-local request wrapper for verification.
@@ -52,5 +54,28 @@ pub async fn verify(
     }
 
     let response = service.verify(scope, req.affected_nodes)?;
+    Ok(Json(response))
+}
+
+/// Flushes queued semantic/compute propagation events.
+///
+/// `POST /programs/{id}/verify/flush`
+pub async fn flush(
+    State(state): State<AppState>,
+    Path(program_id): Path<i64>,
+    Json(req): Json<FlushPropagationRequest>,
+) -> Result<Json<FlushPropagationResponse>, ApiError> {
+    let mut service = state.service.lock().await;
+
+    let active_id = service.program_id();
+    if active_id.0 != program_id {
+        return Err(ApiError::BadRequest(format!(
+            "program {} is not the active program (active: {})",
+            program_id, active_id.0
+        )));
+    }
+
+    service.enqueue_seed_events(&req.events)?;
+    let response = service.flush_propagation_response()?;
     Ok(Json(response))
 }

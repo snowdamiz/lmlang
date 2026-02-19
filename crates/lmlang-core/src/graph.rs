@@ -20,11 +20,12 @@
 //! to maintain dual-graph consistency. Read-only accessors are provided for
 //! traversals and queries.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::stable_graph::StableGraph;
-use petgraph::Directed;
+use petgraph::visit::EdgeRef;
+use petgraph::{Directed, Direction};
 use serde::{Deserialize, Serialize};
 
 use crate::edge::{FlowEdge, SemanticEdge};
@@ -32,10 +33,149 @@ use crate::error::CoreError;
 use crate::function::{Capture, FunctionDef};
 use crate::id::{EdgeId, FunctionId, ModuleId, NodeId};
 use crate::module::ModuleTree;
-use crate::node::{ComputeNode, FunctionSignature, FunctionSummary, SemanticNode};
+use crate::node::{
+    ComputeNode, DocNode, EmbeddingPayload, FunctionSignature, FunctionSummary, ModuleNode,
+    SemanticMetadata, SemanticNode, SemanticSummaryPayload, SpecNode, TestNode,
+};
 use crate::ops::{ComputeNodeOp, ComputeOp, StructuredOp};
 use crate::type_id::{TypeId, TypeRegistry};
 use crate::types::Visibility;
+
+/// The semantic layer where a propagation event originated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PropagationLayer {
+    Semantic,
+    Compute,
+}
+
+/// Event payload for semantic-origin changes that must propagate downward.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SemanticEvent {
+    FunctionCreated {
+        function_id: FunctionId,
+    },
+    FunctionSignatureChanged {
+        function_id: FunctionId,
+    },
+    ContractAdded {
+        function_id: FunctionId,
+        contract_name: String,
+    },
+}
+
+/// Event payload for compute-origin changes that must propagate upward.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ComputeEvent {
+    NodeInserted {
+        function_id: FunctionId,
+        node_id: NodeId,
+        op_kind: String,
+    },
+    NodeModified {
+        function_id: FunctionId,
+        node_id: NodeId,
+        op_kind: String,
+    },
+    NodeRemoved {
+        function_id: FunctionId,
+        node_id: NodeId,
+    },
+    ControlFlowChanged {
+        function_id: FunctionId,
+    },
+}
+
+/// Bidirectional propagation event.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PropagationEventKind {
+    Semantic(SemanticEvent),
+    Compute(ComputeEvent),
+}
+
+/// Queue event envelope with deterministic sequencing and causal lineage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PropagationEvent {
+    pub id: u64,
+    pub sequence: u64,
+    pub origin: PropagationLayer,
+    pub kind: PropagationEventKind,
+    #[serde(default)]
+    pub lineage: Vec<u64>,
+}
+
+impl PropagationEvent {
+    fn priority(&self) -> u8 {
+        match self.kind {
+            PropagationEventKind::Semantic(_) => 0,
+            PropagationEventKind::Compute(_) => 1,
+        }
+    }
+
+    fn fingerprint(&self) -> String {
+        match &self.kind {
+            PropagationEventKind::Semantic(SemanticEvent::FunctionCreated { function_id }) => {
+                format!("semantic:create_fn:{}", function_id.0)
+            }
+            PropagationEventKind::Semantic(SemanticEvent::FunctionSignatureChanged {
+                function_id,
+            }) => format!("semantic:sig_fn:{}", function_id.0),
+            PropagationEventKind::Semantic(SemanticEvent::ContractAdded {
+                function_id,
+                contract_name,
+            }) => format!("semantic:contract:{}:{}", function_id.0, contract_name),
+            PropagationEventKind::Compute(ComputeEvent::NodeInserted {
+                function_id,
+                node_id,
+                op_kind,
+            }) => format!("compute:insert:{}:{}:{}", function_id.0, node_id.0, op_kind),
+            PropagationEventKind::Compute(ComputeEvent::NodeModified {
+                function_id,
+                node_id,
+                op_kind,
+            }) => format!("compute:modify:{}:{}:{}", function_id.0, node_id.0, op_kind),
+            PropagationEventKind::Compute(ComputeEvent::NodeRemoved {
+                function_id,
+                node_id,
+            }) => format!("compute:remove:{}:{}", function_id.0, node_id.0),
+            PropagationEventKind::Compute(ComputeEvent::ControlFlowChanged { function_id }) => {
+                format!("compute:control:{}", function_id.0)
+            }
+        }
+    }
+}
+
+/// Conflict priority class for deterministic dual-layer resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConflictPriorityClass {
+    SemanticAuthoritative,
+    ComputeAuthoritative,
+    Mergeable,
+    DiagnosticRequired,
+}
+
+/// Structured diagnostic for unresolved propagation conflicts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PropagationConflictDiagnostic {
+    pub event_id: u64,
+    pub conflicting_event_id: u64,
+    pub precedence: ConflictPriorityClass,
+    pub reason: String,
+    pub node_refs: Vec<u32>,
+    pub remediation: String,
+}
+
+/// Deterministic flush report returned by [`ProgramGraph::flush_propagation`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct PropagationFlushReport {
+    pub processed_events: usize,
+    pub applied_events: usize,
+    pub skipped_events: usize,
+    pub generated_events: usize,
+    pub remaining_queue: usize,
+    pub refreshed_semantic_nodes: Vec<u32>,
+    pub refreshed_summary_nodes: Vec<u32>,
+    pub diagnostics: Vec<PropagationConflictDiagnostic>,
+}
 
 /// The dual-graph program container.
 ///
@@ -61,6 +201,30 @@ pub struct ProgramGraph {
     function_semantic_nodes: HashMap<FunctionId, NodeIndex<u32>>,
     /// Next function ID counter
     next_function_id: u32,
+    /// Pending propagation events (explicit-flush model).
+    #[serde(default)]
+    propagation_queue: Vec<PropagationEvent>,
+    /// Next event id for queue insertion.
+    #[serde(default = "default_next_propagation_event_id")]
+    next_propagation_event_id: u64,
+    /// Next deterministic sequence number for queue ordering.
+    #[serde(default = "default_next_propagation_sequence")]
+    next_propagation_sequence: u64,
+    /// Maximum times a flush may process events before halting as loop-safe guard.
+    #[serde(default = "default_propagation_replay_limit")]
+    propagation_replay_limit: usize,
+}
+
+fn default_next_propagation_event_id() -> u64 {
+    1
+}
+
+fn default_next_propagation_sequence() -> u64 {
+    1
+}
+
+fn default_propagation_replay_limit() -> usize {
+    1024
 }
 
 impl ProgramGraph {
@@ -74,7 +238,15 @@ impl ProgramGraph {
 
         // Create a semantic node for the root module.
         let root_module_def = modules.get_module(root_id).unwrap().clone();
-        let root_semantic_idx = semantic.add_node(SemanticNode::Module(root_module_def));
+        let root_semantic_idx = semantic.add_node(SemanticNode::Module(ModuleNode {
+            module: root_module_def.clone(),
+            metadata: SemanticMetadata::with_module(
+                "module",
+                root_id,
+                &root_module_def.name,
+                &format!("module {} declaration", root_module_def.name),
+            ),
+        }));
 
         let mut module_semantic_nodes = HashMap::new();
         module_semantic_nodes.insert(root_id, root_semantic_idx);
@@ -88,6 +260,10 @@ impl ProgramGraph {
             module_semantic_nodes,
             function_semantic_nodes: HashMap::new(),
             next_function_id: 0,
+            propagation_queue: Vec::new(),
+            next_propagation_event_id: default_next_propagation_event_id(),
+            next_propagation_sequence: default_next_propagation_sequence(),
+            propagation_replay_limit: default_propagation_replay_limit(),
         }
     }
 
@@ -116,6 +292,10 @@ impl ProgramGraph {
             module_semantic_nodes,
             function_semantic_nodes,
             next_function_id,
+            propagation_queue: Vec::new(),
+            next_propagation_event_id: default_next_propagation_event_id(),
+            next_propagation_sequence: default_next_propagation_sequence(),
+            propagation_replay_limit: default_propagation_replay_limit(),
         }
     }
 
@@ -153,6 +333,11 @@ impl ProgramGraph {
         self.next_function_id
     }
 
+    /// Returns pending propagation events in queue order.
+    pub fn pending_propagation_events(&self) -> &[PropagationEvent] {
+        &self.propagation_queue
+    }
+
     // -----------------------------------------------------------------------
     // Module methods
     // -----------------------------------------------------------------------
@@ -172,7 +357,15 @@ impl ProgramGraph {
 
         // Add semantic node for the new module.
         let module_def = self.modules.get_module(module_id).unwrap().clone();
-        let sem_idx = self.semantic.add_node(SemanticNode::Module(module_def));
+        let sem_idx = self.semantic.add_node(SemanticNode::Module(ModuleNode {
+            module: module_def.clone(),
+            metadata: SemanticMetadata::with_module(
+                "module",
+                module_id,
+                &module_def.name,
+                &format!("module {} declaration", module_def.name),
+            ),
+        }));
         self.module_semantic_nodes.insert(module_id, sem_idx);
 
         // Add Contains edge from parent module's semantic node.
@@ -209,13 +402,8 @@ impl ProgramGraph {
         let func_id = FunctionId(self.next_function_id);
         self.next_function_id += 1;
 
-        let mut func_def = FunctionDef::new(
-            func_id,
-            name.clone(),
-            module,
-            params.clone(),
-            return_type,
-        );
+        let mut func_def =
+            FunctionDef::new(func_id, name.clone(), module, params.clone(), return_type);
         func_def.visibility = visibility;
 
         self.functions.insert(func_id, func_def);
@@ -223,7 +411,7 @@ impl ProgramGraph {
 
         // Add semantic node.
         let summary = FunctionSummary {
-            name,
+            name: name.clone(),
             function_id: func_id,
             module,
             visibility,
@@ -231,6 +419,13 @@ impl ProgramGraph {
                 params,
                 return_type,
             },
+            metadata: SemanticMetadata::with_function(
+                "function",
+                module,
+                func_id,
+                &name,
+                &format!("fn {} signature declaration", name),
+            ),
         };
         let sem_idx = self.semantic.add_node(SemanticNode::Function(summary));
         self.function_semantic_nodes.insert(func_id, sem_idx);
@@ -288,7 +483,7 @@ impl ProgramGraph {
 
         // Add semantic node.
         let summary = FunctionSummary {
-            name,
+            name: name.clone(),
             function_id: func_id,
             module,
             visibility: Visibility::Private,
@@ -296,6 +491,13 @@ impl ProgramGraph {
                 params,
                 return_type,
             },
+            metadata: SemanticMetadata::with_function(
+                "function",
+                module,
+                func_id,
+                &name,
+                &format!("closure {} signature declaration", name),
+            ),
         };
         let sem_idx = self.semantic.add_node(SemanticNode::Function(summary));
         self.function_semantic_nodes.insert(func_id, sem_idx);
@@ -345,11 +547,7 @@ impl ProgramGraph {
     }
 
     /// Convenience: adds a core (Tier 1) op node.
-    pub fn add_core_op(
-        &mut self,
-        op: ComputeOp,
-        owner: FunctionId,
-    ) -> Result<NodeId, CoreError> {
+    pub fn add_core_op(&mut self, op: ComputeOp, owner: FunctionId) -> Result<NodeId, CoreError> {
         self.add_compute_node(ComputeNodeOp::Core(op), owner)
     }
 
@@ -514,6 +712,540 @@ impl ProgramGraph {
         self.semantic.edge_count()
     }
 
+    /// Creates a semantic spec node under a module.
+    pub fn add_spec_node(
+        &mut self,
+        module: ModuleId,
+        spec_id: String,
+        title: String,
+    ) -> Result<u32, CoreError> {
+        if self.modules.get_module(module).is_none() {
+            return Err(CoreError::ModuleNotFound { id: module });
+        }
+
+        let node = SemanticNode::Spec(SpecNode {
+            spec_id: spec_id.clone(),
+            title: title.clone(),
+            metadata: SemanticMetadata::with_module(
+                "spec",
+                module,
+                &spec_id,
+                &format!("spec {}", title),
+            ),
+        });
+        let idx = self.semantic.add_node(node);
+        if let Some(&module_idx) = self.module_semantic_nodes.get(&module) {
+            self.semantic
+                .add_edge(module_idx, idx, SemanticEdge::Contains);
+        }
+        Ok(idx.index() as u32)
+    }
+
+    /// Creates a semantic test node under a module.
+    pub fn add_test_node(
+        &mut self,
+        module: ModuleId,
+        test_id: String,
+        title: String,
+        target_function: Option<FunctionId>,
+    ) -> Result<u32, CoreError> {
+        if self.modules.get_module(module).is_none() {
+            return Err(CoreError::ModuleNotFound { id: module });
+        }
+
+        let mut metadata =
+            SemanticMetadata::with_module("test", module, &test_id, &format!("test {}", title));
+        metadata.ownership.function = target_function;
+
+        let idx = self.semantic.add_node(SemanticNode::Test(TestNode {
+            test_id,
+            title,
+            target_function,
+            metadata,
+        }));
+        if let Some(&module_idx) = self.module_semantic_nodes.get(&module) {
+            self.semantic
+                .add_edge(module_idx, idx, SemanticEdge::Contains);
+        }
+        Ok(idx.index() as u32)
+    }
+
+    /// Creates a semantic documentation node under a module.
+    pub fn add_doc_node(
+        &mut self,
+        module: ModuleId,
+        doc_id: String,
+        title: String,
+    ) -> Result<u32, CoreError> {
+        if self.modules.get_module(module).is_none() {
+            return Err(CoreError::ModuleNotFound { id: module });
+        }
+
+        let idx = self.semantic.add_node(SemanticNode::Doc(DocNode {
+            doc_id: doc_id.clone(),
+            title: title.clone(),
+            metadata: SemanticMetadata::with_module(
+                "doc",
+                module,
+                &doc_id,
+                &format!("doc {}", title),
+            ),
+        }));
+        if let Some(&module_idx) = self.module_semantic_nodes.get(&module) {
+            self.semantic
+                .add_edge(module_idx, idx, SemanticEdge::Contains);
+        }
+        Ok(idx.index() as u32)
+    }
+
+    /// Adds a semantic edge between two semantic nodes by index.
+    pub fn add_semantic_edge(
+        &mut self,
+        from_semantic_idx: u32,
+        to_semantic_idx: u32,
+        edge: SemanticEdge,
+    ) -> Result<u32, CoreError> {
+        let from = NodeIndex::<u32>::new(from_semantic_idx as usize);
+        let to = NodeIndex::<u32>::new(to_semantic_idx as usize);
+        if self.semantic.node_weight(from).is_none() || self.semantic.node_weight(to).is_none() {
+            return Err(CoreError::InvalidEdge {
+                reason: format!(
+                    "invalid semantic edge {} -> {}",
+                    from_semantic_idx, to_semantic_idx
+                ),
+            });
+        }
+        let edge_idx = self.semantic.add_edge(from, to, edge);
+        Ok(edge_idx.index() as u32)
+    }
+
+    /// Replaces deterministic summary payload for a semantic node.
+    pub fn update_semantic_summary(
+        &mut self,
+        semantic_idx: u32,
+        kind: &str,
+        identifier: &str,
+        summary_body: &str,
+    ) -> Result<(), CoreError> {
+        let idx = NodeIndex::<u32>::new(semantic_idx as usize);
+        let node =
+            self.semantic
+                .node_weight_mut(idx)
+                .ok_or_else(|| CoreError::GraphInconsistency {
+                    reason: format!("semantic node {} not found", semantic_idx),
+                })?;
+        node.metadata_mut().summary =
+            SemanticSummaryPayload::deterministic(kind, identifier, summary_body);
+        Ok(())
+    }
+
+    /// Replaces node/subgraph embeddings for a semantic node.
+    pub fn update_semantic_embeddings(
+        &mut self,
+        semantic_idx: u32,
+        node_embedding: Option<Vec<f32>>,
+        subgraph_summary_embedding: Option<Vec<f32>>,
+    ) -> Result<(), CoreError> {
+        let idx = NodeIndex::<u32>::new(semantic_idx as usize);
+        let node =
+            self.semantic
+                .node_weight_mut(idx)
+                .ok_or_else(|| CoreError::GraphInconsistency {
+                    reason: format!("semantic node {} not found", semantic_idx),
+                })?;
+        node.metadata_mut().embeddings = EmbeddingPayload {
+            node_embedding,
+            subgraph_summary_embedding,
+        };
+        Ok(())
+    }
+
+    /// Enqueues a propagation event and returns the assigned event id.
+    pub fn enqueue_propagation(
+        &mut self,
+        origin: PropagationLayer,
+        kind: PropagationEventKind,
+    ) -> u64 {
+        let event_id = self.next_propagation_event_id;
+        let sequence = self.next_propagation_sequence;
+        self.next_propagation_event_id += 1;
+        self.next_propagation_sequence += 1;
+
+        self.propagation_queue.push(PropagationEvent {
+            id: event_id,
+            sequence,
+            origin,
+            kind,
+            lineage: Vec::new(),
+        });
+        event_id
+    }
+
+    /// Clears all pending propagation events.
+    pub fn clear_propagation_queue(&mut self) {
+        self.propagation_queue.clear();
+    }
+
+    /// Flushes the propagation queue with deterministic ordering and loop guards.
+    pub fn flush_propagation(&mut self) -> Result<PropagationFlushReport, CoreError> {
+        if self.propagation_queue.is_empty() {
+            return Ok(PropagationFlushReport::default());
+        }
+
+        let mut report = PropagationFlushReport::default();
+        let mut pending = std::mem::take(&mut self.propagation_queue);
+        let mut seen_fingerprints = HashSet::new();
+        let mut target_last_event: HashMap<String, PropagationEvent> = HashMap::new();
+        let mut replay_count = 0usize;
+
+        while !pending.is_empty() {
+            if replay_count >= self.propagation_replay_limit {
+                return Err(CoreError::PropagationLoopDetected {
+                    reason: format!(
+                        "flush exceeded replay limit ({})",
+                        self.propagation_replay_limit
+                    ),
+                });
+            }
+
+            let (next_idx, _) = pending
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, e)| (e.priority(), e.sequence, e.id))
+                .expect("non-empty queue has min");
+            let event = pending.remove(next_idx);
+            replay_count += 1;
+            report.processed_events += 1;
+
+            if event.lineage.contains(&event.id) {
+                report.skipped_events += 1;
+                continue;
+            }
+
+            let fingerprint = event.fingerprint();
+            if !seen_fingerprints.insert(fingerprint) {
+                report.skipped_events += 1;
+                continue;
+            }
+
+            let target = self.propagation_target_key(&event);
+            if let Some(previous) = target_last_event.get(&target) {
+                let class = Self::classify_conflict(previous, &event);
+                match class {
+                    ConflictPriorityClass::Mergeable => {}
+                    ConflictPriorityClass::SemanticAuthoritative => {
+                        if matches!(event.origin, PropagationLayer::Compute) {
+                            report.skipped_events += 1;
+                            continue;
+                        }
+                    }
+                    ConflictPriorityClass::ComputeAuthoritative => {
+                        if matches!(event.origin, PropagationLayer::Semantic) {
+                            report.skipped_events += 1;
+                            continue;
+                        }
+                    }
+                    ConflictPriorityClass::DiagnosticRequired => {
+                        report.diagnostics.push(PropagationConflictDiagnostic {
+                            event_id: event.id,
+                            conflicting_event_id: previous.id,
+                            precedence: class,
+                            reason: "conflict requires explicit human/agent remediation"
+                                .to_string(),
+                            node_refs: self.conflict_node_refs(previous, &event),
+                            remediation:
+                                "flush conflicting edits separately after semantic correction"
+                                    .to_string(),
+                        });
+                        report.skipped_events += 1;
+                        continue;
+                    }
+                }
+            }
+
+            self.apply_propagation_event(&event, &mut report)?;
+            report.applied_events += 1;
+            target_last_event.insert(target, event);
+        }
+
+        report.remaining_queue = 0;
+        report.refreshed_semantic_nodes = dedupe_u32(report.refreshed_semantic_nodes);
+        report.refreshed_summary_nodes = dedupe_u32(report.refreshed_summary_nodes);
+        self.propagation_queue.clear();
+        Ok(report)
+    }
+
+    fn propagation_target_key(&self, event: &PropagationEvent) -> String {
+        match event.kind {
+            PropagationEventKind::Semantic(SemanticEvent::FunctionCreated { function_id })
+            | PropagationEventKind::Semantic(SemanticEvent::FunctionSignatureChanged {
+                function_id,
+            })
+            | PropagationEventKind::Semantic(SemanticEvent::ContractAdded {
+                function_id, ..
+            })
+            | PropagationEventKind::Compute(ComputeEvent::NodeInserted { function_id, .. })
+            | PropagationEventKind::Compute(ComputeEvent::NodeModified { function_id, .. })
+            | PropagationEventKind::Compute(ComputeEvent::NodeRemoved { function_id, .. })
+            | PropagationEventKind::Compute(ComputeEvent::ControlFlowChanged { function_id }) => {
+                format!("function:{}", function_id.0)
+            }
+        }
+    }
+
+    fn classify_conflict(
+        previous: &PropagationEvent,
+        current: &PropagationEvent,
+    ) -> ConflictPriorityClass {
+        match (&previous.kind, &current.kind) {
+            (
+                PropagationEventKind::Semantic(SemanticEvent::FunctionSignatureChanged { .. }),
+                PropagationEventKind::Compute(ComputeEvent::NodeModified { .. }),
+            )
+            | (
+                PropagationEventKind::Compute(ComputeEvent::NodeModified { .. }),
+                PropagationEventKind::Semantic(SemanticEvent::FunctionSignatureChanged { .. }),
+            ) => ConflictPriorityClass::DiagnosticRequired,
+            (
+                PropagationEventKind::Semantic(SemanticEvent::ContractAdded { .. }),
+                PropagationEventKind::Compute(_),
+            ) => ConflictPriorityClass::SemanticAuthoritative,
+            (
+                PropagationEventKind::Compute(ComputeEvent::NodeRemoved { .. }),
+                PropagationEventKind::Semantic(_),
+            ) => ConflictPriorityClass::ComputeAuthoritative,
+            _ => ConflictPriorityClass::Mergeable,
+        }
+    }
+
+    fn conflict_node_refs(
+        &self,
+        previous: &PropagationEvent,
+        current: &PropagationEvent,
+    ) -> Vec<u32> {
+        let mut refs = Vec::new();
+
+        for event in [previous, current] {
+            match event.kind {
+                PropagationEventKind::Compute(ComputeEvent::NodeInserted { node_id, .. })
+                | PropagationEventKind::Compute(ComputeEvent::NodeModified { node_id, .. })
+                | PropagationEventKind::Compute(ComputeEvent::NodeRemoved { node_id, .. }) => {
+                    refs.push(node_id.0);
+                }
+                PropagationEventKind::Semantic(SemanticEvent::FunctionCreated { function_id })
+                | PropagationEventKind::Semantic(SemanticEvent::FunctionSignatureChanged {
+                    function_id,
+                })
+                | PropagationEventKind::Semantic(SemanticEvent::ContractAdded {
+                    function_id,
+                    ..
+                })
+                | PropagationEventKind::Compute(ComputeEvent::ControlFlowChanged { function_id }) => {
+                    refs.push(function_id.0)
+                }
+            }
+        }
+
+        dedupe_u32(refs)
+    }
+
+    fn apply_propagation_event(
+        &mut self,
+        event: &PropagationEvent,
+        report: &mut PropagationFlushReport,
+    ) -> Result<(), CoreError> {
+        match &event.kind {
+            PropagationEventKind::Semantic(SemanticEvent::FunctionCreated { function_id })
+            | PropagationEventKind::Semantic(SemanticEvent::FunctionSignatureChanged {
+                function_id,
+            })
+            | PropagationEventKind::Compute(ComputeEvent::NodeInserted { function_id, .. })
+            | PropagationEventKind::Compute(ComputeEvent::NodeModified { function_id, .. })
+            | PropagationEventKind::Compute(ComputeEvent::NodeRemoved { function_id, .. })
+            | PropagationEventKind::Compute(ComputeEvent::ControlFlowChanged { function_id }) => {
+                self.refresh_function_semantics(*function_id, report)?
+            }
+            PropagationEventKind::Semantic(SemanticEvent::ContractAdded {
+                function_id,
+                contract_name,
+            }) => {
+                self.attach_contract_spec(*function_id, contract_name, report)?;
+                self.refresh_function_semantics(*function_id, report)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn refresh_function_semantics(
+        &mut self,
+        function_id: FunctionId,
+        report: &mut PropagationFlushReport,
+    ) -> Result<(), CoreError> {
+        let func_def = self
+            .functions
+            .get(&function_id)
+            .ok_or(CoreError::FunctionNotFound { id: function_id })?
+            .clone();
+        let sem_idx = *self
+            .function_semantic_nodes
+            .get(&function_id)
+            .ok_or_else(|| CoreError::GraphInconsistency {
+                reason: format!("missing semantic node for function {}", function_id.0),
+            })?;
+
+        let node_ids = self.function_nodes(function_id);
+        let node_count = node_ids.len() as u32;
+
+        // Rebuild call relationships deterministically from compute ops.
+        let mut called_functions = BTreeSet::new();
+        for node_id in &node_ids {
+            if let Some(node) = self.get_compute_node(*node_id) {
+                if let ComputeNodeOp::Core(ComputeOp::Call { target }) = &node.op {
+                    called_functions.insert(target.0);
+                }
+            }
+        }
+
+        let remove_calls: Vec<_> = self
+            .semantic
+            .edges_directed(sem_idx, Direction::Outgoing)
+            .filter(|e| matches!(e.weight(), SemanticEdge::Calls))
+            .map(|e| e.id())
+            .collect();
+        for edge_id in remove_calls {
+            self.semantic.remove_edge(edge_id);
+        }
+
+        for callee in called_functions {
+            let callee = FunctionId(callee);
+            if let Some(&callee_sem_idx) = self.function_semantic_nodes.get(&callee) {
+                self.semantic
+                    .add_edge(sem_idx, callee_sem_idx, SemanticEdge::Calls);
+            }
+        }
+
+        if let Some(SemanticNode::Function(summary)) = self.semantic.node_weight_mut(sem_idx) {
+            summary.signature.params = func_def.params.clone();
+            summary.signature.return_type = func_def.return_type;
+            summary.visibility = func_def.visibility;
+
+            let summary_text = format!(
+                "fn {} has {} compute nodes and return type {}",
+                summary.name, node_count, summary.signature.return_type.0
+            );
+            summary.metadata.summary =
+                SemanticSummaryPayload::deterministic("function", &summary.name, &summary_text);
+            summary.metadata.complexity = Some(node_count);
+            summary.metadata.provenance.version += 1;
+            summary.metadata.provenance.updated_at_ms += 1;
+            summary.metadata.embeddings = EmbeddingPayload {
+                node_embedding: Some(deterministic_embedding(&summary.metadata.summary.body, 8)),
+                subgraph_summary_embedding: Some(deterministic_embedding(
+                    &summary.metadata.summary.checksum,
+                    8,
+                )),
+            };
+        }
+
+        report.refreshed_semantic_nodes.push(sem_idx.index() as u32);
+        self.refresh_module_semantics(func_def.module, report)?;
+        Ok(())
+    }
+
+    fn refresh_module_semantics(
+        &mut self,
+        module_id: ModuleId,
+        report: &mut PropagationFlushReport,
+    ) -> Result<(), CoreError> {
+        let module_sem_idx = *self
+            .module_semantic_nodes
+            .get(&module_id)
+            .ok_or(CoreError::ModuleNotFound { id: module_id })?;
+        let module_name = self
+            .modules
+            .get_module(module_id)
+            .map(|m| m.name.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+        let function_count = self
+            .functions
+            .values()
+            .filter(|f| f.module == module_id)
+            .count();
+
+        if let Some(SemanticNode::Module(module_node)) =
+            self.semantic.node_weight_mut(module_sem_idx)
+        {
+            let summary_text = format!(
+                "module {} contains {} function summaries",
+                module_name, function_count
+            );
+            module_node.metadata.summary =
+                SemanticSummaryPayload::deterministic("module", &module_name, &summary_text);
+            module_node.metadata.provenance.version += 1;
+            module_node.metadata.provenance.updated_at_ms += 1;
+            module_node.metadata.embeddings = EmbeddingPayload {
+                node_embedding: Some(deterministic_embedding(
+                    &module_node.metadata.summary.body,
+                    8,
+                )),
+                subgraph_summary_embedding: Some(deterministic_embedding(
+                    &module_node.metadata.summary.checksum,
+                    8,
+                )),
+            };
+        }
+
+        report
+            .refreshed_summary_nodes
+            .push(module_sem_idx.index() as u32);
+        Ok(())
+    }
+
+    fn attach_contract_spec(
+        &mut self,
+        function_id: FunctionId,
+        contract_name: &str,
+        report: &mut PropagationFlushReport,
+    ) -> Result<(), CoreError> {
+        let func = self
+            .functions
+            .get(&function_id)
+            .ok_or(CoreError::FunctionNotFound { id: function_id })?
+            .clone();
+        let function_sem_idx =
+            *self
+                .function_semantic_nodes
+                .get(&function_id)
+                .ok_or_else(|| CoreError::GraphInconsistency {
+                    reason: format!("missing semantic node for function {}", function_id.0),
+                })?;
+        let module_sem_idx = *self
+            .module_semantic_nodes
+            .get(&func.module)
+            .ok_or(CoreError::ModuleNotFound { id: func.module })?;
+
+        let spec_idx = self.semantic.add_node(SemanticNode::Spec(SpecNode {
+            spec_id: format!("contract-{}-{}", function_id.0, contract_name),
+            title: format!("contract {}", contract_name),
+            metadata: SemanticMetadata::with_function(
+                "spec",
+                func.module,
+                function_id,
+                contract_name,
+                &format!("contract {} for function {}", contract_name, func.name),
+            ),
+        }));
+
+        self.semantic
+            .add_edge(module_sem_idx, spec_idx, SemanticEdge::Contains);
+        self.semantic
+            .add_edge(function_sem_idx, spec_idx, SemanticEdge::Implements);
+        report
+            .refreshed_semantic_nodes
+            .push(spec_idx.index() as u32);
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // Debug consistency assertion
     // -----------------------------------------------------------------------
@@ -552,6 +1284,30 @@ impl ProgramGraph {
             }
         }
     }
+}
+
+fn dedupe_u32(values: Vec<u32>) -> Vec<u32> {
+    let set: BTreeSet<u32> = values.into_iter().collect();
+    set.into_iter().collect()
+}
+
+fn deterministic_embedding(seed: &str, dims: usize) -> Vec<f32> {
+    if dims == 0 {
+        return Vec::new();
+    }
+
+    let mut bytes = seed.as_bytes().to_vec();
+    if bytes.is_empty() {
+        bytes.push(0);
+    }
+
+    let mut out = Vec::with_capacity(dims);
+    for i in 0..dims {
+        let a = bytes[i % bytes.len()] as f32 / 255.0;
+        let b = bytes[(i * 7 + 3) % bytes.len()] as f32 / 255.0;
+        out.push((a + b) / 2.0);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -608,13 +1364,7 @@ mod tests {
         assert_eq!(graph.semantic_node_count(), 1);
 
         graph
-            .add_function(
-                "foo".into(),
-                root,
-                vec![],
-                TypeId::UNIT,
-                Visibility::Public,
-            )
+            .add_function("foo".into(), root, vec![], TypeId::UNIT, Visibility::Public)
             .unwrap();
 
         // Now: root module + foo function = 2 semantic nodes.
@@ -627,13 +1377,7 @@ mod tests {
         let root = graph.modules.root_id();
 
         let f = graph
-            .add_function(
-                "f".into(),
-                root,
-                vec![],
-                TypeId::UNIT,
-                Visibility::Public,
-            )
+            .add_function("f".into(), root, vec![], TypeId::UNIT, Visibility::Public)
             .unwrap();
 
         let sem_count_before = graph.semantic_node_count();
@@ -650,10 +1394,7 @@ mod tests {
     fn add_compute_node_nonexistent_owner_errors() {
         let mut graph = ProgramGraph::new("main");
 
-        let result = graph.add_core_op(
-            ComputeOp::Parameter { index: 0 },
-            FunctionId(999),
-        );
+        let result = graph.add_core_op(ComputeOp::Parameter { index: 0 }, FunctionId(999));
         assert!(result.is_err());
         match result {
             Err(CoreError::FunctionNotFound { id }) => assert_eq!(id, FunctionId(999)),
@@ -833,15 +1574,9 @@ mod tests {
             .unwrap();
         let add_ret = graph.add_core_op(ComputeOp::Return, add_fn_id).unwrap();
 
-        graph
-            .add_data_edge(param_a, sum, 0, 0, i32_id)
-            .unwrap();
-        graph
-            .add_data_edge(param_b, sum, 0, 1, i32_id)
-            .unwrap();
-        graph
-            .add_data_edge(sum, add_ret, 0, 0, i32_id)
-            .unwrap();
+        graph.add_data_edge(param_a, sum, 0, 0, i32_id).unwrap();
+        graph.add_data_edge(param_b, sum, 0, 1, i32_id).unwrap();
+        graph.add_data_edge(sum, add_ret, 0, 0, i32_id).unwrap();
 
         // Set entry node on "add".
         graph.get_function_mut(add_fn_id).unwrap().entry_node = Some(param_a);
@@ -900,9 +1635,7 @@ mod tests {
         let call_add = graph
             .add_core_op(ComputeOp::Call { target: add_fn_id }, adder_fn_id)
             .unwrap();
-        let adder_ret = graph
-            .add_core_op(ComputeOp::Return, adder_fn_id)
-            .unwrap();
+        let adder_ret = graph.add_core_op(ComputeOp::Return, adder_fn_id).unwrap();
 
         graph
             .add_data_edge(param_x, call_add, 0, 0, i32_id)
@@ -932,9 +1665,7 @@ mod tests {
                 make_adder_id,
             )
             .unwrap();
-        let ma_ret = graph
-            .add_core_op(ComputeOp::Return, make_adder_id)
-            .unwrap();
+        let ma_ret = graph.add_core_op(ComputeOp::Return, make_adder_id).unwrap();
 
         graph
             .add_data_edge(ma_param_offset, make_closure, 0, 0, i32_id)
@@ -943,8 +1674,7 @@ mod tests {
             .add_data_edge(make_closure, ma_ret, 0, 0, fn_i32_to_i32)
             .unwrap();
 
-        graph.get_function_mut(make_adder_id).unwrap().entry_node =
-            Some(ma_param_offset);
+        graph.get_function_mut(make_adder_id).unwrap().entry_node = Some(ma_param_offset);
 
         // ===============================================================
         // ASSERTIONS
@@ -1016,5 +1746,141 @@ mod tests {
         assert_eq!(rt_add.name, "add");
         assert_eq!(rt_add.params.len(), 2);
         assert_eq!(rt_add.entry_node, Some(param_a));
+    }
+
+    #[test]
+    fn semantic_helpers_create_and_update_rich_nodes() {
+        let mut graph = ProgramGraph::new("main");
+        let root = graph.modules.root_id();
+        let f = graph
+            .add_function(
+                "work".into(),
+                root,
+                vec![("x".into(), TypeId::I32)],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        let spec_idx = graph
+            .add_spec_node(root, "SPEC-8".into(), "must be deterministic".into())
+            .unwrap();
+        let test_idx = graph
+            .add_test_node(
+                root,
+                "TEST-8".into(),
+                "deterministic replay".into(),
+                Some(f),
+            )
+            .unwrap();
+        let doc_idx = graph
+            .add_doc_node(root, "DOC-8".into(), "phase 8 notes".into())
+            .unwrap();
+
+        graph
+            .add_semantic_edge(spec_idx, test_idx, SemanticEdge::Validates)
+            .unwrap();
+        graph
+            .add_semantic_edge(doc_idx, spec_idx, SemanticEdge::Documents)
+            .unwrap();
+        graph
+            .update_semantic_summary(spec_idx, "spec", "SPEC-8", "all updates are deterministic")
+            .unwrap();
+        graph
+            .update_semantic_embeddings(
+                spec_idx,
+                Some(vec![0.1, 0.2, 0.3]),
+                Some(vec![0.4, 0.5, 0.6]),
+            )
+            .unwrap();
+
+        let spec_node = graph
+            .semantic()
+            .node_weight(NodeIndex::new(spec_idx as usize))
+            .unwrap();
+        assert_eq!(spec_node.kind(), "spec");
+        assert_eq!(spec_node.metadata().embeddings.node_dim(), Some(3));
+        assert_eq!(spec_node.metadata().embeddings.summary_dim(), Some(3));
+        assert!(!spec_node.metadata().summary.checksum.is_empty());
+    }
+
+    #[test]
+    fn propagation_flush_is_deterministic_and_idempotent() {
+        let mut graph = ProgramGraph::new("main");
+        let root = graph.modules.root_id();
+        let f = graph
+            .add_function(
+                "flush_me".into(),
+                root,
+                vec![("x".into(), TypeId::I32)],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+        let node_id = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, f)
+            .unwrap();
+
+        graph.enqueue_propagation(
+            PropagationLayer::Compute,
+            PropagationEventKind::Compute(ComputeEvent::NodeInserted {
+                function_id: f,
+                node_id,
+                op_kind: "Parameter".to_string(),
+            }),
+        );
+        graph.enqueue_propagation(
+            PropagationLayer::Compute,
+            PropagationEventKind::Compute(ComputeEvent::ControlFlowChanged { function_id: f }),
+        );
+
+        let first = graph.flush_propagation().unwrap();
+        assert_eq!(first.remaining_queue, 0);
+        assert!(first.applied_events >= 1);
+
+        // Idempotent: flushing with unchanged queue is a no-op.
+        let second = graph.flush_propagation().unwrap();
+        assert_eq!(second.processed_events, 0);
+        assert_eq!(second.applied_events, 0);
+        assert_eq!(second.diagnostics.len(), 0);
+    }
+
+    #[test]
+    fn propagation_conflict_emits_diagnostic_required() {
+        let mut graph = ProgramGraph::new("main");
+        let root = graph.modules.root_id();
+        let f = graph
+            .add_function(
+                "conflict".into(),
+                root,
+                vec![("x".into(), TypeId::I32)],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+        let n = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, f)
+            .unwrap();
+
+        graph.enqueue_propagation(
+            PropagationLayer::Compute,
+            PropagationEventKind::Compute(ComputeEvent::NodeModified {
+                function_id: f,
+                node_id: n,
+                op_kind: "Parameter".to_string(),
+            }),
+        );
+        graph.enqueue_propagation(
+            PropagationLayer::Semantic,
+            PropagationEventKind::Semantic(SemanticEvent::FunctionSignatureChanged {
+                function_id: f,
+            }),
+        );
+
+        let report = graph.flush_propagation().unwrap();
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.precedence == ConflictPriorityClass::DiagnosticRequired));
     }
 }

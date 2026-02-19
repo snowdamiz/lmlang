@@ -16,7 +16,7 @@ use lmlang_core::function::FunctionDef;
 use lmlang_core::graph::ProgramGraph;
 use lmlang_core::id::{FunctionId, ModuleId, NodeId};
 use lmlang_core::module::{ModuleDef, ModuleTree};
-use lmlang_core::node::{ComputeNode, SemanticNode};
+use lmlang_core::node::{ComputeNode, ModuleNode, SemanticMetadata, SemanticNode};
 use lmlang_core::type_id::{TypeId, TypeRegistry};
 use lmlang_core::types::LmType;
 
@@ -151,16 +151,10 @@ pub fn decompose(graph: &ProgramGraph) -> DecomposedProgram {
 /// gaps and then removed after edges are added, preserving the index mapping.
 pub fn recompose(decomposed: DecomposedProgram) -> Result<ProgramGraph, StorageError> {
     // Rebuild compute graph
-    let compute = rebuild_compute_graph(
-        &decomposed.compute_nodes,
-        &decomposed.flow_edges,
-    )?;
+    let compute = rebuild_compute_graph(&decomposed.compute_nodes, &decomposed.flow_edges)?;
 
     // Rebuild semantic graph
-    let semantic = rebuild_semantic_graph(
-        &decomposed.semantic_nodes,
-        &decomposed.semantic_edges,
-    )?;
+    let semantic = rebuild_semantic_graph(&decomposed.semantic_nodes, &decomposed.semantic_edges)?;
 
     // Rebuild TypeRegistry
     let types_vec: Vec<LmType> = {
@@ -172,8 +166,7 @@ pub fn recompose(decomposed: DecomposedProgram) -> Result<ProgramGraph, StorageE
         TypeRegistry::from_parts(types_vec, decomposed.type_names, decomposed.type_next_id);
 
     // Rebuild functions map
-    let functions: HashMap<FunctionId, FunctionDef> =
-        decomposed.functions.into_iter().collect();
+    let functions: HashMap<FunctionId, FunctionDef> = decomposed.functions.into_iter().collect();
 
     // Use the stored ModuleTree directly
     let modules = decomposed.module_tree;
@@ -236,7 +229,11 @@ fn rebuild_compute_graph(
     // Edges in StableGraph may also have gaps. We need to add edges in index order.
     // Find max edge index
     if !sorted_edges.is_empty() {
-        let max_edge_idx = sorted_edges.iter().map(|(idx, _, _, _)| *idx).max().unwrap();
+        let max_edge_idx = sorted_edges
+            .iter()
+            .map(|(idx, _, _, _)| *idx)
+            .max()
+            .unwrap();
 
         let edge_set: std::collections::HashSet<u32> =
             sorted_edges.iter().map(|(idx, _, _, _)| *idx).collect();
@@ -255,13 +252,7 @@ fn rebuild_compute_graph(
                 // We'll remove it after
                 if let Some(first_node) = sorted_nodes.first() {
                     let idx = NodeIndex::<u32>::new(first_node.0 .0 as usize);
-                    graph.add_edge(
-                        idx,
-                        idx,
-                        FlowEdge::Control {
-                            branch_index: None,
-                        },
-                    );
+                    graph.add_edge(idx, idx, FlowEdge::Control { branch_index: None });
                     edge_gap_indices.push(i);
                 }
             }
@@ -301,8 +292,10 @@ fn rebuild_semantic_graph(
     let max_idx = sorted_nodes.last().unwrap().0;
 
     // Build a map from index to node for O(1) lookup
-    let node_map: std::collections::HashMap<u32, &SemanticNode> =
-        sorted_nodes.iter().map(|(idx, node)| (*idx, node)).collect();
+    let node_map: std::collections::HashMap<u32, &SemanticNode> = sorted_nodes
+        .iter()
+        .map(|(idx, node)| (*idx, node))
+        .collect();
 
     // Add nodes in order, with dummies for gaps
     let mut gap_indices = Vec::new();
@@ -311,11 +304,14 @@ fn rebuild_semantic_graph(
             graph.add_node((*node).clone());
         } else {
             // Dummy semantic node
-            let dummy = SemanticNode::Module(lmlang_core::module::ModuleDef {
-                id: ModuleId(u32::MAX),
-                name: "__dummy__".to_string(),
-                parent: None,
-                visibility: lmlang_core::types::Visibility::Private,
+            let dummy = SemanticNode::Module(ModuleNode {
+                module: lmlang_core::module::ModuleDef {
+                    id: ModuleId(u32::MAX),
+                    name: "__dummy__".to_string(),
+                    parent: None,
+                    visibility: lmlang_core::types::Visibility::Private,
+                },
+                metadata: SemanticMetadata::default(),
             });
             graph.add_node(dummy);
             gap_indices.push(i);
@@ -327,7 +323,11 @@ fn rebuild_semantic_graph(
     sorted_edges.sort_by_key(|(idx, _, _, _)| *idx);
 
     if !sorted_edges.is_empty() {
-        let max_edge_idx = sorted_edges.iter().map(|(idx, _, _, _)| *idx).max().unwrap();
+        let max_edge_idx = sorted_edges
+            .iter()
+            .map(|(idx, _, _, _)| *idx)
+            .max()
+            .unwrap();
         let edge_set: std::collections::HashSet<u32> =
             sorted_edges.iter().map(|(idx, _, _, _)| *idx).collect();
 
@@ -399,12 +399,8 @@ mod tests {
             .unwrap();
         let ret = graph.add_core_op(ComputeOp::Return, add_fn).unwrap();
 
-        graph
-            .add_data_edge(param_a, sum, 0, 0, i32_id)
-            .unwrap();
-        graph
-            .add_data_edge(param_b, sum, 0, 1, i32_id)
-            .unwrap();
+        graph.add_data_edge(param_a, sum, 0, 0, i32_id).unwrap();
+        graph.add_data_edge(param_b, sum, 0, 1, i32_id).unwrap();
         graph.add_data_edge(sum, ret, 0, 0, i32_id).unwrap();
 
         graph.get_function_mut(add_fn).unwrap().entry_node = Some(param_a);
@@ -434,9 +430,7 @@ mod tests {
         let neg_ret = graph.add_core_op(ComputeOp::Return, neg_fn).unwrap();
 
         graph.add_data_edge(param_x, neg, 0, 0, i32_id).unwrap();
-        graph
-            .add_data_edge(neg, neg_ret, 0, 0, i32_id)
-            .unwrap();
+        graph.add_data_edge(neg, neg_ret, 0, 0, i32_id).unwrap();
 
         graph.get_function_mut(neg_fn).unwrap().entry_node = Some(param_x);
 
@@ -562,5 +556,66 @@ mod tests {
         for id in &original_nodes {
             assert!(rt_nodes.contains(id));
         }
+    }
+
+    #[test]
+    fn test_decompose_recompose_preserves_semantic_embeddings() {
+        let mut graph = ProgramGraph::new("main");
+        let root = graph.modules.root_id();
+        let _f = graph
+            .add_function(
+                "semantic_fn".into(),
+                root,
+                vec![("x".into(), TypeId::I32)],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        let spec_idx = graph
+            .add_spec_node(root, "SPEC-EMB".into(), "embedding retention".into())
+            .unwrap();
+        graph
+            .update_semantic_summary(
+                spec_idx,
+                "spec",
+                "SPEC-EMB",
+                "semantic embedding payload survives roundtrip",
+            )
+            .unwrap();
+        graph
+            .update_semantic_embeddings(
+                spec_idx,
+                Some(vec![0.11, 0.22, 0.33]),
+                Some(vec![0.44, 0.55]),
+            )
+            .unwrap();
+
+        let before_node = graph
+            .semantic()
+            .node_weight(NodeIndex::new(spec_idx as usize))
+            .unwrap()
+            .clone();
+
+        let decomposed = decompose(&graph);
+        let recomposed = recompose(decomposed).unwrap();
+
+        let after_node = recomposed
+            .semantic()
+            .node_weight(NodeIndex::new(spec_idx as usize))
+            .unwrap();
+
+        assert_eq!(
+            before_node.metadata().summary.checksum,
+            after_node.metadata().summary.checksum
+        );
+        assert_eq!(
+            before_node.metadata().embeddings.node_embedding,
+            after_node.metadata().embeddings.node_embedding
+        );
+        assert_eq!(
+            before_node.metadata().embeddings.subgraph_summary_embedding,
+            after_node.metadata().embeddings.subgraph_summary_embedding
+        );
     }
 }

@@ -38,7 +38,11 @@ async fn request_json(
         None => Body::empty(),
     };
 
-    let response = app.clone().oneshot(builder.body(body).unwrap()).await.unwrap();
+    let response = app
+        .clone()
+        .oneshot(builder.body(body).unwrap())
+        .await
+        .unwrap();
     let status = response.status();
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
@@ -79,7 +83,8 @@ async fn setup_program(app: &Router, name: &str) -> i64 {
     assert_eq!(status, StatusCode::OK, "create program failed: {body:?}");
     let pid = body["id"].as_i64().unwrap();
 
-    let (status, load_body) = post_json(app, &format!("/programs/{pid}/load"), json!({}), &[]).await;
+    let (status, load_body) =
+        post_json(app, &format!("/programs/{pid}/load"), json!({}), &[]).await;
     assert_eq!(status, StatusCode::OK, "load program failed: {load_body:?}");
 
     pid
@@ -109,7 +114,10 @@ async fn add_function(
     )
     .await;
     assert_eq!(status, StatusCode::OK, "add function failed: {body:?}");
-    assert!(body["valid"].as_bool().unwrap(), "add function invalid: {body:?}");
+    assert!(
+        body["valid"].as_bool().unwrap(),
+        "add function invalid: {body:?}"
+    );
     body["created"][0]["id"].as_u64().unwrap() as u32
 }
 
@@ -266,7 +274,11 @@ async fn test_batch_lock_acquisition_all_or_nothing() {
     let (status, locks) = get_json(&app, &format!("/programs/{pid}/locks")).await;
     assert_eq!(status, StatusCode::OK);
     let lock_entries = locks["locks"].as_array().unwrap();
-    assert_eq!(lock_entries.len(), 1, "batch acquire should not partially lock");
+    assert_eq!(
+        lock_entries.len(),
+        1,
+        "batch acquire should not partially lock"
+    );
 
     let (status, _) = post_json(
         &app,
@@ -422,7 +434,9 @@ async fn test_lock_status_endpoint() {
     assert_eq!(status, StatusCode::OK);
     let locks = body["locks"].as_array().unwrap();
     assert_eq!(locks.len(), 2);
-    assert!(locks.iter().any(|l| l["holder_description"] == "editing auth"));
+    assert!(locks
+        .iter()
+        .any(|l| l["holder_description"] == "editing auth"));
 }
 
 #[tokio::test]
@@ -479,6 +493,111 @@ async fn test_deregister_releases_all_locks() {
     let (status, body) = get_json(&app, &format!("/programs/{pid}/locks")).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["locks"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn test_flush_deterministic_under_overlapping_events() {
+    let app = test_app();
+    let pid = setup_program(&app, "flush-determinism").await;
+    let f1 = add_function(&app, pid, "f1", &[]).await;
+
+    // Add one compute node so compute->semantic propagation has content.
+    let (status, body) = post_json(
+        &app,
+        &format!("/programs/{pid}/mutations"),
+        json!({
+            "mutations": [{
+                "type": "InsertNode",
+                "op": {"Core": {"Parameter": {"index": 0}}},
+                "owner": f1
+            }],
+            "dry_run": false
+        }),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "insert node failed: {body:?}");
+
+    // Clear queued events.
+    let (status, clear) = post_json(
+        &app,
+        &format!("/programs/{pid}/verify/flush"),
+        json!({ "dry_run": false }),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "clear flush failed: {clear:?}");
+
+    let overlap_events = json!({
+        "dry_run": false,
+        "events": [
+            { "kind": "compute.control_flow_changed", "function_id": f1 },
+            { "kind": "semantic.function_created", "function_id": f1 }
+        ]
+    });
+
+    let (status, first_flush) = post_json(
+        &app,
+        &format!("/programs/{pid}/verify/flush"),
+        overlap_events.clone(),
+        &[],
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "first overlap flush failed: {first_flush:?}"
+    );
+
+    let (status, semantic_1) = post_json(
+        &app,
+        &format!("/programs/{pid}/semantic"),
+        json!({ "include_embeddings": false }),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let checksum_1 = semantic_1["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["kind"] == "function" && n["label"] == "f1")
+        .unwrap()["summary_checksum"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let (status, second_flush) = post_json(
+        &app,
+        &format!("/programs/{pid}/verify/flush"),
+        overlap_events,
+        &[],
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "second overlap flush failed: {second_flush:?}"
+    );
+
+    let (status, semantic_2) = post_json(
+        &app,
+        &format!("/programs/{pid}/semantic"),
+        json!({ "include_embeddings": false }),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let checksum_2 = semantic_2["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["kind"] == "function" && n["label"] == "f1")
+        .unwrap()["summary_checksum"]
+        .as_str()
+        .unwrap();
+
+    assert_eq!(checksum_1, checksum_2);
 }
 
 #[tokio::test]

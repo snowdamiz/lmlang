@@ -3,6 +3,7 @@
 //! Provides types for querying nodes, edges, functions, and neighborhoods
 //! with agent-controlled detail levels.
 
+use lmlang_core::edge::SemanticEdge;
 use lmlang_core::id::{EdgeId, FunctionId, ModuleId, NodeId};
 use lmlang_core::ops::ComputeNodeOp;
 use lmlang_core::type_id::TypeId;
@@ -175,4 +176,76 @@ pub struct SearchResponse {
     pub nodes: Vec<NodeView>,
     /// Total number of matches.
     pub total_count: usize,
+}
+
+/// Request for semantic graph retrieval.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SemanticQueryRequest {
+    /// Whether embedding vectors should be included inline.
+    #[serde(default)]
+    pub include_embeddings: bool,
+}
+
+/// Ownership metadata in semantic query responses.
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticOwnershipView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module: Option<ModuleId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function: Option<FunctionId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+}
+
+/// Provenance metadata in semantic query responses.
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticProvenanceView {
+    pub source: String,
+    pub version: u64,
+    pub created_at_ms: u64,
+    pub updated_at_ms: u64,
+}
+
+/// Semantic node projection for retrieval workflows.
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticNodeView {
+    pub id: u32,
+    pub kind: String,
+    pub label: String,
+    pub ownership: SemanticOwnershipView,
+    pub provenance: SemanticProvenanceView,
+    pub summary_title: String,
+    pub summary_body: String,
+    pub summary_checksum: String,
+    pub token_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub complexity: Option<u32>,
+    pub has_node_embedding: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_embedding_dim: Option<usize>,
+    pub has_subgraph_summary_embedding: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subgraph_summary_embedding_dim: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_embedding: Option<Vec<f32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subgraph_summary_embedding: Option<Vec<f32>>,
+}
+
+/// Semantic edge projection.
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticEdgeView {
+    pub id: u32,
+    pub from: u32,
+    pub to: u32,
+    pub relationship: SemanticEdge,
+}
+
+/// Semantic query response.
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticQueryResponse {
+    pub nodes: Vec<SemanticNodeView>,
+    pub edges: Vec<SemanticEdgeView>,
+    pub node_count: usize,
+    pub edge_count: usize,
 }

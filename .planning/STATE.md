@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-17)
 
 **Core value:** AI agents can build, modify, and verify programs of arbitrary size with perfect local and global awareness
-**Current focus:** Phase 8: Dual-Layer Semantic Architecture (ready for execution)
+**Current focus:** Phase 9: Human Observability (ready for planning)
 
 ## Current Position
 
-Phase: 8 of 9 (Dual-Layer Semantic Architecture)
-Plan: 3 of 3 in current phase
-Status: Ready for Execution
-Last activity: 2026-02-19 — Planned Phase 8 (08-01, 08-02, 08-03)
+Phase: 9 of 9 (Human Observability)
+Plan: 0 of TBD in current phase
+Status: Phase 8 complete; phase 9 planning next
+Last activity: 2026-02-19 — Executed and verified Phase 8 (08-01, 08-02, 08-03)
 
-Progress: [█████████░] 89%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 23
+- Total plans completed: 26
 - Average duration: 7min
 - Total execution time: 2.92 hours
 
@@ -34,10 +34,11 @@ Progress: [█████████░] 89%
 | 05 | 4/4 | 36min | 9min |
 | 06 | 4/4 | 40min | 10min |
 | 07 | 3/3 | 30min | 10min |
+| 08 | 3/3 | 39min | 13min |
 
 **Recent Trend:**
-- Last 5 plans: 06-03 (12min), 06-04 (4min), 07-01 (8min), 07-02 (11min), 07-03 (11min)
-- Trend: Phase 7 complete -- agent/lock API, conflict detection, and incremental verification integrated
+- Last 5 plans: 07-02 (11min), 07-03 (11min), 08-01 (13min), 08-02 (12min), 08-03 (14min)
+- Trend: Phase 8 complete -- rich semantic layer, deterministic propagation flush, and conflict diagnostics integrated
 
 *Updated after each plan completion*
 
@@ -142,6 +143,12 @@ Recent decisions affecting current work:
 - [Phase 07]: Function-level concurrency via LockManager (DashMap) rather than ProgramService-level RwLock
 - [Phase 07]: Waiter tracking in LockDenial provides queue_position for agent contention planning
 - [Phase 07]: 30-minute default lock TTL with 60-second sweep interval prevents orphaned locks
+- [Phase 08]: SemanticNode expanded to module/function/type/spec/test/doc entities with shared metadata (ownership, provenance, summaries, embeddings)
+- [Phase 08]: Deterministic semantic summary checksum uses stable FNV hash over normalized semantic payload text
+- [Phase 08]: Queue-based propagation with explicit `verify/flush` endpoint; mutations enqueue and agents control reconciliation boundary
+- [Phase 08]: Conflict precedence classes added (semantic-authoritative, compute-authoritative, mergeable, diagnostic-required)
+- [Phase 08]: Unresolved propagation conflicts surface structured diagnostics via 409 Conflict response payloads
+- [Phase 08]: Embedding refresh scoped to refreshed function/module semantic summaries during flush
 
 ### Pending Todos
 
@@ -151,10 +158,10 @@ None yet.
 
 - [Research]: Op node set needs careful mapping to LLVM IR targets before Phase 1 implementation
 - [Research]: Agent tool API schema design is novel -- test with real LLMs early in Phase 4
-- [Research]: Bidirectional propagation (Phase 8) has no production precedent -- needs formal specification before implementation
+- [Phase 09]: Human observability/UX remains unimplemented and is the next milestone focus
 
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Completed Phase 7 execution and verification
-Resume file: .planning/phases/07-multi-agent-concurrency/07-VERIFICATION.md
+Stopped at: Completed Phase 8 execution and verification
+Resume file: .planning/phases/08-dual-layer-semantic-architecture/08-VERIFICATION.md

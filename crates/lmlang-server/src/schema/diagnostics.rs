@@ -4,9 +4,10 @@
 //! validation warnings. Per the CONTEXT.md locked decision, errors describe
 //! the problem only -- no fix suggestions are included in API output.
 
+use lmlang_check::typecheck::diagnostics::TypeError;
+use lmlang_core::graph::{ConflictPriorityClass, PropagationConflictDiagnostic};
 use lmlang_core::id::{EdgeId, FunctionId, NodeId};
 use lmlang_core::type_id::TypeId;
-use lmlang_check::typecheck::diagnostics::TypeError;
 use serde::Serialize;
 
 /// A structured diagnostic error returned in API responses.
@@ -63,6 +64,36 @@ pub struct DiagnosticDetails {
     /// Relevant port number.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
+}
+
+/// Structured dual-layer propagation conflict diagnostic.
+#[derive(Debug, Clone, Serialize)]
+pub struct PropagationConflictDiagnosticView {
+    pub event_id: u64,
+    pub conflicting_event_id: u64,
+    pub precedence: String,
+    pub reason: String,
+    pub node_refs: Vec<u32>,
+    pub remediation: String,
+}
+
+impl From<PropagationConflictDiagnostic> for PropagationConflictDiagnosticView {
+    fn from(value: PropagationConflictDiagnostic) -> Self {
+        let precedence = match value.precedence {
+            ConflictPriorityClass::SemanticAuthoritative => "semantic-authoritative",
+            ConflictPriorityClass::ComputeAuthoritative => "compute-authoritative",
+            ConflictPriorityClass::Mergeable => "mergeable",
+            ConflictPriorityClass::DiagnosticRequired => "diagnostic-required",
+        };
+        Self {
+            event_id: value.event_id,
+            conflicting_event_id: value.conflicting_event_id,
+            precedence: precedence.to_string(),
+            reason: value.reason,
+            node_refs: value.node_refs,
+            remediation: value.remediation,
+        }
+    }
 }
 
 impl From<TypeError> for DiagnosticError {

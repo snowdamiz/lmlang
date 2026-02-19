@@ -11,34 +11,38 @@ use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use rusqlite::Connection;
 
+use lmlang_check::interpreter::{ExecutionState, Interpreter, InterpreterConfig, Value};
+use lmlang_check::typecheck;
 use lmlang_core::edge::FlowEdge;
-use lmlang_core::graph::ProgramGraph;
+use lmlang_core::graph::{
+    ComputeEvent, ProgramGraph, PropagationEventKind, PropagationLayer, SemanticEvent,
+};
 use lmlang_core::id::{EdgeId, FunctionId, ModuleId, NodeId};
 use lmlang_core::node::ComputeNode;
+use lmlang_core::ops::{ComputeNodeOp, ComputeOp};
 use lmlang_core::type_id::TypeId;
-use lmlang_check::interpreter::{
-    ExecutionState, Interpreter, InterpreterConfig, Value,
-};
-use lmlang_check::typecheck;
-use lmlang_storage::types::ProgramId;
 use lmlang_storage::traits::GraphStore;
+use lmlang_storage::types::ProgramId;
 use lmlang_storage::SqliteStore;
 
 use crate::error::ApiError;
 use crate::schema::diagnostics::DiagnosticError;
+use crate::schema::diagnostics::PropagationConflictDiagnosticView;
 use crate::schema::history::{
-    CreateCheckpointResponse, DiffResponse,
-    ListCheckpointsResponse, ListHistoryResponse, RedoResponse, RestoreCheckpointResponse,
-    UndoResponse,
+    CreateCheckpointResponse, DiffResponse, ListCheckpointsResponse, ListHistoryResponse,
+    RedoResponse, RestoreCheckpointResponse, UndoResponse,
 };
 use crate::schema::mutations::{CreatedEntity, Mutation, ProposeEditRequest, ProposeEditResponse};
 use crate::schema::programs::ProgramSummaryView;
 use crate::schema::queries::{
     DetailLevel, EdgeView, FunctionView, GetFunctionResponse, NeighborhoodResponse, NodeView,
-    ProgramOverviewResponse, SearchRequest, SearchResponse,
+    ProgramOverviewResponse, SearchRequest, SearchResponse, SemanticEdgeView, SemanticNodeView,
+    SemanticOwnershipView, SemanticProvenanceView, SemanticQueryResponse,
 };
 use crate::schema::simulate::{SimulateRequest, SimulateResponse, TraceEntryView};
-use crate::schema::verify::{VerifyResponse, VerifyScope};
+use crate::schema::verify::{
+    FlushPropagationResponse, PropagationEventSeed, VerifyResponse, VerifyScope,
+};
 use crate::undo::{CheckpointManager, EditCommand, EditLog};
 
 /// The central service coordinating graph mutations, queries, verification,
@@ -281,6 +285,7 @@ impl ProgramService {
 
                     // Persist to store
                     self.store.save_program(self.program_id, &self.graph)?;
+                    self.enqueue_propagation_for_mutations(&request.mutations);
 
                     let mut created = Vec::new();
                     if let Some(e) = entity {
@@ -371,6 +376,7 @@ impl ProgramService {
 
             // Persist to store
             self.store.save_program(self.program_id, &self.graph)?;
+            self.enqueue_propagation_for_mutations(&request.mutations);
 
             Ok(ProposeEditResponse {
                 valid: true,
@@ -457,9 +463,8 @@ impl ProgramService {
                 // We need from/to for the EditCommand
                 let edge_idx = EdgeIndex::<u32>::new(edge_id.0 as usize);
                 let endpoints = graph.compute().edge_endpoints(edge_idx);
-                let (from, to) = endpoints.ok_or_else(|| {
-                    ApiError::NotFound(format!("edge {} not found", edge_id.0))
-                })?;
+                let (from, to) = endpoints
+                    .ok_or_else(|| ApiError::NotFound(format!("edge {} not found", edge_id.0)))?;
                 let removed = graph.remove_edge(*edge_id)?;
                 let cmd = EditCommand::RemoveEdge {
                     edge_id: *edge_id,
@@ -513,10 +518,7 @@ impl ProgramService {
     }
 
     /// Applies an EditCommand to the graph (used for undo/redo replay).
-    fn apply_edit_command(
-        graph: &mut ProgramGraph,
-        cmd: &EditCommand,
-    ) -> Result<(), ApiError> {
+    fn apply_edit_command(graph: &mut ProgramGraph, cmd: &EditCommand) -> Result<(), ApiError> {
         match cmd {
             EditCommand::InsertNode { op, owner, .. } => {
                 graph.add_compute_node(op.clone(), *owner)?;
@@ -589,6 +591,218 @@ impl ProgramService {
                 Ok(())
             }
         }
+    }
+
+    fn enqueue_propagation_for_mutations(&mut self, mutations: &[Mutation]) {
+        for mutation in mutations {
+            match mutation {
+                Mutation::AddFunction { .. } => {
+                    // Structural semantic edit: map to semantic -> compute propagation.
+                    if let Some(function_id) =
+                        self.graph.functions().keys().max_by_key(|f| f.0).copied()
+                    {
+                        self.graph.enqueue_propagation(
+                            PropagationLayer::Semantic,
+                            PropagationEventKind::Semantic(SemanticEvent::FunctionCreated {
+                                function_id,
+                            }),
+                        );
+                    }
+                }
+                Mutation::InsertNode { op, owner } => {
+                    // Local compute edit: enqueue upward propagation to semantic layer.
+                    if let Some(node_id) = self
+                        .graph
+                        .function_nodes(*owner)
+                        .into_iter()
+                        .max_by_key(|n| n.0)
+                    {
+                        self.graph.enqueue_propagation(
+                            PropagationLayer::Compute,
+                            PropagationEventKind::Compute(ComputeEvent::NodeInserted {
+                                function_id: *owner,
+                                node_id,
+                                op_kind: format!("{:?}", op),
+                            }),
+                        );
+                        if let Some(contract_name) = contract_name_from_op(op) {
+                            self.graph.enqueue_propagation(
+                                PropagationLayer::Semantic,
+                                PropagationEventKind::Semantic(SemanticEvent::ContractAdded {
+                                    function_id: *owner,
+                                    contract_name,
+                                }),
+                            );
+                        }
+                    }
+                }
+                Mutation::ModifyNode { node_id, new_op } => {
+                    if let Some(function_id) = self.owner_for_node(*node_id) {
+                        self.graph.enqueue_propagation(
+                            PropagationLayer::Compute,
+                            PropagationEventKind::Compute(ComputeEvent::NodeModified {
+                                function_id,
+                                node_id: *node_id,
+                                op_kind: format!("{:?}", new_op),
+                            }),
+                        );
+                    }
+                }
+                Mutation::RemoveNode { node_id } => {
+                    if let Some(function_id) = self.owner_for_node(*node_id) {
+                        self.graph.enqueue_propagation(
+                            PropagationLayer::Compute,
+                            PropagationEventKind::Compute(ComputeEvent::NodeRemoved {
+                                function_id,
+                                node_id: *node_id,
+                            }),
+                        );
+                    }
+                }
+                Mutation::AddEdge { from, .. } | Mutation::AddControlEdge { from, .. } => {
+                    if let Some(function_id) = self.owner_for_node(*from) {
+                        self.graph.enqueue_propagation(
+                            PropagationLayer::Compute,
+                            PropagationEventKind::Compute(ComputeEvent::ControlFlowChanged {
+                                function_id,
+                            }),
+                        );
+                    }
+                }
+                Mutation::RemoveEdge { .. } | Mutation::AddModule { .. } => {}
+            }
+        }
+    }
+
+    fn owner_for_node(&self, node_id: NodeId) -> Option<FunctionId> {
+        self.graph.get_compute_node(node_id).map(|n| n.owner)
+    }
+
+    /// Enqueues explicit propagation seeds from API input.
+    pub fn enqueue_seed_events(&mut self, events: &[PropagationEventSeed]) -> Result<(), ApiError> {
+        for event in events {
+            let function_id = FunctionId(event.function_id);
+            let kind = match event.kind.as_str() {
+                "semantic.function_created" => {
+                    PropagationEventKind::Semantic(SemanticEvent::FunctionCreated { function_id })
+                }
+                "semantic.function_signature_changed" => {
+                    PropagationEventKind::Semantic(SemanticEvent::FunctionSignatureChanged {
+                        function_id,
+                    })
+                }
+                "semantic.contract_added" => {
+                    PropagationEventKind::Semantic(SemanticEvent::ContractAdded {
+                        function_id,
+                        contract_name: event
+                            .contract_name
+                            .clone()
+                            .unwrap_or_else(|| "contract".to_string()),
+                    })
+                }
+                "compute.node_inserted" => {
+                    let node_id = NodeId(event.node_id.ok_or_else(|| {
+                        ApiError::BadRequest(
+                            "node_id required for compute.node_inserted".to_string(),
+                        )
+                    })?);
+                    PropagationEventKind::Compute(ComputeEvent::NodeInserted {
+                        function_id,
+                        node_id,
+                        op_kind: event
+                            .op_kind
+                            .clone()
+                            .unwrap_or_else(|| "Unknown".to_string()),
+                    })
+                }
+                "compute.node_modified" => {
+                    let node_id = NodeId(event.node_id.ok_or_else(|| {
+                        ApiError::BadRequest(
+                            "node_id required for compute.node_modified".to_string(),
+                        )
+                    })?);
+                    PropagationEventKind::Compute(ComputeEvent::NodeModified {
+                        function_id,
+                        node_id,
+                        op_kind: event
+                            .op_kind
+                            .clone()
+                            .unwrap_or_else(|| "Unknown".to_string()),
+                    })
+                }
+                "compute.node_removed" => {
+                    let node_id = NodeId(event.node_id.ok_or_else(|| {
+                        ApiError::BadRequest(
+                            "node_id required for compute.node_removed".to_string(),
+                        )
+                    })?);
+                    PropagationEventKind::Compute(ComputeEvent::NodeRemoved {
+                        function_id,
+                        node_id,
+                    })
+                }
+                "compute.control_flow_changed" => {
+                    PropagationEventKind::Compute(ComputeEvent::ControlFlowChanged { function_id })
+                }
+                other => {
+                    return Err(ApiError::BadRequest(format!(
+                        "unknown propagation event kind '{}'",
+                        other
+                    )));
+                }
+            };
+
+            let origin = if event.kind.starts_with("semantic.") {
+                PropagationLayer::Semantic
+            } else {
+                PropagationLayer::Compute
+            };
+            self.graph.enqueue_propagation(origin, kind);
+        }
+
+        Ok(())
+    }
+
+    /// Flushes queued propagation events with deterministic conflict handling.
+    pub fn flush_propagation(
+        &mut self,
+    ) -> Result<lmlang_core::graph::PropagationFlushReport, ApiError> {
+        let report = self.graph.flush_propagation()?;
+        self.store.save_program(self.program_id, &self.graph)?;
+        Ok(report)
+    }
+
+    /// Flushes propagation queue and projects into API schema.
+    pub fn flush_propagation_response(&mut self) -> Result<FlushPropagationResponse, ApiError> {
+        let report = self.flush_propagation()?;
+        let diagnostics: Vec<PropagationConflictDiagnosticView> = report
+            .diagnostics
+            .into_iter()
+            .map(PropagationConflictDiagnosticView::from)
+            .collect();
+
+        let unresolved: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.precedence == "diagnostic-required")
+            .cloned()
+            .collect();
+        if !unresolved.is_empty() {
+            return Err(ApiError::ConflictWithDetails {
+                message: "unresolved dual-layer propagation conflicts".to_string(),
+                details: serde_json::to_value(unresolved).unwrap_or(serde_json::Value::Null),
+            });
+        }
+
+        Ok(FlushPropagationResponse {
+            processed_events: report.processed_events,
+            applied_events: report.applied_events,
+            skipped_events: report.skipped_events,
+            generated_events: report.generated_events,
+            remaining_queue: report.remaining_queue,
+            refreshed_semantic_nodes: report.refreshed_semantic_nodes,
+            refreshed_summary_nodes: report.refreshed_summary_nodes,
+            diagnostics,
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -665,11 +879,7 @@ impl ProgramService {
     // -----------------------------------------------------------------------
 
     /// Gets a single node by ID.
-    pub fn get_node(
-        &self,
-        node_id: NodeId,
-        detail: DetailLevel,
-    ) -> Result<NodeView, ApiError> {
+    pub fn get_node(&self, node_id: NodeId, detail: DetailLevel) -> Result<NodeView, ApiError> {
         let node = self
             .graph
             .get_compute_node(node_id)
@@ -701,7 +911,11 @@ impl ProgramService {
         let mut edges = Vec::new();
         for &nid in &func_node_ids {
             let node_idx: NodeIndex<u32> = nid.into();
-            for edge_ref in self.graph.compute().edges_directed(node_idx, Direction::Outgoing) {
+            for edge_ref in self
+                .graph
+                .compute()
+                .edges_directed(node_idx, Direction::Outgoing)
+            {
                 let target = NodeId::from(edge_ref.target());
                 if func_node_set.contains(&target) {
                     edges.push(self.render_edge_ref(edge_ref));
@@ -755,14 +969,22 @@ impl ProgramService {
             let idx: NodeIndex<u32> = current.into();
 
             // Visit neighbors in both directions
-            for edge_ref in self.graph.compute().edges_directed(idx, Direction::Outgoing) {
+            for edge_ref in self
+                .graph
+                .compute()
+                .edges_directed(idx, Direction::Outgoing)
+            {
                 let neighbor = NodeId::from(edge_ref.target());
                 if visited.insert(neighbor) {
                     queue.push_back((neighbor, depth + 1));
                     actual_hops = actual_hops.max(depth + 1);
                 }
             }
-            for edge_ref in self.graph.compute().edges_directed(idx, Direction::Incoming) {
+            for edge_ref in self
+                .graph
+                .compute()
+                .edges_directed(idx, Direction::Incoming)
+            {
                 let neighbor = NodeId::from(edge_ref.source());
                 if visited.insert(neighbor) {
                     queue.push_back((neighbor, depth + 1));
@@ -783,7 +1005,11 @@ impl ProgramService {
         let mut edges = Vec::new();
         for &nid in &visited {
             let idx: NodeIndex<u32> = nid.into();
-            for edge_ref in self.graph.compute().edges_directed(idx, Direction::Outgoing) {
+            for edge_ref in self
+                .graph
+                .compute()
+                .edges_directed(idx, Direction::Outgoing)
+            {
                 let target = NodeId::from(edge_ref.target());
                 if visited.contains(&target) {
                     edges.push(self.render_edge_ref(edge_ref));
@@ -830,7 +1056,11 @@ impl ProgramService {
                     .graph
                     .compute()
                     .edges_directed(node_idx, Direction::Incoming)
-                    .chain(self.graph.compute().edges_directed(node_idx, Direction::Outgoing))
+                    .chain(
+                        self.graph
+                            .compute()
+                            .edges_directed(node_idx, Direction::Outgoing),
+                    )
                     .any(|edge_ref| match edge_ref.weight() {
                         FlowEdge::Data { value_type, .. } => *value_type == vt,
                         _ => false,
@@ -846,6 +1076,81 @@ impl ProgramService {
 
         let total_count = nodes.len();
         Ok(SearchResponse { nodes, total_count })
+    }
+
+    /// Retrieves semantic graph entities and relationships for retrieval/navigation.
+    pub fn semantic_query(
+        &self,
+        include_embeddings: bool,
+    ) -> Result<SemanticQueryResponse, ApiError> {
+        let mut nodes = Vec::new();
+        for idx in self.graph.semantic().node_indices() {
+            let node = match self.graph.semantic().node_weight(idx) {
+                Some(n) => n,
+                None => continue,
+            };
+            let metadata = node.metadata();
+            let embeddings = &metadata.embeddings;
+
+            nodes.push(SemanticNodeView {
+                id: idx.index() as u32,
+                kind: node.kind().to_string(),
+                label: node.label(),
+                ownership: SemanticOwnershipView {
+                    module: metadata.ownership.module,
+                    function: metadata.ownership.function,
+                    domain: metadata.ownership.domain.clone(),
+                },
+                provenance: SemanticProvenanceView {
+                    source: metadata.provenance.source.clone(),
+                    version: metadata.provenance.version,
+                    created_at_ms: metadata.provenance.created_at_ms,
+                    updated_at_ms: metadata.provenance.updated_at_ms,
+                },
+                summary_title: metadata.summary.title.clone(),
+                summary_body: metadata.summary.body.clone(),
+                summary_checksum: metadata.summary.checksum.clone(),
+                token_count: metadata.summary.token_count,
+                complexity: metadata.complexity,
+                has_node_embedding: embeddings.node_embedding.is_some(),
+                node_embedding_dim: embeddings.node_dim(),
+                has_subgraph_summary_embedding: embeddings.subgraph_summary_embedding.is_some(),
+                subgraph_summary_embedding_dim: embeddings.summary_dim(),
+                node_embedding: if include_embeddings {
+                    embeddings.node_embedding.clone()
+                } else {
+                    None
+                },
+                subgraph_summary_embedding: if include_embeddings {
+                    embeddings.subgraph_summary_embedding.clone()
+                } else {
+                    None
+                },
+            });
+        }
+
+        let mut edges = Vec::new();
+        for edge_idx in self.graph.semantic().edge_indices() {
+            let Some((from, to)) = self.graph.semantic().edge_endpoints(edge_idx) else {
+                continue;
+            };
+            let Some(weight) = self.graph.semantic().edge_weight(edge_idx) else {
+                continue;
+            };
+            edges.push(SemanticEdgeView {
+                id: edge_idx.index() as u32,
+                from: from.index() as u32,
+                to: to.index() as u32,
+                relationship: *weight,
+            });
+        }
+
+        Ok(SemanticQueryResponse {
+            node_count: nodes.len(),
+            edge_count: edges.len(),
+            nodes,
+            edges,
+        })
     }
 
     /// Returns a high-level program overview.
@@ -874,12 +1179,7 @@ impl ProgramService {
     // -----------------------------------------------------------------------
 
     /// Renders a node view at the specified detail level.
-    fn render_node(
-        &self,
-        node_id: NodeId,
-        node: &ComputeNode,
-        detail: DetailLevel,
-    ) -> NodeView {
+    fn render_node(&self, node_id: NodeId, node: &ComputeNode, detail: DetailLevel) -> NodeView {
         let node_idx: NodeIndex<u32> = node_id.into();
 
         match detail {
@@ -976,19 +1276,13 @@ impl ProgramService {
     // -----------------------------------------------------------------------
 
     /// Runs the interpreter on a function with provided inputs.
-    pub fn simulate(
-        &self,
-        request: SimulateRequest,
-    ) -> Result<SimulateResponse, ApiError> {
+    pub fn simulate(&self, request: SimulateRequest) -> Result<SimulateResponse, ApiError> {
         // Verify function exists
         let func_def = self
             .graph
             .get_function(request.function_id)
             .ok_or_else(|| {
-                ApiError::NotFound(format!(
-                    "function {} not found",
-                    request.function_id.0
-                ))
+                ApiError::NotFound(format!("function {} not found", request.function_id.0))
             })?;
 
         // Convert JSON inputs to interpreter Values
@@ -1025,7 +1319,10 @@ impl ProgramService {
                                         (*port, serde_json::to_value(val).unwrap_or_default())
                                     })
                                     .collect(),
-                                output: e.output.as_ref().and_then(|v| serde_json::to_value(v).ok()),
+                                output: e
+                                    .output
+                                    .as_ref()
+                                    .and_then(|v| serde_json::to_value(v).ok()),
                             })
                             .collect()
                     })
@@ -1084,27 +1381,20 @@ impl ProgramService {
         &self,
         request: crate::schema::contracts::PropertyTestRequest,
     ) -> Result<crate::schema::contracts::PropertyTestResponse, ApiError> {
-        use lmlang_check::contracts::property::{PropertyTestConfig, run_property_tests};
         use crate::schema::contracts::{
-            ContractViolationView, PropertyTestFailureView, PropertyTestResponse,
-            TraceEntryView,
+            ContractViolationView, PropertyTestFailureView, PropertyTestResponse, TraceEntryView,
         };
+        use lmlang_check::contracts::property::{run_property_tests, PropertyTestConfig};
 
         let func_id = FunctionId(request.function_id);
 
         // Verify function exists and get param types for seed conversion
-        let func_def = self
-            .graph
-            .get_function(func_id)
-            .ok_or_else(|| {
-                ApiError::NotFound(format!("function {} not found", request.function_id))
-            })?;
+        let func_def = self.graph.get_function(func_id).ok_or_else(|| {
+            ApiError::NotFound(format!("function {} not found", request.function_id))
+        })?;
 
-        let param_types: Vec<Option<TypeId>> = func_def
-            .params
-            .iter()
-            .map(|(_, t)| Some(*t))
-            .collect();
+        let param_types: Vec<Option<TypeId>> =
+            func_def.params.iter().map(|(_, t)| Some(*t)).collect();
 
         // Convert JSON seeds to interpreter Values
         let mut seeds = Vec::new();
@@ -1144,8 +1434,12 @@ impl ProgramService {
                 let violation = &f.violation;
                 let violation_view = ContractViolationView {
                     kind: match violation.kind {
-                        lmlang_check::contracts::ContractKind::Precondition => "precondition".to_string(),
-                        lmlang_check::contracts::ContractKind::Postcondition => "postcondition".to_string(),
+                        lmlang_check::contracts::ContractKind::Precondition => {
+                            "precondition".to_string()
+                        }
+                        lmlang_check::contracts::ContractKind::Postcondition => {
+                            "postcondition".to_string()
+                        }
                         lmlang_check::contracts::ContractKind::Invariant => "invariant".to_string(),
                     },
                     contract_node: violation.contract_node.0,
@@ -1163,9 +1457,7 @@ impl ProgramService {
                     counterexample: violation
                         .counterexample
                         .iter()
-                        .filter_map(|(nid, v)| {
-                            serde_json::to_value(v).ok().map(|jv| (nid.0, jv))
-                        })
+                        .filter_map(|(nid, v)| serde_json::to_value(v).ok().map(|jv| (nid.0, jv)))
                         .collect(),
                 };
 
@@ -1244,15 +1536,16 @@ impl ProgramService {
             entry_function: request.entry_function.clone(),
         };
 
-        let result = lmlang_codegen::compile(&self.graph, &options)
-            .map_err(|e| match e {
-                lmlang_codegen::error::CodegenError::TypeCheckFailed(errors) => {
-                    let diags: Vec<crate::schema::diagnostics::DiagnosticError> =
-                        errors.into_iter().map(crate::schema::diagnostics::DiagnosticError::from).collect();
-                    ApiError::ValidationFailed(diags)
-                }
-                other => ApiError::InternalError(other.to_string()),
-            })?;
+        let result = lmlang_codegen::compile(&self.graph, &options).map_err(|e| match e {
+            lmlang_codegen::error::CodegenError::TypeCheckFailed(errors) => {
+                let diags: Vec<crate::schema::diagnostics::DiagnosticError> = errors
+                    .into_iter()
+                    .map(crate::schema::diagnostics::DiagnosticError::from)
+                    .collect();
+                ApiError::ValidationFailed(diags)
+            }
+            other => ApiError::InternalError(other.to_string()),
+        })?;
 
         Ok(crate::schema::compile::CompileResponse {
             binary_path: result.binary_path.to_string_lossy().to_string(),
@@ -1271,12 +1564,8 @@ impl ProgramService {
     /// If no incremental state exists (no prior compilation), all functions are
     /// reported as dirty. Otherwise, computes current hashes, builds the call
     /// graph, and runs dirty analysis to categorize functions.
-    pub fn dirty_status(
-        &self,
-    ) -> Result<crate::schema::compile::DirtyStatusResponse, ApiError> {
-        use crate::schema::compile::{
-            CachedFunctionView, DirtyFunctionView, DirtyStatusResponse,
-        };
+    pub fn dirty_status(&self) -> Result<crate::schema::compile::DirtyStatusResponse, ApiError> {
+        use crate::schema::compile::{CachedFunctionView, DirtyFunctionView, DirtyStatusResponse};
         use lmlang_codegen::incremental::build_call_graph;
         use lmlang_storage::hash::hash_all_functions_for_compilation;
 
@@ -1304,11 +1593,10 @@ impl ProgramService {
             Some(state) => {
                 // Compute current hashes and call graph
                 let blake_hashes = hash_all_functions_for_compilation(&self.graph);
-                let current_hashes: std::collections::HashMap<FunctionId, [u8; 32]> =
-                    blake_hashes
-                        .iter()
-                        .map(|(&fid, h)| (fid, *h.as_bytes()))
-                        .collect();
+                let current_hashes: std::collections::HashMap<FunctionId, [u8; 32]> = blake_hashes
+                    .iter()
+                    .map(|(&fid, h)| (fid, *h.as_bytes()))
+                    .collect();
 
                 let call_graph = build_call_graph(&self.graph);
                 let plan = state.compute_dirty(&current_hashes, &call_graph);
@@ -1388,15 +1676,17 @@ impl ProgramService {
         };
 
         // Initialize or reuse incremental state
-        let state = self.incremental_state.get_or_insert_with(|| {
-            lmlang_codegen::incremental::IncrementalState::new(cache_dir)
-        });
+        let state = self
+            .incremental_state
+            .get_or_insert_with(|| lmlang_codegen::incremental::IncrementalState::new(cache_dir));
 
         let (result, _plan) = lmlang_codegen::compile_incremental(&self.graph, &options, state)
             .map_err(|e| match e {
                 lmlang_codegen::error::CodegenError::TypeCheckFailed(errors) => {
-                    let diags: Vec<crate::schema::diagnostics::DiagnosticError> =
-                        errors.into_iter().map(crate::schema::diagnostics::DiagnosticError::from).collect();
+                    let diags: Vec<crate::schema::diagnostics::DiagnosticError> = errors
+                        .into_iter()
+                        .map(crate::schema::diagnostics::DiagnosticError::from)
+                        .collect();
                     ApiError::ValidationFailed(diags)
                 }
                 other => ApiError::InternalError(other.to_string()),
@@ -1648,5 +1938,14 @@ fn describe_mutation(mutation: &Mutation) -> String {
         Mutation::AddModule { name, .. } => {
             format!("add module '{}'", name)
         }
+    }
+}
+
+fn contract_name_from_op(op: &ComputeNodeOp) -> Option<String> {
+    match op {
+        ComputeNodeOp::Core(ComputeOp::Precondition { .. }) => Some("precondition".to_string()),
+        ComputeNodeOp::Core(ComputeOp::Postcondition { .. }) => Some("postcondition".to_string()),
+        ComputeNodeOp::Core(ComputeOp::Invariant { .. }) => Some("invariant".to_string()),
+        _ => None,
     }
 }

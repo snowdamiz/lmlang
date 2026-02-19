@@ -11,7 +11,8 @@ use serde::Deserialize;
 use crate::error::ApiError;
 use crate::schema::queries::{
     DetailLevel, GetFunctionResponse, NeighborhoodRequest, NeighborhoodResponse, NodeView,
-    ProgramOverviewResponse, SearchRequest, SearchResponse,
+    ProgramOverviewResponse, SearchRequest, SearchResponse, SemanticQueryRequest,
+    SemanticQueryResponse,
 };
 use crate::state::AppState;
 
@@ -132,5 +133,27 @@ pub async fn search(
     }
 
     let response = service.search_nodes(req)?;
+    Ok(Json(response))
+}
+
+/// Retrieves semantic graph entities/relationships with metadata and optional embeddings.
+///
+/// `POST /programs/{id}/semantic`
+pub async fn semantic_query(
+    State(state): State<AppState>,
+    Path(program_id): Path<i64>,
+    Json(req): Json<SemanticQueryRequest>,
+) -> Result<Json<SemanticQueryResponse>, ApiError> {
+    let service = state.service.lock().await;
+
+    let active_id = service.program_id();
+    if active_id.0 != program_id {
+        return Err(ApiError::BadRequest(format!(
+            "program {} is not the active program (active: {})",
+            program_id, active_id.0
+        )));
+    }
+
+    let response = service.semantic_query(req.include_embeddings)?;
     Ok(Json(response))
 }

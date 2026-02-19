@@ -176,15 +176,17 @@ impl From<lmlang_core::CoreError> for ApiError {
             lmlang_core::CoreError::NodeNotFound { .. }
             | lmlang_core::CoreError::FunctionNotFound { .. }
             | lmlang_core::CoreError::ModuleNotFound { .. }
-            | lmlang_core::CoreError::TypeNotFound { .. } => {
-                ApiError::NotFound(err.to_string())
-            }
-            lmlang_core::CoreError::DuplicateTypeName { .. } => {
-                ApiError::Conflict(err.to_string())
-            }
+            | lmlang_core::CoreError::TypeNotFound { .. } => ApiError::NotFound(err.to_string()),
+            lmlang_core::CoreError::DuplicateTypeName { .. } => ApiError::Conflict(err.to_string()),
             lmlang_core::CoreError::InvalidEdge { .. }
             | lmlang_core::CoreError::GraphInconsistency { .. } => {
                 ApiError::BadRequest(err.to_string())
+            }
+            lmlang_core::CoreError::PropagationLoopDetected { .. } => {
+                ApiError::BadRequest(err.to_string())
+            }
+            lmlang_core::CoreError::PropagationConflict { .. } => {
+                ApiError::Conflict(err.to_string())
             }
         }
     }

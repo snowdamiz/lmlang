@@ -71,8 +71,7 @@ impl FlowEdge {
 /// Edge types in the semantic graph.
 ///
 /// These represent structural and reference relationships between modules,
-/// functions, and type definitions. The semantic graph is a lightweight
-/// skeleton in Phase 1 -- only containment, call, and type-usage relationships.
+/// functions, types, specs, tests, docs, and derived summary artifacts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SemanticEdge {
     /// Module contains a child (module, function, or type definition).
@@ -81,6 +80,18 @@ pub enum SemanticEdge {
     Calls,
     /// Function or type references another type.
     UsesType,
+    /// Documentation or doc artifact describes another entity.
+    Documents,
+    /// Test/spec validates another entity.
+    Validates,
+    /// Function/type/module implements a semantic contract.
+    Implements,
+    /// Dependency relationship used for semantic navigation.
+    DependsOn,
+    /// Summary node summarizes a semantic subgraph.
+    Summarizes,
+    /// Derived relationship from compute behavior back to semantic meaning.
+    Derives,
 }
 
 #[cfg(test)]
@@ -109,9 +120,7 @@ mod tests {
 
     #[test]
     fn flow_edge_is_control_unconditional() {
-        let ctrl = FlowEdge::Control {
-            branch_index: None,
-        };
+        let ctrl = FlowEdge::Control { branch_index: None };
         assert!(ctrl.is_control());
         assert!(!ctrl.is_data());
     }
@@ -160,9 +169,7 @@ mod tests {
 
     #[test]
     fn serde_roundtrip_control_edge_none() {
-        let edge = FlowEdge::Control {
-            branch_index: None,
-        };
+        let edge = FlowEdge::Control { branch_index: None };
         let json = serde_json::to_string(&edge).unwrap();
         let back: FlowEdge = serde_json::from_str(&json).unwrap();
         let json2 = serde_json::to_string(&back).unwrap();
@@ -174,6 +181,12 @@ mod tests {
         assert_eq!(SemanticEdge::Contains, SemanticEdge::Contains);
         assert_eq!(SemanticEdge::Calls, SemanticEdge::Calls);
         assert_eq!(SemanticEdge::UsesType, SemanticEdge::UsesType);
+        assert_eq!(SemanticEdge::Documents, SemanticEdge::Documents);
+        assert_eq!(SemanticEdge::Validates, SemanticEdge::Validates);
+        assert_eq!(SemanticEdge::Implements, SemanticEdge::Implements);
+        assert_eq!(SemanticEdge::DependsOn, SemanticEdge::DependsOn);
+        assert_eq!(SemanticEdge::Summarizes, SemanticEdge::Summarizes);
+        assert_eq!(SemanticEdge::Derives, SemanticEdge::Derives);
         assert_ne!(SemanticEdge::Contains, SemanticEdge::Calls);
     }
 
@@ -183,6 +196,12 @@ mod tests {
             SemanticEdge::Contains,
             SemanticEdge::Calls,
             SemanticEdge::UsesType,
+            SemanticEdge::Documents,
+            SemanticEdge::Validates,
+            SemanticEdge::Implements,
+            SemanticEdge::DependsOn,
+            SemanticEdge::Summarizes,
+            SemanticEdge::Derives,
         ] {
             let json = serde_json::to_string(edge).unwrap();
             let back: SemanticEdge = serde_json::from_str(&json).unwrap();

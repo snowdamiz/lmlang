@@ -50,13 +50,13 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Dual-Layer Architecture
 
-- [ ] **DUAL-01**: Semantic Knowledge Graph layer stores modules, functions, types, specs, tests, docs with embeddings and summaries
+- [x] **DUAL-01**: Semantic Knowledge Graph layer stores modules, functions, types, specs, tests, docs with embeddings and summaries
 - [x] **DUAL-02**: Executable Computational Graph layer stores typed ops DAG with data + control flow edges
 - [x] **DUAL-03**: Two layers implemented as separate StableGraph instances with explicit cross-references (not one heterogeneous graph)
-- [ ] **DUAL-04**: Bidirectional propagation syncs layers via queue-based event model with explicit flush (not immediate sync)
-- [ ] **DUAL-05**: Downward propagation: semantic changes (new function, signature change, contract addition) expand into computational subgraph modifications
-- [ ] **DUAL-06**: Upward propagation: computational changes update semantic summaries, embeddings, relationship edges, and complexity metrics
-- [ ] **DUAL-07**: Each semantic node carries vector embeddings for semantic similarity search and AI-driven navigation
+- [x] **DUAL-04**: Bidirectional propagation syncs layers via queue-based event model with explicit flush (not immediate sync)
+- [x] **DUAL-05**: Downward propagation: semantic changes (new function, signature change, contract addition) expand into computational subgraph modifications
+- [x] **DUAL-06**: Upward propagation: computational changes update semantic summaries, embeddings, relationship edges, and complexity metrics
+- [x] **DUAL-07**: Each semantic node carries vector embeddings for semantic similarity search and AI-driven navigation
 
 ### Multi-Agent Concurrency
 
@@ -133,13 +133,13 @@ Deferred to future release. Tracked but not in current roadmap.
 | EXEC-02 | Phase 5 | Complete |
 | EXEC-03 | Phase 5 | Complete |
 | EXEC-04 | Phase 5 | Complete |
-| DUAL-01 | Phase 8 | Pending |
+| DUAL-01 | Phase 8 | Complete |
 | DUAL-02 | Phase 1 | Complete |
 | DUAL-03 | Phase 1 | Complete |
-| DUAL-04 | Phase 8 | Pending |
-| DUAL-05 | Phase 8 | Pending |
-| DUAL-06 | Phase 8 | Pending |
-| DUAL-07 | Phase 8 | Pending |
+| DUAL-04 | Phase 8 | Complete |
+| DUAL-05 | Phase 8 | Complete |
+| DUAL-06 | Phase 8 | Complete |
+| DUAL-07 | Phase 8 | Complete |
 | MAGENT-01 | Phase 7 | Complete |
 | MAGENT-02 | Phase 7 | Complete |
 | MAGENT-03 | Phase 7 | Pending |

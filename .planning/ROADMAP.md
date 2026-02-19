@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: LLVM Compilation Pipeline** - Graph to LLVM IR to native binary with function-scoped codegen (completed 2026-02-18)
 - [x] **Phase 6: Full Contract System & Incremental Compilation** - Pre/post-conditions, invariants, property-based testing, and red-green dirty tracking (completed 2026-02-19)
 - [x] **Phase 7: Multi-Agent Concurrency** - Concurrent graph editing with region locking and optimistic concurrency control (completed 2026-02-19)
-- [ ] **Phase 8: Dual-Layer Semantic Architecture** - Semantic knowledge graph, bidirectional propagation, and vector embeddings
+- [x] **Phase 8: Dual-Layer Semantic Architecture** - Semantic knowledge graph, bidirectional propagation, and vector embeddings (completed 2026-02-19)
 - [ ] **Phase 9: Human Observability** - Graph visualization, layer differentiation, natural language queries, and contextual results
 
 ## Phase Details
@@ -154,9 +154,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — Extended semantic graph schema and embedding infrastructure (node + subgraph)
-- [ ] 08-02-PLAN.md — Queue-based bidirectional propagation engine with hybrid trigger + explicit flush
-- [ ] 08-03-PLAN.md — Rule-priority conflict resolution and end-to-end dual-layer sync validation
+- [x] 08-01-PLAN.md — Extended semantic graph schema and embedding infrastructure (node + subgraph)
+- [x] 08-02-PLAN.md — Queue-based bidirectional propagation engine with hybrid trigger + explicit flush
+- [x] 08-03-PLAN.md — Rule-priority conflict resolution and end-to-end dual-layer sync validation
 
 ### Phase 9: Human Observability
 **Goal**: Humans can visually explore the program graph and ask natural language questions to understand what the program does
@@ -187,5 +187,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 5. LLVM Compilation Pipeline | 4/4 | Complete    | 2026-02-19 |
 | 6. Full Contract System & Incremental Compilation | 3/4 | Complete    | 2026-02-19 |
 | 7. Multi-Agent Concurrency | 3/3 | Complete | 2026-02-19 |
-| 8. Dual-Layer Semantic Architecture | 0/3 | Not started | - |
+| 8. Dual-Layer Semantic Architecture | 3/3 | Complete | 2026-02-19 |
 | 9. Human Observability | 0/? | Not started | - |

@@ -37,4 +37,12 @@ pub enum CoreError {
     /// A dual-graph invariant was violated.
     #[error("graph inconsistency: {reason}")]
     GraphInconsistency { reason: String },
+
+    /// Propagation loop guard triggered during explicit flush.
+    #[error("propagation loop detected: {reason}")]
+    PropagationLoopDetected { reason: String },
+
+    /// Deterministic conflict resolver could not safely reconcile edits.
+    #[error("propagation conflict: {reason}")]
+    PropagationConflict { reason: String },
 }

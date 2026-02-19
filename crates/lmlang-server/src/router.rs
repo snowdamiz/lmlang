@@ -20,18 +20,17 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         // Agent management
         .route("/agents/register", post(handlers::agents::register_agent))
-        .route("/agents/{agent_id}", delete(handlers::agents::deregister_agent))
+        .route(
+            "/agents/{agent_id}",
+            delete(handlers::agents::deregister_agent),
+        )
         .route("/agents", get(handlers::agents::list_agents))
         // Program management
         .route(
             "/programs",
-            get(handlers::programs::list_programs)
-                .post(handlers::programs::create_program),
+            get(handlers::programs::list_programs).post(handlers::programs::create_program),
         )
-        .route(
-            "/programs/{id}",
-            delete(handlers::programs::delete_program),
-        )
+        .route("/programs/{id}", delete(handlers::programs::delete_program))
         .route(
             "/programs/{id}/load",
             post(handlers::programs::load_program),
@@ -68,15 +67,14 @@ pub fn build_router(state: AppState) -> Router {
             "/programs/{id}/neighborhood",
             post(handlers::queries::neighborhood),
         )
+        .route("/programs/{id}/search", post(handlers::queries::search))
         .route(
-            "/programs/{id}/search",
-            post(handlers::queries::search),
+            "/programs/{id}/semantic",
+            post(handlers::queries::semantic_query),
         )
         // Verify (TOOL-03)
-        .route(
-            "/programs/{id}/verify",
-            post(handlers::verify::verify),
-        )
+        .route("/programs/{id}/verify", post(handlers::verify::verify))
+        .route("/programs/{id}/verify/flush", post(handlers::verify::flush))
         // Simulate (TOOL-04)
         .route(
             "/programs/{id}/simulate",
@@ -88,10 +86,7 @@ pub fn build_router(state: AppState) -> Router {
             post(handlers::compile::compile_program),
         )
         // Dirty status query (incremental compilation)
-        .route(
-            "/programs/{id}/dirty",
-            get(handlers::compile::dirty_status),
-        )
+        .route("/programs/{id}/dirty", get(handlers::compile::dirty_status))
         // Property testing (CNTR-05)
         .route(
             "/programs/{id}/property-test",
@@ -102,18 +97,11 @@ pub fn build_router(state: AppState) -> Router {
             "/programs/{id}/history",
             get(handlers::history::list_history),
         )
-        .route(
-            "/programs/{id}/undo",
-            post(handlers::history::undo),
-        )
-        .route(
-            "/programs/{id}/redo",
-            post(handlers::history::redo),
-        )
+        .route("/programs/{id}/undo", post(handlers::history::undo))
+        .route("/programs/{id}/redo", post(handlers::history::redo))
         .route(
             "/programs/{id}/checkpoints",
-            get(handlers::history::list_checkpoints)
-                .post(handlers::history::create_checkpoint),
+            get(handlers::history::list_checkpoints).post(handlers::history::create_checkpoint),
         )
         .route(
             "/programs/{id}/checkpoints/{name}/restore",

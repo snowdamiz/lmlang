@@ -84,6 +84,12 @@ impl SqliteStore {
             SemanticEdge::Contains => "Contains",
             SemanticEdge::Calls => "Calls",
             SemanticEdge::UsesType => "UsesType",
+            SemanticEdge::Documents => "Documents",
+            SemanticEdge::Validates => "Validates",
+            SemanticEdge::Implements => "Implements",
+            SemanticEdge::DependsOn => "DependsOn",
+            SemanticEdge::Summarizes => "Summarizes",
+            SemanticEdge::Derives => "Derives",
         }
     }
 
@@ -93,6 +99,12 @@ impl SqliteStore {
             "Contains" => SemanticEdge::Contains,
             "Calls" => SemanticEdge::Calls,
             "UsesType" => SemanticEdge::UsesType,
+            "Documents" => SemanticEdge::Documents,
+            "Validates" => SemanticEdge::Validates,
+            "Implements" => SemanticEdge::Implements,
+            "DependsOn" => SemanticEdge::DependsOn,
+            "Summarizes" => SemanticEdge::Summarizes,
+            "Derives" => SemanticEdge::Derives,
             _ => SemanticEdge::Contains, // fallback
         }
     }
@@ -220,11 +232,7 @@ impl SqliteStore {
             for (edge_idx, source, target, edge) in &decomposed.flow_edges {
                 let edge_json = serde_json::to_string(edge)?;
                 stmt.execute(params![
-                    program_id,
-                    *edge_idx,
-                    source.0,
-                    target.0,
-                    edge_json,
+                    program_id, *edge_idx, source.0, target.0, edge_json,
                 ])?;
             }
         }
@@ -496,12 +504,15 @@ impl SqliteStore {
             let node_index = NodeIndex::<u32>::new(*idx as usize);
             match node {
                 SemanticNode::Module(m) => {
-                    module_semantic_indices.insert(m.id, node_index);
+                    module_semantic_indices.insert(m.module.id, node_index);
                 }
                 SemanticNode::Function(f) => {
                     function_semantic_indices.insert(f.function_id, node_index);
                 }
-                SemanticNode::TypeDef(_) => {
+                SemanticNode::TypeDef(_)
+                | SemanticNode::Spec(_)
+                | SemanticNode::Test(_)
+                | SemanticNode::Doc(_) => {
                     // TypeDef nodes don't have a separate index map currently
                 }
             }
@@ -542,10 +553,7 @@ impl SqliteStore {
             .find(|(_, m)| m.parent.is_none())
             .map(|(id, _)| *id)
             .ok_or_else(|| StorageError::IntegrityError {
-                reason: format!(
-                    "no root module found for program {}",
-                    program_id
-                ),
+                reason: format!("no root module found for program {}", program_id),
             })?;
 
         // Build module map and initialize children/functions for each module
@@ -565,10 +573,7 @@ impl SqliteStore {
 
         // Build module-function relationships
         for (func_id, func) in functions {
-            functions_map
-                .entry(func.module)
-                .or_default()
-                .push(*func_id);
+            functions_map.entry(func.module).or_default().push(*func_id);
         }
 
         // Load type_defs from database
@@ -648,18 +653,9 @@ impl GraphStore for SqliteStore {
             "DELETE FROM compute_nodes WHERE program_id = ?1",
             params![id.0],
         )?;
-        tx.execute(
-            "DELETE FROM functions WHERE program_id = ?1",
-            params![id.0],
-        )?;
-        tx.execute(
-            "DELETE FROM modules WHERE program_id = ?1",
-            params![id.0],
-        )?;
-        tx.execute(
-            "DELETE FROM types WHERE program_id = ?1",
-            params![id.0],
-        )?;
+        tx.execute("DELETE FROM functions WHERE program_id = ?1", params![id.0])?;
+        tx.execute("DELETE FROM modules WHERE program_id = ?1", params![id.0])?;
+        tx.execute("DELETE FROM types WHERE program_id = ?1", params![id.0])?;
         tx.execute("DELETE FROM programs WHERE id = ?1", params![id.0])?;
         tx.commit()?;
         Ok(())
@@ -828,11 +824,7 @@ impl GraphStore for SqliteStore {
         Ok(())
     }
 
-    fn get_node(
-        &self,
-        program: ProgramId,
-        node_id: NodeId,
-    ) -> Result<ComputeNode, StorageError> {
+    fn get_node(&self, program: ProgramId, node_id: NodeId) -> Result<ComputeNode, StorageError> {
         let row: Option<(u32, String)> = self
             .conn
             .query_row(
@@ -883,11 +875,7 @@ impl GraphStore for SqliteStore {
         Ok(())
     }
 
-    fn delete_node(
-        &mut self,
-        program: ProgramId,
-        node_id: NodeId,
-    ) -> Result<(), StorageError> {
+    fn delete_node(&mut self, program: ProgramId, node_id: NodeId) -> Result<(), StorageError> {
         let tx = self.conn.transaction()?;
         let rows = tx.execute(
             "DELETE FROM compute_nodes WHERE program_id = ?1 AND node_id = ?2",
@@ -956,11 +944,7 @@ impl GraphStore for SqliteStore {
         }
     }
 
-    fn delete_edge(
-        &mut self,
-        program: ProgramId,
-        edge_id: EdgeId,
-    ) -> Result<(), StorageError> {
+    fn delete_edge(&mut self, program: ProgramId, edge_id: EdgeId) -> Result<(), StorageError> {
         let tx = self.conn.transaction()?;
         let rows = tx.execute(
             "DELETE FROM flow_edges WHERE program_id = ?1 AND edge_id = ?2",
@@ -996,11 +980,7 @@ impl GraphStore for SqliteStore {
         Ok(())
     }
 
-    fn get_type(
-        &self,
-        program: ProgramId,
-        type_id: TypeId,
-    ) -> Result<LmType, StorageError> {
+    fn get_type(&self, program: ProgramId, type_id: TypeId) -> Result<LmType, StorageError> {
         let row: Option<String> = self
             .conn
             .query_row(
@@ -1083,7 +1063,17 @@ impl GraphStore for SqliteStore {
             .optional()?;
 
         match row {
-            Some((name, module_id, visibility, params_json, return_type_id, entry_node_id, is_closure, parent_function, captures_json)) => {
+            Some((
+                name,
+                module_id,
+                visibility,
+                params_json,
+                return_type_id,
+                entry_node_id,
+                is_closure,
+                parent_function,
+                captures_json,
+            )) => {
                 let params: Vec<(String, TypeId)> = serde_json::from_str(&params_json)?;
                 let captures: Vec<Capture> = serde_json::from_str(&captures_json)?;
                 Ok(FunctionDef {
@@ -1242,10 +1232,7 @@ impl GraphStore for SqliteStore {
                 Ok(node)
             }
             None => Err(StorageError::IntegrityError {
-                reason: format!(
-                    "semantic node {} not found in program {}",
-                    index, program.0
-                ),
+                reason: format!("semantic node {} not found in program {}", index, program.0),
             }),
         }
     }
@@ -1297,10 +1284,7 @@ impl GraphStore for SqliteStore {
                 Ok((source, target, Self::str_to_semantic_edge(&edge_type)))
             }
             None => Err(StorageError::IntegrityError {
-                reason: format!(
-                    "semantic edge {} not found in program {}",
-                    index, program.0
-                ),
+                reason: format!("semantic edge {} not found in program {}", index, program.0),
             }),
         }
     }
@@ -1326,13 +1310,7 @@ impl GraphStore for SqliteStore {
         for row in rows {
             let (node_id, op_json) = row?;
             let op: ComputeNodeOp = serde_json::from_str(&op_json)?;
-            result.push((
-                NodeId(node_id),
-                ComputeNode {
-                    op,
-                    owner,
-                },
-            ));
+            result.push((NodeId(node_id), ComputeNode { op, owner }));
         }
         Ok(result)
     }
@@ -1612,19 +1590,11 @@ mod tests {
         let sum = graph
             .add_core_op(ComputeOp::BinaryArith { op: ArithOp::Add }, add_fn_id)
             .unwrap();
-        let add_ret = graph
-            .add_core_op(ComputeOp::Return, add_fn_id)
-            .unwrap();
+        let add_ret = graph.add_core_op(ComputeOp::Return, add_fn_id).unwrap();
 
-        graph
-            .add_data_edge(param_a, sum, 0, 0, i32_id)
-            .unwrap();
-        graph
-            .add_data_edge(param_b, sum, 0, 1, i32_id)
-            .unwrap();
-        graph
-            .add_data_edge(sum, add_ret, 0, 0, i32_id)
-            .unwrap();
+        graph.add_data_edge(param_a, sum, 0, 0, i32_id).unwrap();
+        graph.add_data_edge(param_b, sum, 0, 1, i32_id).unwrap();
+        graph.add_data_edge(sum, add_ret, 0, 0, i32_id).unwrap();
 
         graph.get_function_mut(add_fn_id).unwrap().entry_node = Some(param_a);
 
@@ -1671,9 +1641,7 @@ mod tests {
         let call_add = graph
             .add_core_op(ComputeOp::Call { target: add_fn_id }, adder_fn_id)
             .unwrap();
-        let adder_ret = graph
-            .add_core_op(ComputeOp::Return, adder_fn_id)
-            .unwrap();
+        let adder_ret = graph.add_core_op(ComputeOp::Return, adder_fn_id).unwrap();
 
         graph
             .add_data_edge(param_x, call_add, 0, 0, i32_id)
@@ -1699,9 +1667,7 @@ mod tests {
                 make_adder_id,
             )
             .unwrap();
-        let ma_ret = graph
-            .add_core_op(ComputeOp::Return, make_adder_id)
-            .unwrap();
+        let ma_ret = graph.add_core_op(ComputeOp::Return, make_adder_id).unwrap();
 
         graph
             .add_data_edge(ma_param_offset, make_closure, 0, 0, i32_id)
@@ -1938,6 +1904,27 @@ mod tests {
     }
 
     #[test]
+    fn test_semantic_edge_roundtrip_extended_variants() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        let graph = ProgramGraph::new("main");
+        let id = store.create_program("semantic_edge_variant_test").unwrap();
+        store.save_program(id, &graph).unwrap();
+
+        let extra_node = SemanticNode::Doc(lmlang_core::node::DocNode {
+            doc_id: "DOC-1".to_string(),
+            title: "Doc".to_string(),
+            metadata: lmlang_core::node::SemanticMetadata::default(),
+        });
+        store.insert_semantic_node(id, 1, &extra_node).unwrap();
+
+        store
+            .insert_semantic_edge(id, 0, 0, 1, &SemanticEdge::Documents)
+            .unwrap();
+        let (_, _, edge) = store.get_semantic_edge(id, 0).unwrap();
+        assert_eq!(edge, SemanticEdge::Documents);
+    }
+
+    #[test]
     fn test_query_nodes_by_owner() {
         let mut store = SqliteStore::in_memory().unwrap();
         let mut graph = ProgramGraph::new("main");
@@ -1946,22 +1933,10 @@ mod tests {
 
         // Create two functions
         let fn1 = graph
-            .add_function(
-                "fn1".into(),
-                root,
-                vec![],
-                i32_id,
-                Visibility::Public,
-            )
+            .add_function("fn1".into(), root, vec![], i32_id, Visibility::Public)
             .unwrap();
         let fn2 = graph
-            .add_function(
-                "fn2".into(),
-                root,
-                vec![],
-                i32_id,
-                Visibility::Public,
-            )
+            .add_function("fn2".into(), root, vec![], i32_id, Visibility::Public)
             .unwrap();
 
         // Add 3 nodes to fn1, 2 to fn2
