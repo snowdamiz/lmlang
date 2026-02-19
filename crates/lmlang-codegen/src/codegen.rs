@@ -120,11 +120,12 @@ pub fn compile_function<'ctx>(
 // Topological sort
 // ---------------------------------------------------------------------------
 
-/// Topologically sort nodes within a function by data edges using Kahn's algorithm.
+/// Topologically sort nodes within a function by data and control edges
+/// using Kahn's algorithm.
 ///
-/// Only considers data edges where both source and target are in the function
-/// node set. Nodes with no data dependencies (Const, Parameter, Alloc,
-/// CaptureAccess, ReadLine) naturally sort first.
+/// Considers both data and control edges where both source and target are
+/// in the function node set. Nodes with no dependencies (Const, Parameter,
+/// Alloc, CaptureAccess, ReadLine) naturally sort first.
 fn topological_sort(
     func_nodes: &[NodeId],
     graph: &ProgramGraph,
@@ -132,7 +133,7 @@ fn topological_sort(
     let node_set: HashSet<NodeId> = func_nodes.iter().copied().collect();
     let compute = graph.compute();
 
-    // Build in-degree map (only data edges within the function)
+    // Build in-degree map (data + control edges within the function)
     let mut in_degree: HashMap<NodeId, usize> = HashMap::new();
     for &nid in func_nodes {
         in_degree.insert(nid, 0);
@@ -141,11 +142,9 @@ fn topological_sort(
     for &nid in func_nodes {
         let idx = petgraph::graph::NodeIndex::from(nid);
         for edge in compute.edges_directed(idx, Direction::Incoming) {
-            if let FlowEdge::Data { .. } = edge.weight() {
-                let source_nid = NodeId::from(edge.source());
-                if node_set.contains(&source_nid) {
-                    *in_degree.entry(nid).or_insert(0) += 1;
-                }
+            let source_nid = NodeId::from(edge.source());
+            if node_set.contains(&source_nid) {
+                *in_degree.entry(nid).or_insert(0) += 1;
             }
         }
     }
@@ -164,14 +163,12 @@ fn topological_sort(
 
         let idx = petgraph::graph::NodeIndex::from(nid);
         for edge in compute.edges_directed(idx, Direction::Outgoing) {
-            if let FlowEdge::Data { .. } = edge.weight() {
-                let target_nid = NodeId::from(edge.target());
-                if node_set.contains(&target_nid) {
-                    let deg = in_degree.get_mut(&target_nid).unwrap();
-                    *deg -= 1;
-                    if *deg == 0 {
-                        queue.push_back(target_nid);
-                    }
+            let target_nid = NodeId::from(edge.target());
+            if node_set.contains(&target_nid) {
+                let deg = in_degree.get_mut(&target_nid).unwrap();
+                *deg -= 1;
+                if *deg == 0 {
+                    queue.push_back(target_nid);
                 }
             }
         }
@@ -2042,6 +2039,475 @@ mod tests {
                 graph.add_data_edge(a, shl, 0, 0, TypeId::I32).unwrap();
                 graph.add_data_edge(b, shl, 0, 1, TypeId::I32).unwrap();
                 graph.add_data_edge(shl, ret, 0, 0, TypeId::I32).unwrap();
+            },
+            vec![("a", TypeId::I32), ("b", TypeId::I32)],
+            TypeId::I32,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2: Memory ops
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_alloc_store_load() {
+        compile_and_verify(
+            |graph, func_id| {
+                // alloc -> store param -> load -> return
+                let ptr_type_id = graph.types.register(lmlang_core::types::LmType::Pointer {
+                    pointee: TypeId::I32,
+                    mutable: true,
+                });
+
+                let param = graph
+                    .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+                    .unwrap();
+                let alloc = graph.add_core_op(ComputeOp::Alloc, func_id).unwrap();
+                let store = graph.add_core_op(ComputeOp::Store, func_id).unwrap();
+                let load = graph.add_core_op(ComputeOp::Load, func_id).unwrap();
+                let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+
+                // Alloc outputs a pointer
+                graph.add_data_edge(alloc, store, 0, 0, ptr_type_id).unwrap();
+                graph.add_data_edge(param, store, 0, 1, TypeId::I32).unwrap();
+                graph.add_data_edge(alloc, load, 0, 0, ptr_type_id).unwrap();
+                // Load outputs an i32
+                graph.add_data_edge(load, ret, 0, 0, TypeId::I32).unwrap();
+                // Force store before load via data dependency through alloc
+            },
+            vec![("x", TypeId::I32)],
+            TypeId::I32,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2: Function calls
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_function_call() {
+        // Build a program with two functions: callee(i32) -> i32, caller(i32) -> i32
+        let mut graph = ProgramGraph::new("test");
+        let root = graph.modules.root_id();
+
+        // Callee: identity function
+        let callee_id = graph
+            .add_function(
+                "callee".into(),
+                root,
+                vec![("x".into(), TypeId::I32)],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        let callee_param = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, callee_id)
+            .unwrap();
+        let callee_ret = graph.add_core_op(ComputeOp::Return, callee_id).unwrap();
+        graph
+            .add_data_edge(callee_param, callee_ret, 0, 0, TypeId::I32)
+            .unwrap();
+
+        // Caller: calls callee
+        let caller_id = graph
+            .add_function(
+                "caller".into(),
+                root,
+                vec![("y".into(), TypeId::I32)],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        let caller_param = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, caller_id)
+            .unwrap();
+        let call_node = graph
+            .add_core_op(ComputeOp::Call { target: callee_id }, caller_id)
+            .unwrap();
+        let caller_ret = graph.add_core_op(ComputeOp::Return, caller_id).unwrap();
+
+        graph
+            .add_data_edge(caller_param, call_node, 0, 0, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(call_node, caller_ret, 0, 0, TypeId::I32)
+            .unwrap();
+
+        // Compile both functions
+        let context = Context::create();
+        let module = context.create_module("test_call");
+        let builder = context.create_builder();
+        crate::runtime::declare_runtime_functions(&context, &module);
+
+        let callee_def = graph.get_function(callee_id).unwrap().clone();
+        compile_function(&context, &module, &builder, &graph, callee_id, &callee_def).unwrap();
+
+        let caller_def = graph.get_function(caller_id).unwrap().clone();
+        compile_function(&context, &module, &builder, &graph, caller_id, &caller_def).unwrap();
+
+        assert!(module.verify().is_ok(), "Module verification failed: {:?}", module.verify());
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2: Struct ops
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_struct_create_and_get() {
+        use indexmap::IndexMap;
+        use lmlang_core::types::{StructDef, Visibility as LmVisibility};
+        use lmlang_core::id::ModuleId;
+
+        let mut graph = ProgramGraph::new("test");
+        let root = graph.modules.root_id();
+
+        // Register a Point struct { x: i32, y: i32 }
+        let point_type_id = graph
+            .types
+            .register_named(
+                "Point",
+                lmlang_core::types::LmType::Struct(StructDef {
+                    name: "Point".into(),
+                    type_id: TypeId(0),
+                    fields: IndexMap::from([
+                        ("x".into(), TypeId::I32),
+                        ("y".into(), TypeId::I32),
+                    ]),
+                    module: ModuleId(0),
+                    visibility: LmVisibility::Public,
+                }),
+            )
+            .unwrap();
+
+        let func_id = graph
+            .add_function(
+                "test_struct".into(),
+                root,
+                vec![("a".into(), TypeId::I32), ("b".into(), TypeId::I32)],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        let param_a = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+            .unwrap();
+        let param_b = graph
+            .add_core_op(ComputeOp::Parameter { index: 1 }, func_id)
+            .unwrap();
+
+        // StructCreate { x: a, y: b }
+        let create = graph
+            .add_structured_op(
+                lmlang_core::ops::StructuredOp::StructCreate {
+                    type_id: point_type_id,
+                },
+                func_id,
+            )
+            .unwrap();
+
+        // StructGet field 0 (x)
+        let get_x = graph
+            .add_structured_op(
+                lmlang_core::ops::StructuredOp::StructGet { field_index: 0 },
+                func_id,
+            )
+            .unwrap();
+
+        let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+
+        graph.add_data_edge(param_a, create, 0, 0, TypeId::I32).unwrap();
+        graph.add_data_edge(param_b, create, 0, 1, TypeId::I32).unwrap();
+        graph.add_data_edge(create, get_x, 0, 0, point_type_id).unwrap();
+        graph.add_data_edge(get_x, ret, 0, 0, TypeId::I32).unwrap();
+
+        let context = Context::create();
+        let module = context.create_module("test_struct_mod");
+        let builder = context.create_builder();
+        crate::runtime::declare_runtime_functions(&context, &module);
+
+        let func_def = graph.get_function(func_id).unwrap().clone();
+        compile_function(&context, &module, &builder, &graph, func_id, &func_def).unwrap();
+
+        assert!(module.verify().is_ok(), "Module verification failed: {:?}", module.verify());
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2: Cast ops
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_cast_i32_to_f64() {
+        compile_and_verify(
+            |graph, func_id| {
+                let param = graph
+                    .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+                    .unwrap();
+                let cast = graph
+                    .add_structured_op(
+                        lmlang_core::ops::StructuredOp::Cast {
+                            target_type: TypeId::F64,
+                        },
+                        func_id,
+                    )
+                    .unwrap();
+                let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+                graph.add_data_edge(param, cast, 0, 0, TypeId::I32).unwrap();
+                graph.add_data_edge(cast, ret, 0, 0, TypeId::F64).unwrap();
+            },
+            vec![("x", TypeId::I32)],
+            TypeId::F64,
+        );
+    }
+
+    #[test]
+    fn test_cast_f64_to_i32() {
+        compile_and_verify(
+            |graph, func_id| {
+                let param = graph
+                    .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+                    .unwrap();
+                let cast = graph
+                    .add_structured_op(
+                        lmlang_core::ops::StructuredOp::Cast {
+                            target_type: TypeId::I32,
+                        },
+                        func_id,
+                    )
+                    .unwrap();
+                let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+                graph.add_data_edge(param, cast, 0, 0, TypeId::F64).unwrap();
+                graph.add_data_edge(cast, ret, 0, 0, TypeId::I32).unwrap();
+            },
+            vec![("x", TypeId::F64)],
+            TypeId::I32,
+        );
+    }
+
+    #[test]
+    fn test_cast_i8_to_i64() {
+        compile_and_verify(
+            |graph, func_id| {
+                let param = graph
+                    .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+                    .unwrap();
+                let cast = graph
+                    .add_structured_op(
+                        lmlang_core::ops::StructuredOp::Cast {
+                            target_type: TypeId::I64,
+                        },
+                        func_id,
+                    )
+                    .unwrap();
+                let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+                graph.add_data_edge(param, cast, 0, 0, TypeId::I8).unwrap();
+                graph.add_data_edge(cast, ret, 0, 0, TypeId::I64).unwrap();
+            },
+            vec![("x", TypeId::I8)],
+            TypeId::I64,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2: Not and unary abs ops
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_not_op() {
+        compile_and_verify(
+            |graph, func_id| {
+                let a = graph
+                    .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+                    .unwrap();
+                let not = graph.add_core_op(ComputeOp::Not, func_id).unwrap();
+                let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+                graph.add_data_edge(a, not, 0, 0, TypeId::BOOL).unwrap();
+                graph.add_data_edge(not, ret, 0, 0, TypeId::BOOL).unwrap();
+            },
+            vec![("a", TypeId::BOOL)],
+            TypeId::BOOL,
+        );
+    }
+
+    #[test]
+    fn test_unary_neg() {
+        compile_and_verify(
+            |graph, func_id| {
+                let a = graph
+                    .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+                    .unwrap();
+                let neg = graph
+                    .add_core_op(
+                        ComputeOp::UnaryArith {
+                            op: lmlang_core::ops::UnaryArithOp::Neg,
+                        },
+                        func_id,
+                    )
+                    .unwrap();
+                let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+                graph.add_data_edge(a, neg, 0, 0, TypeId::I32).unwrap();
+                graph.add_data_edge(neg, ret, 0, 0, TypeId::I32).unwrap();
+            },
+            vec![("x", TypeId::I32)],
+            TypeId::I32,
+        );
+    }
+
+    #[test]
+    fn test_unary_abs_float() {
+        compile_and_verify(
+            |graph, func_id| {
+                let a = graph
+                    .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+                    .unwrap();
+                let abs = graph
+                    .add_core_op(
+                        ComputeOp::UnaryArith {
+                            op: lmlang_core::ops::UnaryArithOp::Abs,
+                        },
+                        func_id,
+                    )
+                    .unwrap();
+                let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+                graph.add_data_edge(a, abs, 0, 0, TypeId::F64).unwrap();
+                graph.add_data_edge(abs, ret, 0, 0, TypeId::F64).unwrap();
+            },
+            vec![("x", TypeId::F64)],
+            TypeId::F64,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2: Print op
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_print_op() {
+        compile_and_verify(
+            |graph, func_id| {
+                let param = graph
+                    .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+                    .unwrap();
+                let print = graph.add_core_op(ComputeOp::Print, func_id).unwrap();
+                let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+                graph.add_data_edge(param, print, 0, 0, TypeId::I32).unwrap();
+                // Control edge from print -> ret ensures print is emitted before return
+                graph.add_control_edge(print, ret, None).unwrap();
+            },
+            vec![("x", TypeId::I32)],
+            TypeId::UNIT,
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2: All arithmetic ops produce valid IR
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_all_arith_ops() {
+        for arith_op in [ArithOp::Add, ArithOp::Sub, ArithOp::Mul, ArithOp::Div, ArithOp::Rem] {
+            compile_and_verify(
+                |graph, func_id| {
+                    let a = graph
+                        .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+                        .unwrap();
+                    let b = graph
+                        .add_core_op(ComputeOp::Parameter { index: 1 }, func_id)
+                        .unwrap();
+                    let op_node = graph
+                        .add_core_op(ComputeOp::BinaryArith { op: arith_op }, func_id)
+                        .unwrap();
+                    let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+                    graph.add_data_edge(a, op_node, 0, 0, TypeId::I32).unwrap();
+                    graph.add_data_edge(b, op_node, 0, 1, TypeId::I32).unwrap();
+                    graph.add_data_edge(op_node, ret, 0, 0, TypeId::I32).unwrap();
+                },
+                vec![("a", TypeId::I32), ("b", TypeId::I32)],
+                TypeId::I32,
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2: All comparison ops produce valid IR
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_all_cmp_ops() {
+        for cmp_op in [CmpOp::Eq, CmpOp::Ne, CmpOp::Lt, CmpOp::Le, CmpOp::Gt, CmpOp::Ge] {
+            compile_and_verify(
+                |graph, func_id| {
+                    let a = graph
+                        .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+                        .unwrap();
+                    let b = graph
+                        .add_core_op(ComputeOp::Parameter { index: 1 }, func_id)
+                        .unwrap();
+                    let cmp_node = graph
+                        .add_core_op(ComputeOp::Compare { op: cmp_op }, func_id)
+                        .unwrap();
+                    let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+                    graph.add_data_edge(a, cmp_node, 0, 0, TypeId::I32).unwrap();
+                    graph.add_data_edge(b, cmp_node, 0, 1, TypeId::I32).unwrap();
+                    graph.add_data_edge(cmp_node, ret, 0, 0, TypeId::BOOL).unwrap();
+                },
+                vec![("a", TypeId::I32), ("b", TypeId::I32)],
+                TypeId::BOOL,
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 2: ArrayCreate with constant index extract
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_array_create_and_get_const() {
+        compile_and_verify(
+            |graph, func_id| {
+                let a = graph
+                    .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+                    .unwrap();
+                let b = graph
+                    .add_core_op(ComputeOp::Parameter { index: 1 }, func_id)
+                    .unwrap();
+
+                // Create [i32; 2] from params
+                let arr = graph
+                    .add_structured_op(
+                        lmlang_core::ops::StructuredOp::ArrayCreate { length: 2 },
+                        func_id,
+                    )
+                    .unwrap();
+
+                let arr_type_id = graph.types.register(lmlang_core::types::LmType::Array {
+                    element: TypeId::I32,
+                    length: 2,
+                });
+
+                // Index 0 constant
+                let idx = graph
+                    .add_core_op(
+                        ComputeOp::Const {
+                            value: ConstValue::I32(0),
+                        },
+                        func_id,
+                    )
+                    .unwrap();
+
+                let get = graph
+                    .add_structured_op(lmlang_core::ops::StructuredOp::ArrayGet, func_id)
+                    .unwrap();
+
+                let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+
+                graph.add_data_edge(a, arr, 0, 0, TypeId::I32).unwrap();
+                graph.add_data_edge(b, arr, 0, 1, TypeId::I32).unwrap();
+                graph.add_data_edge(arr, get, 0, 0, arr_type_id).unwrap();
+                graph.add_data_edge(idx, get, 0, 1, TypeId::I32).unwrap();
+                graph.add_data_edge(get, ret, 0, 0, TypeId::I32).unwrap();
             },
             vec![("a", TypeId::I32), ("b", TypeId::I32)],
             TypeId::I32,
