@@ -9,6 +9,7 @@ use lmlang_core::ops::ComputeNodeOp;
 use lmlang_core::type_id::TypeId;
 use lmlang_core::types::Visibility;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use super::diagnostics::{DiagnosticError, DiagnosticWarning};
 
@@ -23,6 +24,12 @@ pub struct ProposeEditRequest {
     /// If `true`, validate only without committing.
     #[serde(default)]
     pub dry_run: bool,
+    /// Per-function blake3 hex hashes from the agent's last read.
+    ///
+    /// When present alongside `X-Agent-Id`, enables optimistic conflict
+    /// detection before applying mutations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_hashes: Option<HashMap<u32, String>>,
 }
 
 /// A single graph mutation operation.

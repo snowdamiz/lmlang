@@ -4,9 +4,11 @@
 //! service lock, delegate to [`ProgramService`], and return JSON responses.
 //! No business logic lives in handlers.
 
+pub mod agents;
 pub mod compile;
 pub mod contracts;
 pub mod history;
+pub mod locks;
 pub mod mutations;
 pub mod programs;
 pub mod queries;

@@ -49,6 +49,13 @@ pub enum ApiError {
     #[error("conflict: {0}")]
     Conflict(String),
 
+    /// Resource conflict with structured details (409).
+    #[error("conflict: {message}")]
+    ConflictWithDetails {
+        message: String,
+        details: serde_json::Value,
+    },
+
     /// Lock denied -- another agent holds the lock (423 Locked).
     #[error("lock denied")]
     LockDenied(LockDenial),
@@ -107,6 +114,14 @@ impl IntoResponse for ApiError {
                     code: "CONFLICT".to_string(),
                     message: msg.clone(),
                     details: None,
+                },
+            ),
+            ApiError::ConflictWithDetails { message, details } => (
+                StatusCode::CONFLICT,
+                ApiErrorDetail {
+                    code: "CONFLICT".to_string(),
+                    message: message.clone(),
+                    details: Some(details.clone()),
                 },
             ),
             ApiError::LockDenied(denial) => (

@@ -18,6 +18,10 @@ use crate::state::AppState;
 /// TraceLayer provides request-level logging via tracing.
 pub fn build_router(state: AppState) -> Router {
     Router::new()
+        // Agent management
+        .route("/agents/register", post(handlers::agents::register_agent))
+        .route("/agents/{agent_id}", delete(handlers::agents::deregister_agent))
+        .route("/agents", get(handlers::agents::list_agents))
         // Program management
         .route(
             "/programs",
@@ -37,6 +41,16 @@ pub fn build_router(state: AppState) -> Router {
             "/programs/{id}/mutations",
             post(handlers::mutations::propose_edit),
         )
+        // Lock management
+        .route(
+            "/programs/{id}/locks/acquire",
+            post(handlers::locks::acquire_locks),
+        )
+        .route(
+            "/programs/{id}/locks/release",
+            post(handlers::locks::release_locks),
+        )
+        .route("/programs/{id}/locks", get(handlers::locks::lock_status))
         // Queries (TOOL-02)
         .route(
             "/programs/{id}/overview",

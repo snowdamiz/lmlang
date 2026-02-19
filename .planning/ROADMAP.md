@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: AI Agent Tool API** - HTTP endpoints for structured graph manipulation, retrieval, verification, simulation, and undo (completed 2026-02-18)
 - [x] **Phase 5: LLVM Compilation Pipeline** - Graph to LLVM IR to native binary with function-scoped codegen (completed 2026-02-18)
 - [x] **Phase 6: Full Contract System & Incremental Compilation** - Pre/post-conditions, invariants, property-based testing, and red-green dirty tracking (completed 2026-02-19)
-- [ ] **Phase 7: Multi-Agent Concurrency** - Concurrent graph editing with region locking and optimistic concurrency control
+- [x] **Phase 7: Multi-Agent Concurrency** - Concurrent graph editing with region locking and optimistic concurrency control (completed 2026-02-19)
 - [ ] **Phase 8: Dual-Layer Semantic Architecture** - Semantic knowledge graph, bidirectional propagation, and vector embeddings
 - [ ] **Phase 9: Human Observability** - Graph visualization, layer differentiation, natural language queries, and contextual results
 
@@ -137,9 +137,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 07-01-PLAN.md -- Core concurrency infrastructure: LockManager, AgentRegistry, conflict detection, AppState refactor to RwLock
-- [ ] 07-02-PLAN.md -- HTTP endpoints for agent/lock management, mutation handler with conflict detection and global write lock
-- [ ] 07-03-PLAN.md -- Incremental verification on mutation with auto-rollback, integration tests for all 4 MAGENT requirements
+- [x] 07-01-PLAN.md -- Core concurrency infrastructure: LockManager, AgentRegistry, conflict detection, AppState refactor to RwLock
+- [x] 07-02-PLAN.md -- HTTP endpoints for agent/lock management, mutation handler with conflict detection and global write lock
+- [x] 07-03-PLAN.md -- Incremental verification on mutation with auto-rollback, integration tests for all 4 MAGENT requirements
 
 ### Phase 8: Dual-Layer Semantic Architecture
 **Goal**: Programs have a semantic knowledge graph layer (intent, contracts, relationships, embeddings) that stays synchronized with the executable layer through bidirectional propagation
@@ -151,12 +151,12 @@ Plans:
   3. Changes to the computational layer automatically propagate upward to update semantic summaries, embeddings, relationship edges, and complexity metrics
   4. Bidirectional propagation uses a queue-based event model with explicit flush, preventing infinite loops and maintaining consistency
   5. Each semantic node carries vector embeddings enabling semantic similarity search and AI-driven navigation
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 08-01: TBD
-- [ ] 08-02: TBD
-- [ ] 08-03: TBD
+- [ ] 08-01-PLAN.md — Extended semantic graph schema and embedding infrastructure (node + subgraph)
+- [ ] 08-02-PLAN.md — Queue-based bidirectional propagation engine with hybrid trigger + explicit flush
+- [ ] 08-03-PLAN.md — Rule-priority conflict resolution and end-to-end dual-layer sync validation
 
 ### Phase 9: Human Observability
 **Goal**: Humans can visually explore the program graph and ask natural language questions to understand what the program does
@@ -186,6 +186,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 4. AI Agent Tool API | 3/4 | Complete    | 2026-02-18 |
 | 5. LLVM Compilation Pipeline | 4/4 | Complete    | 2026-02-19 |
 | 6. Full Contract System & Incremental Compilation | 3/4 | Complete    | 2026-02-19 |
-| 7. Multi-Agent Concurrency | 0/? | Not started | - |
-| 8. Dual-Layer Semantic Architecture | 0/? | Not started | - |
+| 7. Multi-Agent Concurrency | 3/3 | Complete | 2026-02-19 |
+| 8. Dual-Layer Semantic Architecture | 0/3 | Not started | - |
 | 9. Human Observability | 0/? | Not started | - |
