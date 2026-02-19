@@ -37,10 +37,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 4 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Cargo workspace setup + type system, type registry, IDs, error types
-- [ ] 01-02-PLAN.md — Op node enums (Tier 1 + Tier 2), edge types, node wrappers
-- [ ] 01-03-PLAN.md — Function definitions with closures, hierarchical module tree
-- [ ] 01-04-PLAN.md — Dual ProgramGraph container, builder API, integration test
+- [x] 01-01-PLAN.md — Cargo workspace setup + type system, type registry, IDs, error types
+- [x] 01-02-PLAN.md — Op node enums (Tier 1 + Tier 2), edge types, node wrappers
+- [x] 01-03-PLAN.md — Function definitions with closures, hierarchical module tree
+- [x] 01-04-PLAN.md — Dual ProgramGraph container, builder API, integration test
 
 ### Phase 2: Storage & Persistence
 **Goal**: Programs persist across process restarts in SQLite with a swappable backend and content-addressable identity
@@ -55,7 +55,7 @@ Plans:
 Plans:
 - [x] 02-01-PLAN.md — GraphStore trait, StorageError, ProgramId, decompose/recompose, InMemoryStore
 - [x] 02-02-PLAN.md — SQLite schema, migrations, SqliteStore implementation, save/load roundtrip tests
-- [ ] 02-03-PLAN.md — blake3 content hashing, Merkle-tree composition, per-function root hashes
+- [x] 02-03-PLAN.md — blake3 content hashing, Merkle-tree composition, per-function root hashes
 
 ### Phase 3: Type Checking & Graph Interpreter
 **Goal**: Programs can be statically type-checked and executed via interpretation for development-time feedback without requiring LLVM
@@ -70,7 +70,7 @@ Plans:
 Plans:
 - [x] 03-01-PLAN.md — lmlang-check crate with static type checker: per-op type rules, coercion, diagnostics, validate_data_edge/validate_graph
 - [x] 03-02-PLAN.md — Graph interpreter: Value enum, state machine execution, per-op evaluation, control flow, memory, function calls, traps, traces
-- [ ] 03-03-PLAN.md — Gap closure: real Loop op integration test with back-edge iteration, EXEC-01 tracking update
+- [x] 03-03-PLAN.md — Gap closure: real Loop op integration test with back-edge iteration, EXEC-01 tracking update
 
 ### Phase 4: AI Agent Tool API
 **Goal**: An AI agent can build, query, verify, test, and undo changes to programs through a structured HTTP/JSON interface
@@ -85,10 +85,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Crate setup, serde derives on lmlang-check types, API schema types, error response system
-- [ ] 04-02-PLAN.md — ProgramService application layer, undo system (EditLog + Checkpoints in SQLite), AppState
-- [ ] 04-03-PLAN.md — HTTP handlers (mutations, queries, verify, simulate, history), axum router, server binary
-- [ ] 04-04-PLAN.md — End-to-end integration tests proving all 7 requirements
+- [x] 04-01-PLAN.md — Crate setup, serde derives on lmlang-check types, API schema types, error response system
+- [x] 04-02-PLAN.md — ProgramService application layer, undo system (EditLog + Checkpoints in SQLite), AppState
+- [x] 04-03-PLAN.md — HTTP handlers (mutations, queries, verify, simulate, history), axum router, server binary
+- [x] 04-04-PLAN.md — End-to-end integration tests proving all 7 requirements
 
 ### Phase 5: LLVM Compilation Pipeline
 **Goal**: Programs represented as computational graphs compile to native binaries through LLVM with correct output matching the interpreter
@@ -123,7 +123,7 @@ Plans:
 - [x] 06-01-PLAN.md — Contract node types (Precondition/Postcondition/Invariant), interpreter contract checking, codegen filtering, contract-aware hashing
 - [x] 06-02-PLAN.md — Property-based testing harness with random input generation and API endpoint
 - [x] 06-03-PLAN.md — Incremental compilation with dirty tracking, per-function object caching, and dirty query API
-- [ ] 06-04-PLAN.md — Gap closure: wire module-boundary invariant checking, update REQUIREMENTS.md
+- [x] 06-04-PLAN.md — Gap closure: wire module-boundary invariant checking, update REQUIREMENTS.md
 
 ### Phase 7: Multi-Agent Concurrency
 **Goal**: Multiple AI agents can simultaneously read and edit the program graph with consistency guarantees preventing corruption
