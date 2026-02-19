@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-17)
 ## Current Position
 
 Phase: 6 of 9 (Full Contract System & Incremental Compilation)
-Plan: 3 of 5 in current phase
-Status: Executing Phase 6
-Last activity: 2026-02-18 — Completed 06-03-PLAN.md
+Plan: 4 of 4 in current phase
+Status: Phase 6 Complete
+Last activity: 2026-02-19 — Completed 06-04-PLAN.md
 
-Progress: [███████░░░] 72%
+Progress: [████████░░] 76%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 21
+- Total plans completed: 22
 - Average duration: 7min
-- Total execution time: 2.72 hours
+- Total execution time: 2.79 hours
 
 **By Phase:**
 
@@ -32,11 +32,11 @@ Progress: [███████░░░] 72%
 | 03 | 3/3 | 35min | 12min |
 | 04 | 4/4 | 24min | 6min |
 | 05 | 4/4 | 36min | 9min |
-| 06 | 3/5 | 36min | 12min |
+| 06 | 4/4 | 40min | 10min |
 
 **Recent Trend:**
-- Last 5 plans: 05-03 (5min), 05-04 (12min), 06-01 (12min), 06-02 (12min), 06-03 (12min)
-- Trend: Incremental compilation engine with dirty tracking, all 369 tests pass
+- Last 5 plans: 05-04 (12min), 06-01 (12min), 06-02 (12min), 06-03 (12min), 06-04 (4min)
+- Trend: Phase 6 complete -- full contract system with module-boundary invariants, all 373 tests pass
 
 *Updated after each plan completion*
 
@@ -135,6 +135,8 @@ Recent decisions affecting current work:
 - [Phase 06]: declare_runtime_functions_extern for multi-module builds; full body only in runtime.o
 - [Phase 06]: BFS propagation through reverse call graph for transitive dirty dependents
 - [Phase 06]: Lazy IncrementalState in ProgramService (first incremental compile creates it)
+- [Phase 06]: Mini-subgraph evaluator for invariant checking at module boundaries -- recursive backward walk + forward evaluation, bypassing normal worklist
+- [Phase 06]: Module-boundary invariant check skipped for same-module calls (zero overhead for internal calls)
 
 ### Pending Todos
 
@@ -148,6 +150,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-18
-Stopped at: Completed 06-03-PLAN.md
-Resume file: .planning/phases/06-full-contract-system-incremental-compilation/06-03-SUMMARY.md
+Last session: 2026-02-19
+Stopped at: Completed 06-04-PLAN.md (Phase 6 complete)
+Resume file: .planning/phases/06-full-contract-system-incremental-compilation/06-04-SUMMARY.md
