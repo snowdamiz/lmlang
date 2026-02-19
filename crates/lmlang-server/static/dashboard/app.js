@@ -5,6 +5,7 @@
     activeTab: "operate",
     selectedAgentId: null,
     status: "idle",
+    lastOperation: null,
   };
 
   const el = {
@@ -19,6 +20,7 @@
     operateRunSetupMount: document.getElementById("operateRunSetupMount"),
     operateActionsMount: document.getElementById("operateActionsMount"),
     operateTimelineMount: document.getElementById("operateTimelineMount"),
+    operateOutputMount: document.getElementById("operateOutputMount"),
   };
 
   function setStatus(message, tone = "idle") {
@@ -26,6 +28,22 @@
     el.sharedStatusPanel.textContent = message;
     el.sharedStatusPanel.dataset.state = tone;
     el.statusBadge.textContent = `Status: ${tone}`;
+  }
+
+  function setSelectedAgent(agentId) {
+    state.selectedAgentId = agentId;
+    el.agentBadge.textContent = agentId ? `Agent: ${agentId}` : "No agent selected";
+  }
+
+  function writeOutput(title, data) {
+    state.lastOperation = { title, data };
+    const text = JSON.stringify(data, null, 2);
+    el.operateOutputMount.innerHTML = `
+      <section class="output-block">
+        <h3>${title}</h3>
+        <pre>${text}</pre>
+      </section>
+    `;
   }
 
   function renderPlaceholderPanels() {
@@ -38,18 +56,28 @@
 
     el.operateRunSetupMount.innerHTML = `
       <div class="placeholder-block">
-        <p>Run setup controls mount here.</p>
-        <ul>
-          <li>Program selector: <code>${programId}</code></li>
-          <li>Workflow template picker</li>
-          <li>Task prompt input</li>
-        </ul>
+        <label class="field">
+          <span>Program</span>
+          <input value="${programId}" readonly />
+        </label>
+        <label class="field">
+          <span>Workflow Template</span>
+          <select>
+            <option value="plan">Plan Phase</option>
+            <option value="execute">Execute Phase</option>
+            <option value="verify">Verify Work</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Task Prompt</span>
+          <textarea rows="3" placeholder="Describe run intent"></textarea>
+        </label>
       </div>
     `;
 
     el.operateActionsMount.innerHTML = `
       <div class="placeholder-block">
-        <p>Action controls will call existing endpoints:</p>
+        <p>Action controls call existing endpoints only:</p>
         <ul>
           <li><code>/agents/register</code>, <code>/agents</code>, <code>/agents/{agent_id}</code></li>
           <li><code>/programs/${programId}/locks</code></li>
@@ -62,9 +90,15 @@
 
     el.operateTimelineMount.innerHTML = `
       <div class="placeholder-block">
-        <p>Timeline preview will show action results and history snippets.</p>
+        <p>Timeline preview surfaces outcomes from lock, mutation, and verify steps.</p>
       </div>
     `;
+
+    writeOutput("Dashboard", {
+      program_id: Number(programId),
+      mode: "endpoint-first",
+      observe_path: `/programs/${programId}/observability`,
+    });
   }
 
   function ensureObserveEmbedded() {
@@ -103,9 +137,10 @@
     if (tab === "observe") {
       ensureObserveEmbedded();
       setStatus("Observe tab active. Existing observability route reused.", "idle");
-    } else {
-      setStatus("Operate tab active.", "idle");
+      return;
     }
+
+    setStatus("Operate tab active.", "idle");
   }
 
   function bindTabNavigation() {
@@ -119,7 +154,7 @@
     renderPlaceholderPanels();
 
     el.openObserveLink.href = `/programs/${programId}/observability`;
-    el.agentBadge.textContent = "No agent selected";
+    setSelectedAgent(null);
 
     activateTab("operate");
     setStatus("Dashboard shell initialized.", "idle");

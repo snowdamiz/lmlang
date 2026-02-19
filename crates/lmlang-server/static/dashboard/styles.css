@@ -7,8 +7,6 @@
   --panel: rgba(255, 255, 255, 0.92);
   --panel-border: #ded6ca;
   --shadow: rgba(23, 28, 39, 0.14);
-  --accent: #b75d16;
-  --accent-soft: #f6e4d7;
   --signal-idle: #2e7d5e;
   --signal-running: #2a66bf;
   --signal-blocked: #9c6a1d;
@@ -127,7 +125,7 @@ body {
   display: block;
 }
 
-.grid-layout {
+.operate-columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(280px, 1fr));
   gap: 12px;
@@ -173,8 +171,41 @@ body {
   margin: 5px 0;
 }
 
+.field {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  border: 1px solid #cbd6e5;
+  border-radius: 8px;
+  padding: 8px 9px;
+  font: inherit;
+  background: #fff;
+}
+
 .muted {
   color: var(--muted);
+}
+
+.output-block h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.output-block pre {
+  margin: 0;
+  border: 1px solid #dbe2ec;
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 10px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.78rem;
+  overflow-x: auto;
 }
 
 .observe-toolbar {
@@ -243,7 +274,7 @@ body {
 }
 
 @media (max-width: 1024px) {
-  .grid-layout {
+  .operate-columns {
     grid-template-columns: 1fr;
   }
 

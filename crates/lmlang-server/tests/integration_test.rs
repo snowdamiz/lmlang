@@ -1757,6 +1757,7 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
     assert!(html.contains("id=\"operateRunSetupMount\""));
     assert!(html.contains("id=\"operateActionsMount\""));
     assert!(html.contains("id=\"operateTimelineMount\""));
+    assert!(html.contains("id=\"operateOutputMount\""));
     assert!(html.contains("id=\"observeMount\""));
     assert!(html.contains(&format!("/programs/{}/dashboard/app.js", pid)));
     assert!(html.contains(&format!("/programs/{}/dashboard/styles.css", pid)));

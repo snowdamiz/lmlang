@@ -30,29 +30,55 @@
 
       <main class="tab-panels">
         <section class="panel is-active" id="operatePanel" data-panel="operate" aria-label="Operate panel">
-          <div class="grid-layout">
+          <div class="operate-columns">
             <article class="panel-card" id="agentListContainer">
-              <h2>Agents & Session State</h2>
-              <p class="card-intro">Registered agents and derived session state appear here.</p>
+              <header>
+                <h2>Agents & Session State</h2>
+                <p class="card-intro">
+                  Registered agents and derived session state appear here.
+                </p>
+              </header>
               <div id="operateAgentListMount" class="content-mount"></div>
             </article>
 
             <article class="panel-card" id="runSetupContainer">
-              <h2>Run Setup</h2>
-              <p class="card-intro">Program target, workflow template, and prompt setup.</p>
+              <header>
+                <h2>Run Setup</h2>
+                <p class="card-intro">
+                  Program target, workflow template, and task prompt setup.
+                </p>
+              </header>
               <div id="operateRunSetupMount" class="content-mount"></div>
             </article>
 
             <article class="panel-card" id="actionsContainer">
-              <h2>Actions</h2>
-              <p class="card-intro">Lock, mutation, verification, simulation, compile, and history actions.</p>
+              <header>
+                <h2>Actions</h2>
+                <p class="card-intro">
+                  Lock, mutation, verification, simulation, compile, and history actions.
+                </p>
+              </header>
               <div id="operateActionsMount" class="content-mount"></div>
             </article>
 
             <article class="panel-card" id="timelineContainer">
-              <h2>Timeline / History Preview</h2>
-              <p class="card-intro">Recent operation timeline and history snippets.</p>
+              <header>
+                <h2>Timeline / History Preview</h2>
+                <p class="card-intro">
+                  Recent operation timeline and history snippets.
+                </p>
+              </header>
               <div id="operateTimelineMount" class="content-mount"></div>
+            </article>
+
+            <article class="panel-card" id="outputContainer">
+              <header>
+                <h2>Request / Response Output</h2>
+                <p class="card-intro">
+                  Endpoint payload snapshots for operator trust and debugging.
+                </p>
+              </header>
+              <div id="operateOutputMount" class="content-mount"></div>
             </article>
           </div>
         </section>
