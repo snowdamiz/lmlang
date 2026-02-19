@@ -134,11 +134,12 @@ Plans:
   2. Region-level locking prevents two agents from simultaneously modifying the same subgraph, with clear feedback when a lock is held
   3. When agents edit overlapping regions, optimistic concurrency detects conflicts and rolls back the later commit with an explanation
   4. After concurrent modifications are merged, a verification pass confirms all global invariants (type correctness, contract satisfaction) still hold
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 07-01: TBD
-- [ ] 07-02: TBD
+- [ ] 07-01-PLAN.md -- Core concurrency infrastructure: LockManager, AgentRegistry, conflict detection, AppState refactor to RwLock
+- [ ] 07-02-PLAN.md -- HTTP endpoints for agent/lock management, mutation handler with conflict detection and global write lock
+- [ ] 07-03-PLAN.md -- Incremental verification on mutation with auto-rollback, integration tests for all 4 MAGENT requirements
 
 ### Phase 8: Dual-Layer Semantic Architecture
 **Goal**: Programs have a semantic knowledge graph layer (intent, contracts, relationships, embeddings) that stays synchronized with the executable layer through bidirectional propagation
