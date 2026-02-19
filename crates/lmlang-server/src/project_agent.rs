@@ -5,6 +5,10 @@ use std::collections::HashMap;
 use tokio::sync::Mutex;
 
 use crate::concurrency::AgentId;
+use crate::schema::autonomy_execution::{
+    AutonomyExecutionAttemptSummary, AutonomyExecutionOutcome, AutonomyExecutionStatus, StopReason,
+    StopReasonCode,
+};
 
 /// Chat entry in a project-agent transcript.
 #[derive(Debug, Clone)]
@@ -27,6 +31,9 @@ pub struct ProjectAgentSession {
     pub stopped_at: Option<String>,
     pub updated_at: String,
     pub transcript: Vec<ProjectAgentMessage>,
+    pub stop_reason: Option<StopReason>,
+    pub execution: Option<AutonomyExecutionOutcome>,
+    pub execution_attempts: Vec<AutonomyExecutionAttemptSummary>,
 }
 
 type ProgramAgentKey = (i64, AgentId);
@@ -70,6 +77,9 @@ impl ProjectAgentManager {
             stopped_at: None,
             updated_at: now,
             transcript: Vec::new(),
+            stop_reason: None,
+            execution: None,
+            execution_attempts: Vec::new(),
         };
         guard.insert(key, session.clone());
         session
@@ -109,6 +119,9 @@ impl ProjectAgentManager {
         session.active_goal = Some(goal.clone());
         session.started_at = Some(now.clone());
         session.stopped_at = None;
+        session.stop_reason = None;
+        session.execution = None;
+        session.execution_attempts.clear();
         session.updated_at = now.clone();
         session.transcript.push(ProjectAgentMessage {
             role: "system".to_string(),
@@ -134,6 +147,10 @@ impl ProjectAgentManager {
         let detail = reason.unwrap_or_else(|| "no reason provided".to_string());
         session.run_status = "stopped".to_string();
         session.stopped_at = Some(now.clone());
+        session.stop_reason = Some(StopReason::new(
+            StopReasonCode::OperatorStopped,
+            detail.clone(),
+        ));
         session.updated_at = now.clone();
         session.transcript.push(ProjectAgentMessage {
             role: "system".to_string(),
@@ -162,6 +179,7 @@ impl ProjectAgentManager {
             session.stopped_at = Some(now.clone());
         } else if run_status == "running" {
             session.stopped_at = None;
+            session.stop_reason = None;
             if session.started_at.is_none() {
                 session.started_at = Some(now.clone());
             }
@@ -258,6 +276,71 @@ impl ProjectAgentManager {
         session.updated_at = reply_ts;
         Ok((session.clone(), reply))
     }
+
+    pub async fn append_execution_attempt(
+        &self,
+        program_id: i64,
+        agent_id: AgentId,
+        attempt: AutonomyExecutionAttemptSummary,
+    ) -> Result<ProjectAgentSession, String> {
+        let mut guard = self.sessions.lock().await;
+        let key = (program_id, agent_id);
+        let session = guard
+            .get_mut(&key)
+            .ok_or_else(|| "agent is not assigned to this project".to_string())?;
+
+        let now = now_string();
+        session.execution_attempts.push(attempt.clone());
+        session.updated_at = now.clone();
+        session.transcript.push(ProjectAgentMessage {
+            role: "system".to_string(),
+            content: format!(
+                "Execution attempt {}/{} recorded ({} action(s), {} succeeded).",
+                attempt.attempt,
+                attempt.max_attempts,
+                attempt.action_count,
+                attempt.succeeded_actions
+            ),
+            timestamp: now,
+        });
+        Ok(session.clone())
+    }
+
+    pub async fn set_execution_outcome(
+        &self,
+        program_id: i64,
+        agent_id: AgentId,
+        outcome: AutonomyExecutionOutcome,
+    ) -> Result<ProjectAgentSession, String> {
+        let mut guard = self.sessions.lock().await;
+        let key = (program_id, agent_id);
+        let session = guard
+            .get_mut(&key)
+            .ok_or_else(|| "agent is not assigned to this project".to_string())?;
+
+        let now = now_string();
+        let stop_reason = outcome.stop_reason.clone();
+        let status = outcome.status;
+        session.stop_reason = Some(stop_reason.clone());
+        session.execution_attempts = outcome.attempts.clone();
+        session.execution = Some(outcome);
+        if status == AutonomyExecutionStatus::Failed {
+            session.run_status = "stopped".to_string();
+            session.stopped_at = Some(now.clone());
+        }
+        session.updated_at = now.clone();
+        session.transcript.push(ProjectAgentMessage {
+            role: "system".to_string(),
+            content: format!(
+                "Autonomous execution {:?}: [{}] {}",
+                status,
+                stop_reason_code_string(stop_reason.code),
+                stop_reason.message
+            ),
+            timestamp: now,
+        });
+        Ok(session.clone())
+    }
 }
 
 impl Default for ProjectAgentManager {
@@ -273,4 +356,130 @@ fn now_string() -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     secs.to_string()
+}
+
+fn stop_reason_code_string(code: StopReasonCode) -> String {
+    serde_json::to_value(code)
+        .ok()
+        .and_then(|value| value.as_str().map(ToString::to_string))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::schema::autonomy_execution::{AutonomyExecutionStatus, StopReasonCode};
+
+    #[tokio::test]
+    async fn execution_evidence_can_be_recorded_on_session() {
+        let manager = ProjectAgentManager::new();
+        let program_id = 42;
+        let agent_id = AgentId(Uuid::new_v4());
+        manager
+            .assign(program_id, agent_id, Some("runner".to_string()))
+            .await;
+        manager
+            .start(program_id, agent_id, "build calculator".to_string())
+            .await
+            .expect("start");
+
+        let attempt = AutonomyExecutionAttemptSummary {
+            attempt: 1,
+            max_attempts: 3,
+            planner_status: "accepted".to_string(),
+            action_count: 2,
+            succeeded_actions: 1,
+            action_results: vec![
+                crate::schema::autonomy_execution::AutonomyActionExecutionResult::succeeded(
+                    0,
+                    "mutate_batch",
+                    "applied 1 mutation",
+                ),
+            ],
+            stop_reason: None,
+        };
+        let session = manager
+            .append_execution_attempt(program_id, agent_id, attempt)
+            .await
+            .expect("append attempt");
+        assert_eq!(session.execution_attempts.len(), 1);
+        assert!(session.stop_reason.is_none());
+
+        let stop_reason = StopReason::new(StopReasonCode::Completed, "all actions complete");
+        let outcome = AutonomyExecutionOutcome::from_single_attempt(
+            "build calculator",
+            "2026-02-19",
+            AutonomyExecutionStatus::Succeeded,
+            session.execution_attempts[0]
+                .clone()
+                .with_stop_reason(stop_reason.clone()),
+            stop_reason,
+        );
+        let session = manager
+            .set_execution_outcome(program_id, agent_id, outcome)
+            .await
+            .expect("set outcome");
+        assert_eq!(
+            session.stop_reason.as_ref().map(|reason| reason.code),
+            Some(StopReasonCode::Completed)
+        );
+        assert!(session.execution.is_some());
+        assert_eq!(session.execution_attempts.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn transcript_behavior_remains_compatible_with_execution_evidence() {
+        let manager = ProjectAgentManager::new();
+        let program_id = 7;
+        let agent_id = AgentId(Uuid::new_v4());
+        manager.assign(program_id, agent_id, None).await;
+
+        let attempt = AutonomyExecutionAttemptSummary {
+            attempt: 1,
+            max_attempts: 1,
+            planner_status: "accepted".to_string(),
+            action_count: 1,
+            succeeded_actions: 0,
+            action_results: vec![
+                crate::schema::autonomy_execution::AutonomyActionExecutionResult::failed(
+                    0,
+                    "verify",
+                    "verification failed",
+                    crate::schema::autonomy_execution::AutonomyExecutionError::new(
+                        crate::schema::autonomy_execution::AutonomyExecutionErrorCode::ValidationFailed,
+                        "invalid graph",
+                        true,
+                    ),
+                ),
+            ],
+            stop_reason: Some(StopReason::new(
+                StopReasonCode::VerifyFailed,
+                "verify returned diagnostics",
+            )),
+        };
+        manager
+            .append_execution_attempt(program_id, agent_id, attempt)
+            .await
+            .expect("append attempt");
+        manager
+            .append_message(
+                program_id,
+                agent_id,
+                "assistant",
+                "continuing autonomous loop".to_string(),
+            )
+            .await
+            .expect("append message");
+
+        let session = manager
+            .get(program_id, agent_id)
+            .await
+            .expect("session exists");
+        assert!(session
+            .transcript
+            .iter()
+            .any(|msg| { msg.role == "assistant" && msg.content == "continuing autonomous loop" }));
+    }
 }
