@@ -13,6 +13,7 @@ use std::time::Instant;
 
 use inkwell::context::Context;
 use inkwell::module::Module;
+use inkwell::types::BasicType;
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
@@ -22,7 +23,12 @@ use inkwell::OptimizationLevel;
 use lmlang_check::typecheck;
 use lmlang_core::graph::ProgramGraph;
 
+use inkwell::AddressSpace;
+use lmlang_core::function::FunctionDef;
+use lmlang_core::type_id::TypeId;
+
 use crate::error::CodegenError;
+use crate::types::lm_type_to_llvm;
 use crate::{codegen, linker, runtime, CompileOptions, CompileResult, OptLevel};
 
 /// Compile a program graph to a native executable.
@@ -76,20 +82,25 @@ pub fn compile(graph: &ProgramGraph, options: &CompileOptions) -> Result<Compile
     // 7. Declare runtime functions
     runtime::declare_runtime_functions(&context, &module);
 
-    // 8. Compile each function in the graph
+    // 8. Forward-declare all function signatures before compiling bodies.
+    // This ensures that Call nodes can find their targets regardless of
+    // HashMap iteration order (functions may reference each other).
+    forward_declare_functions(&context, &module, graph)?;
+
+    // 9. Compile each function in the graph (bodies only -- declarations exist)
     for (func_id, func_def) in graph.functions() {
         codegen::compile_function(&context, &module, &builder, graph, *func_id, func_def)?;
     }
 
-    // 9. Generate main wrapper
+    // 11. Generate main wrapper
     generate_main_wrapper(&context, &module, &builder, graph, options)?;
 
-    // 10. Verify module
+    // 12. Verify module
     module
         .verify()
         .map_err(|e| CodegenError::LlvmError(format!("module verification failed: {}", e)))?;
 
-    // 11. Create target machine
+    // 13. Create target machine
     let target = Target::from_triple(&triple)
         .map_err(|e| CodegenError::LlvmError(format!("failed to create target from triple: {}", e)))?;
     let target_machine = target
@@ -103,7 +114,7 @@ pub fn compile(graph: &ProgramGraph, options: &CompileOptions) -> Result<Compile
         )
         .ok_or_else(|| CodegenError::LlvmError("failed to create target machine".to_string()))?;
 
-    // 12. Run optimization passes (New Pass Manager)
+    // 14. Run optimization passes (New Pass Manager)
     let pass_options = PassBuilderOptions::create();
     let pass_str = match options.opt_level {
         OptLevel::O0 => "default<O0>",
@@ -115,26 +126,26 @@ pub fn compile(graph: &ProgramGraph, options: &CompileOptions) -> Result<Compile
         .run_passes(pass_str, &target_machine, pass_options)
         .map_err(|e| CodegenError::LlvmError(format!("optimization passes failed: {}", e)))?;
 
-    // 13. Write object file to temp directory
+    // 15. Write object file to temp directory
     let temp_dir = tempfile::tempdir()?;
     let obj_path = temp_dir.path().join("output.o");
     target_machine
         .write_to_file(&module, FileType::Object, &obj_path)
         .map_err(|e| CodegenError::LlvmError(format!("failed to write object file: {}", e)))?;
 
-    // 14. Determine output binary name
+    // 16. Determine output binary name
     let binary_name = determine_binary_name(graph, options);
     let output_path = options.output_dir.join(&binary_name);
 
-    // 15. Link into executable
+    // 17. Link into executable
     linker::link_executable(&obj_path, &output_path, options.debug_symbols)?;
 
-    // 16. Compute binary size and compilation time
+    // 18. Compute binary size and compilation time
     let binary_size = std::fs::metadata(&output_path)?.len();
     let compilation_time_ms = start.elapsed().as_millis() as u64;
     let target_triple_str = triple.as_str().to_string_lossy().to_string();
 
-    // 17. Context drops here -- all LLVM IR freed, no types escape
+    // 19. Context drops here -- all LLVM IR freed, no types escape
     Ok(CompileResult {
         binary_path: output_path,
         target_triple: target_triple_str,
@@ -180,20 +191,23 @@ pub fn compile_to_ir(graph: &ProgramGraph, options: &CompileOptions) -> Result<S
     // 6. Declare runtime functions
     runtime::declare_runtime_functions(&context, &module);
 
-    // 7. Compile each function
+    // 7. Forward-declare all function signatures
+    forward_declare_functions(&context, &module, graph)?;
+
+    // 8. Compile each function
     for (func_id, func_def) in graph.functions() {
         codegen::compile_function(&context, &module, &builder, graph, *func_id, func_def)?;
     }
 
-    // 8. Generate main wrapper
+    // 9. Generate main wrapper
     generate_main_wrapper(&context, &module, &builder, graph, options)?;
 
-    // 9. Verify module
+    // 10. Verify module
     module
         .verify()
         .map_err(|e| CodegenError::LlvmError(format!("module verification failed: {}", e)))?;
 
-    // 10. Return IR string
+    // 11. Return IR string
     Ok(module.print_to_string().to_string())
 }
 
@@ -262,13 +276,11 @@ fn generate_main_wrapper<'ctx>(
         ))
     })?;
 
-    // If the entry function is already named "main", we don't need a wrapper --
-    // it IS the main function. But we need to ensure it returns i32.
-    // If it's not named "main", create a wrapper.
+    // If the entry function is already named "main", rename it to avoid
+    // symbol conflicts, then create a proper `i32 @main()` wrapper.
+    // This ensures `main` always returns i32 (required by C runtime).
     if entry_func_def.name == "main" {
-        // The function is already named "main" in the module.
-        // We trust compile_function set the right signature.
-        return Ok(());
+        entry_llvm_fn.as_global_value().set_name("__lmlang_main");
     }
 
     // Create main() wrapper: i32 @main()
@@ -326,6 +338,58 @@ fn generate_main_wrapper<'ctx>(
     }
 
     Ok(())
+}
+
+/// Forward-declare all function signatures in the LLVM module.
+///
+/// This ensures that Call nodes can find their target functions regardless of
+/// HashMap iteration order. Functions are declared (signature only) before any
+/// bodies are compiled.
+fn forward_declare_functions<'ctx>(
+    context: &'ctx Context,
+    module: &Module<'ctx>,
+    graph: &ProgramGraph,
+) -> Result<(), CodegenError> {
+    let registry = &graph.types;
+
+    for func_def in graph.functions().values() {
+        // Skip if already declared (shouldn't happen, but be safe)
+        if module.get_function(&func_def.name).is_some() {
+            continue;
+        }
+
+        let fn_type = build_fn_type(context, func_def, registry)?;
+        module.add_function(&func_def.name, fn_type, None);
+    }
+
+    Ok(())
+}
+
+/// Build the LLVM function type for a FunctionDef.
+fn build_fn_type<'ctx>(
+    context: &'ctx Context,
+    func_def: &FunctionDef,
+    registry: &lmlang_core::type_id::TypeRegistry,
+) -> Result<inkwell::types::FunctionType<'ctx>, CodegenError> {
+    let param_types: Vec<inkwell::types::BasicMetadataTypeEnum<'ctx>> = func_def
+        .params
+        .iter()
+        .map(|(_, tid)| lm_type_to_llvm(context, *tid, registry).map(|t| t.into()))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut all_params = param_types;
+    if func_def.is_closure && !func_def.captures.is_empty() {
+        all_params.push(context.ptr_type(AddressSpace::default()).into());
+    }
+
+    let fn_type = if func_def.return_type == TypeId::UNIT {
+        context.void_type().fn_type(&all_params, false)
+    } else {
+        let ret_type = lm_type_to_llvm(context, func_def.return_type, registry)?;
+        ret_type.fn_type(&all_params, false)
+    };
+
+    Ok(fn_type)
 }
 
 /// Map lmlang `OptLevel` to inkwell's `OptimizationLevel`.

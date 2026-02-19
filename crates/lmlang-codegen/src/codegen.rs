@@ -77,7 +77,11 @@ pub fn compile_function<'ctx>(
         ret_type.fn_type(&all_params, false)
     };
 
-    let function = module.add_function(&func_def.name, fn_type, None);
+    // Reuse existing forward-declaration if present; otherwise add a new function.
+    let function = match module.get_function(&func_def.name) {
+        Some(existing) => existing,
+        None => module.add_function(&func_def.name, fn_type, None),
+    };
 
     // 2. Create entry basic block
     let entry_bb = context.append_basic_block(function, "entry");
