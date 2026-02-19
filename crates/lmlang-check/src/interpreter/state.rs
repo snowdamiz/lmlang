@@ -41,6 +41,12 @@ pub enum ExecutionState {
         error: RuntimeError,
         partial_results: HashMap<NodeId, Value>,
     },
+    /// Execution halted due to a contract violation (development-time feedback).
+    /// Distinct from Error (runtime crash) -- this is expected feedback about
+    /// violated behavioral contracts.
+    ContractViolation {
+        violation: crate::contracts::ContractViolation,
+    },
 }
 
 /// A single call frame on the interpreter's call stack.

@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 /// Note: `F32` stores an actual `f32` at runtime, unlike `ConstValue::F32`
 /// which stores f64 for derive safety. The conversion happens in
 /// [`Value::from_const`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     Bool(bool),
     I8(i8),
