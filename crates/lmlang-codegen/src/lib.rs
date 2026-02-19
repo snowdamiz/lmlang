@@ -10,6 +10,7 @@
 //! - [`runtime`] -- Runtime function declarations (error handling, I/O)
 //! - [`linker`] -- Object file to executable linking via system `cc`
 
+pub mod codegen;
 pub mod error;
 pub mod types;
 pub mod runtime;

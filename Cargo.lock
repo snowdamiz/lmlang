@@ -578,6 +578,7 @@ dependencies = [
  "inkwell",
  "lmlang-check",
  "lmlang-core",
+ "petgraph",
  "serde",
  "serde_json",
  "tempfile",

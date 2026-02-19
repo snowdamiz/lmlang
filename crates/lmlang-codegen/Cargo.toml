@@ -7,6 +7,7 @@ edition = "2021"
 inkwell = { version = "0.8.0", features = ["llvm21-1"] }
 lmlang-core = { path = "../lmlang-core" }
 lmlang-check = { path = "../lmlang-check" }
+petgraph = { version = "0.8", features = ["serde-1"] }
 thiserror = "2"
 tempfile = "3"
 serde = { version = "1", features = ["derive"] }
