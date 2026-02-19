@@ -310,7 +310,9 @@ When autonomous runs complete or stop, agent and dashboard responses include mac
 
 - `session.stop_reason`: terminal code/message for the last run
 - `session.execution`: compact summary of the latest attempt (`attempt`, `max_attempts`, action rows)
+- `session.execution_attempts`: ordered bounded attempt timeline (each attempt has action rows + stop reason)
 - `chat.execution` and `dashboard/ai/chat.execution`: same compact attempt summary on chat surfaces
+- `chat.execution_attempts` and `dashboard/ai/chat.execution_attempts`: same bounded timeline history for operator rendering
 - `execution.actions[].diagnostics`: compact diagnostics class/retryability/summary per failed action row
 - `execution.diagnostics`: latest attempt-level diagnostics summary for quick triage
 - `dashboard/ai/chat.diagnostics`: same diagnostics summary exposed at top level for UI convenience
@@ -369,6 +371,72 @@ Representative shape:
         "code": "retry_budget_exhausted",
         "message": "retry budget exhausted after verify gate failure (attempt 3/3)"
       }
+    },
+    "execution_attempts": [
+      {
+        "attempt": 1,
+        "max_attempts": 3,
+        "planner_status": "accepted",
+        "action_count": 2,
+        "succeeded_actions": 1,
+        "actions": [
+          {
+            "action_index": 0,
+            "kind": "mutate_batch",
+            "status": "succeeded",
+            "summary": "applied 1 mutation(s): add_function(calculator_add)"
+          },
+          {
+            "action_index": 1,
+            "kind": "compile",
+            "status": "failed",
+            "summary": "compile action failed",
+            "error_code": "internal_error"
+          }
+        ],
+        "stop_reason": {
+          "code": "action_failed_retryable",
+          "message": "compile action failed"
+        }
+      }
+    ]
+  }
+}
+```
+
+### Benchmark timeline examples (`AUT-09`, `AUT-10`, `AUT-11`)
+
+Phase 17 benchmark prompts should produce timeline-visible attempt records through the same planner/executor pipeline:
+
+- Calculator benchmark (`Create a simple calculator`): timeline includes calculator-targeted mutation summary (for example `add_function(calculator_add)`) plus verify/compile rows and terminal outcome.
+- String utility benchmark: timeline includes string utility mutation markers (for example `add_function(string_normalize)`) and persisted attempt metadata.
+- State-machine/workflow benchmark: timeline includes workflow structure markers (for example `add_function(ticket_state_transition)`) and persisted terminal status.
+
+Representative dashboard chat shape:
+
+```json
+{
+  "success": true,
+  "execution": {
+    "attempt": 1,
+    "max_attempts": 3,
+    "stop_reason": { "code": "completed" }
+  },
+  "execution_attempts": [
+    {
+      "attempt": 1,
+      "planner_status": "accepted",
+      "actions": [
+        {
+          "kind": "mutate_batch",
+          "summary": "applied 1 mutation(s): add_function(string_normalize)"
+        },
+        {
+          "kind": "verify",
+          "summary": "verification passed (scope=full)"
+        }
+      ],
+      "stop_reason": { "code": "completed" }
     }
   }
 }
