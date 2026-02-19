@@ -1,6 +1,7 @@
-//! API schema types for the compilation endpoint.
+//! API schema types for the compilation and dirty status endpoints.
 //!
-//! Defines the request and response types for `POST /programs/{id}/compile`.
+//! Defines the request and response types for `POST /programs/{id}/compile`
+//! and `GET /programs/{id}/dirty`.
 
 use serde::{Deserialize, Serialize};
 
@@ -44,4 +45,40 @@ pub struct CompileResponse {
 
     /// Time taken for compilation in milliseconds.
     pub compilation_time_ms: u64,
+}
+
+/// Response body for `GET /programs/{id}/dirty`.
+///
+/// Shows which functions need recompilation, which are dirty dependents
+/// (a callee changed), and which can use cached object files.
+#[derive(Debug, Serialize)]
+pub struct DirtyStatusResponse {
+    /// Functions that have changed since last compilation.
+    pub dirty_functions: Vec<DirtyFunctionView>,
+    /// Functions that need recompilation due to dependency changes.
+    pub dirty_dependents: Vec<DirtyFunctionView>,
+    /// Functions that can use cached object files.
+    pub cached_functions: Vec<CachedFunctionView>,
+    /// Whether any recompilation is needed.
+    pub needs_recompilation: bool,
+}
+
+/// A function that needs recompilation.
+#[derive(Debug, Serialize)]
+pub struct DirtyFunctionView {
+    /// The function's ID.
+    pub function_id: u32,
+    /// The function's name.
+    pub function_name: String,
+    /// Why this function is dirty: "changed" or "dependent_of:<function_name>".
+    pub reason: String,
+}
+
+/// A function that can use cached object files.
+#[derive(Debug, Serialize)]
+pub struct CachedFunctionView {
+    /// The function's ID.
+    pub function_id: u32,
+    /// The function's name.
+    pub function_name: String,
 }

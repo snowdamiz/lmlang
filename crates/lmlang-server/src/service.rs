@@ -55,6 +55,8 @@ pub struct ProgramService {
     program_id: ProgramId,
     /// Shared connection for edit_log/checkpoint queries.
     conn: Connection,
+    /// Incremental compilation state (lazily initialized on first compile).
+    incremental_state: Option<lmlang_codegen::incremental::IncrementalState>,
 }
 
 impl ProgramService {
@@ -93,6 +95,7 @@ impl ProgramService {
             store,
             program_id,
             conn,
+            incremental_state: None,
         })
     }
 
@@ -125,6 +128,7 @@ impl ProgramService {
             store,
             program_id: id,
             conn,
+            incremental_state: None,
         })
     }
 
@@ -1241,6 +1245,154 @@ impl ProgramService {
         };
 
         let result = lmlang_codegen::compile(&self.graph, &options)
+            .map_err(|e| match e {
+                lmlang_codegen::error::CodegenError::TypeCheckFailed(errors) => {
+                    let diags: Vec<crate::schema::diagnostics::DiagnosticError> =
+                        errors.into_iter().map(crate::schema::diagnostics::DiagnosticError::from).collect();
+                    ApiError::ValidationFailed(diags)
+                }
+                other => ApiError::InternalError(other.to_string()),
+            })?;
+
+        Ok(crate::schema::compile::CompileResponse {
+            binary_path: result.binary_path.to_string_lossy().to_string(),
+            target_triple: result.target_triple,
+            binary_size: result.binary_size,
+            compilation_time_ms: result.compilation_time_ms,
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // Dirty status query (STORE-05)
+    // -----------------------------------------------------------------------
+
+    /// Returns the dirty status of all functions relative to the last compilation.
+    ///
+    /// If no incremental state exists (no prior compilation), all functions are
+    /// reported as dirty. Otherwise, computes current hashes, builds the call
+    /// graph, and runs dirty analysis to categorize functions.
+    pub fn dirty_status(
+        &self,
+    ) -> Result<crate::schema::compile::DirtyStatusResponse, ApiError> {
+        use crate::schema::compile::{
+            CachedFunctionView, DirtyFunctionView, DirtyStatusResponse,
+        };
+        use lmlang_codegen::incremental::build_call_graph;
+        use lmlang_storage::hash::hash_all_functions_for_compilation;
+
+        let functions = self.graph.functions();
+
+        match &self.incremental_state {
+            None => {
+                // No prior compilation: everything is dirty
+                let dirty_functions: Vec<DirtyFunctionView> = functions
+                    .iter()
+                    .map(|(&fid, fdef)| DirtyFunctionView {
+                        function_id: fid.0,
+                        function_name: fdef.name.clone(),
+                        reason: "no_prior_compilation".to_string(),
+                    })
+                    .collect();
+
+                Ok(DirtyStatusResponse {
+                    dirty_functions,
+                    dirty_dependents: Vec::new(),
+                    cached_functions: Vec::new(),
+                    needs_recompilation: true,
+                })
+            }
+            Some(state) => {
+                // Compute current hashes and call graph
+                let blake_hashes = hash_all_functions_for_compilation(&self.graph);
+                let current_hashes: std::collections::HashMap<FunctionId, [u8; 32]> =
+                    blake_hashes
+                        .iter()
+                        .map(|(&fid, h)| (fid, *h.as_bytes()))
+                        .collect();
+
+                let call_graph = build_call_graph(&self.graph);
+                let plan = state.compute_dirty(&current_hashes, &call_graph);
+
+                // Map to response views with function names
+                let dirty_functions: Vec<DirtyFunctionView> = plan
+                    .dirty
+                    .iter()
+                    .filter_map(|&fid| {
+                        functions.get(&fid).map(|fdef| DirtyFunctionView {
+                            function_id: fid.0,
+                            function_name: fdef.name.clone(),
+                            reason: "changed".to_string(),
+                        })
+                    })
+                    .collect();
+
+                let dirty_dependents: Vec<DirtyFunctionView> = plan
+                    .dirty_dependents
+                    .iter()
+                    .filter_map(|&fid| {
+                        functions.get(&fid).map(|fdef| DirtyFunctionView {
+                            function_id: fid.0,
+                            function_name: fdef.name.clone(),
+                            reason: "dependent".to_string(),
+                        })
+                    })
+                    .collect();
+
+                let cached_functions: Vec<CachedFunctionView> = plan
+                    .cached
+                    .iter()
+                    .filter_map(|&fid| {
+                        functions.get(&fid).map(|fdef| CachedFunctionView {
+                            function_id: fid.0,
+                            function_name: fdef.name.clone(),
+                        })
+                    })
+                    .collect();
+
+                Ok(DirtyStatusResponse {
+                    dirty_functions,
+                    dirty_dependents,
+                    cached_functions,
+                    needs_recompilation: plan.needs_recompilation,
+                })
+            }
+        }
+    }
+
+    /// Compiles using incremental compilation and updates internal state.
+    ///
+    /// On first call, initializes the IncrementalState. On subsequent calls,
+    /// reuses the stored state for dirty detection.
+    pub fn compile_incremental(
+        &mut self,
+        request: &crate::schema::compile::CompileRequest,
+    ) -> Result<crate::schema::compile::CompileResponse, ApiError> {
+        let opt_level = parse_opt_level(&request.opt_level)?;
+
+        let cache_dir = request
+            .output_dir
+            .as_ref()
+            .map(|d| std::path::PathBuf::from(d).join(".lmlang_cache"))
+            .unwrap_or_else(|| std::path::PathBuf::from("./build/.lmlang_cache"));
+
+        let options = lmlang_codegen::CompileOptions {
+            output_dir: request
+                .output_dir
+                .as_ref()
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::path::PathBuf::from("./build")),
+            opt_level,
+            target_triple: request.target_triple.clone(),
+            debug_symbols: request.debug_symbols,
+            entry_function: request.entry_function.clone(),
+        };
+
+        // Initialize or reuse incremental state
+        let state = self.incremental_state.get_or_insert_with(|| {
+            lmlang_codegen::incremental::IncrementalState::new(cache_dir)
+        });
+
+        let (result, _plan) = lmlang_codegen::compile_incremental(&self.graph, &options, state)
             .map_err(|e| match e {
                 lmlang_codegen::error::CodegenError::TypeCheckFailed(errors) => {
                     let diags: Vec<crate::schema::diagnostics::DiagnosticError> =

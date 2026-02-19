@@ -257,7 +257,7 @@ mod tests {
     use lmlang_core::id::FunctionId;
     use lmlang_core::ops::{ArithOp, ComputeOp};
     use lmlang_core::type_id::TypeId;
-    use lmlang_core::types::{ConstValue, Visibility};
+    use lmlang_core::types::Visibility;
     use lmlang_storage::hash::hash_all_functions_for_compilation;
 
     /// Helper: build a program with A calls B, B calls C.

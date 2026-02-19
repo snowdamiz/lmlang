@@ -1087,3 +1087,61 @@ async fn cntr05_property_test_all_pass() {
     assert_eq!(test_body["failed"].as_u64().unwrap(), 0);
     assert!(test_body["failures"].as_array().unwrap().is_empty());
 }
+
+// ===========================================================================
+// STORE-05: Dirty status query (incremental compilation)
+// ===========================================================================
+
+/// Test 16: Dirty status returns all functions as dirty when no prior compilation exists.
+///
+/// Creates a simple program with one function and queries the dirty endpoint.
+/// Since no compilation has occurred, all functions should be reported as dirty.
+#[tokio::test]
+async fn store05_dirty_status_all_dirty_without_prior_compile() {
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    // Create a function
+    let func_id = add_function(&app, pid, "my_func").await;
+
+    // Add a node so the function is valid
+    let _ret_id = func_id + 1;
+    let body = batch_mutate(&app, pid, json!([
+        {
+            "type": "InsertNode",
+            "op": {"Core": "Return"},
+            "owner": func_id
+        }
+    ])).await;
+    assert!(body["valid"].as_bool().unwrap(), "function build should be valid: {:?}", body);
+
+    // Query dirty status
+    let (status, dirty_body) = get_json(&app, &format!("/programs/{}/dirty", pid)).await;
+    assert_eq!(status, StatusCode::OK, "dirty status request failed: {:?}", dirty_body);
+
+    // Should report needs_recompilation
+    assert!(
+        dirty_body["needs_recompilation"].as_bool().unwrap(),
+        "should need recompilation"
+    );
+
+    // Should have dirty_functions with at least 1 entry
+    let dirty_functions = dirty_body["dirty_functions"].as_array().unwrap();
+    assert!(
+        !dirty_functions.is_empty(),
+        "should have dirty functions"
+    );
+
+    // Each dirty function should have function_id, function_name, reason
+    let first = &dirty_functions[0];
+    assert!(first["function_id"].is_number(), "should have function_id");
+    assert!(first["function_name"].is_string(), "should have function_name");
+    assert_eq!(
+        first["reason"].as_str().unwrap(), "no_prior_compilation",
+        "reason should be no_prior_compilation"
+    );
+
+    // Should have no cached functions
+    let cached = dirty_body["cached_functions"].as_array().unwrap();
+    assert!(cached.is_empty(), "should have no cached functions");
+}

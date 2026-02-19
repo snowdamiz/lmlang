@@ -73,6 +73,11 @@ pub fn build_router(state: AppState) -> Router {
             "/programs/{id}/compile",
             post(handlers::compile::compile_program),
         )
+        // Dirty status query (incremental compilation)
+        .route(
+            "/programs/{id}/dirty",
+            get(handlers::compile::dirty_status),
+        )
         // Property testing (CNTR-05)
         .route(
             "/programs/{id}/property-test",
