@@ -121,6 +121,9 @@ Route groups:
 - Compile: `/programs/{id}/compile`, `/programs/{id}/dirty`
 - Contracts: `/programs/{id}/property-test`
 - History: `/programs/{id}/history|undo|redo|checkpoints|diff`
+- Dashboard UI:
+  - `/programs/{id}/dashboard`
+  - static assets under `/programs/{id}/dashboard/...`
 - Observability UI/data:
   - `/programs/{id}/observability`
   - `/programs/{id}/observability/graph`
@@ -160,7 +163,23 @@ Key entry points:
   - `lmlang_codegen::compile_to_ir`
   - `lmlang_codegen::compile_incremental`
 
-### 4) Observability UI
+### 4) Unified dashboard UI (Operate + Observe)
+
+Serve server, then open:
+- `http://localhost:3000/programs/{id}/dashboard`
+
+Dashboard modules:
+- `Operate`: endpoint-first controls for agents, locks, mutations, verify, simulate, compile, and history.
+- `Observe`: reuses the existing observability UI route inside the dashboard context.
+
+Run setup in `Operate` includes:
+- target program (current id),
+- workflow template selector,
+- task prompt field.
+
+Lock-sensitive workflows (`/locks/acquire`, `/locks/release`) and mutation workflows can use the selected agent via `X-Agent-Id`.
+
+### 5) Observability UI
 
 Serve server, then open:
 - `http://localhost:3000/programs/{id}/observability`
@@ -225,6 +244,9 @@ curl -sX POST localhost:3000/programs/1/verify \
 curl -sX POST localhost:3000/programs/1/compile \
   -H 'content-type: application/json' \
   -d '{"opt_level":"O0","debug_symbols":false}'
+
+# 7) Open unified dashboard
+open http://localhost:3000/programs/1/dashboard
 ```
 
 ## Concurrency model

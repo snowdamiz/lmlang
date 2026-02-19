@@ -1808,3 +1808,23 @@ async fn phase10_dashboard_operate_static_contract_has_endpoint_first_hooks() {
     assert!(html.contains("id=\"operateActionsMount\""));
     assert!(html.contains("id=\"operateRunSetupMount\""));
 }
+
+#[tokio::test]
+async fn phase10_dashboard_and_observe_routes_coexist_with_reuse_contract() {
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    let (status, dashboard_html) = get_text(&app, &format!("/programs/{}/dashboard", pid)).await;
+    assert_eq!(status, StatusCode::OK, "dashboard route should be available");
+    assert!(dashboard_html.contains("/observability"));
+    assert!(dashboard_html.contains("Operate + Observe"));
+
+    let (status, observe_html) = get_text(&app, &format!("/programs/{}/observability", pid)).await;
+    assert_eq!(status, StatusCode::OK, "observe route should remain available");
+    assert!(observe_html.contains("lmlang Observability"));
+
+    let (status, js) = get_text(&app, &format!("/programs/{}/dashboard/app.js", pid)).await;
+    assert_eq!(status, StatusCode::OK, "dashboard js should be available");
+    assert!(js.contains("context preserved"));
+    assert!(js.contains("Open current program in Observe"));
+}
