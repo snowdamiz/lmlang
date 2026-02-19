@@ -101,6 +101,14 @@
     el.templateBadge.textContent = `Template: ${state.runSetup.template}`;
   }
 
+  function runSetupSnapshot() {
+    return {
+      program: state.runSetup.program,
+      template: state.runSetup.template,
+      prompt: state.runSetup.prompt,
+    };
+  }
+
   function safeJsonParse(raw, fieldName) {
     try {
       return { ok: true, value: JSON.parse(raw) };
@@ -210,7 +218,10 @@
       });
 
       writeOutput(title, {
-        request: requestBody,
+        request: {
+          run_setup: runSetupSnapshot(),
+          payload: requestBody,
+        },
         response,
       });
     } catch (error) {
@@ -228,7 +239,10 @@
       });
 
       writeOutput(`${title} (failed)`, {
-        request: requestBody,
+        request: {
+          run_setup: runSetupSnapshot(),
+          payload: requestBody,
+        },
         response: {
           status: error.status || 500,
           error: error.message,
@@ -306,7 +320,10 @@
         <span>Task Prompt</span>
         <textarea id="setupPromptInput" rows="4" placeholder="Describe the run objective">${escapeHtml(prompt)}</textarea>
       </label>
-      <button type="button" id="saveSetupBtn">Save Run Setup</button>
+      <div class="control-row">
+        <button type="button" id="saveSetupBtn">Save Run Setup</button>
+        <button type="button" id="previewRunContextBtn">Preview Run Context</button>
+      </div>
     `;
 
     el.operateRunSetupMount.querySelector("#saveSetupBtn")?.addEventListener("click", () => {
@@ -315,6 +332,18 @@
       updateRunSetup({ template: nextTemplate, prompt: nextPrompt });
       setGlobalStatus("Run setup saved.", "idle");
       pushTimeline({ title: "Run setup updated", endpoint: "local", status: "ok", detail: nextTemplate });
+    });
+
+    el.operateRunSetupMount.querySelector("#previewRunContextBtn")?.addEventListener("click", () => {
+      const nextTemplate = el.operateRunSetupMount.querySelector("#setupTemplateSelect")?.value || "execute-phase";
+      const nextPrompt = el.operateRunSetupMount.querySelector("#setupPromptInput")?.value || "";
+      updateRunSetup({ template: nextTemplate, prompt: nextPrompt });
+      writeOutput("Run context preview", {
+        request: { action: "preview-run-context" },
+        response: runSetupSnapshot(),
+      });
+      setGlobalStatus("Run context preview updated.", "idle");
+      pushTimeline({ title: "Run context preview", endpoint: "local", status: "ok", detail: nextTemplate });
     });
   }
 

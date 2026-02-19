@@ -1774,3 +1774,37 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
     assert!(css.contains(".tab-btn"));
     assert!(css.contains(".observe-frame"));
 }
+
+#[tokio::test]
+async fn phase10_dashboard_operate_static_contract_has_endpoint_first_hooks() {
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    let (status, js) = get_text(&app, &format!("/programs/{}/dashboard/app.js", pid)).await;
+    assert_eq!(status, StatusCode::OK, "dashboard app.js not served");
+
+    assert!(js.contains("/agents/register"));
+    assert!(js.contains("/agents"));
+    assert!(js.contains("/locks/acquire"));
+    assert!(js.contains("/locks/release"));
+    assert!(js.contains("/locks"));
+    assert!(js.contains("/mutations"));
+    assert!(js.contains("/verify"));
+    assert!(js.contains("/simulate"));
+    assert!(js.contains("/compile"));
+    assert!(js.contains("/history"));
+    assert!(js.contains("X-Agent-Id"));
+    assert!(js.contains("dry_run"));
+    assert!(js.contains("Workflow Template"));
+    assert!(js.contains("Task Prompt"));
+    assert!(js.contains("idle"));
+    assert!(js.contains("running"));
+    assert!(js.contains("blocked"));
+    assert!(js.contains("error"));
+
+    let (status, html) = get_text(&app, &format!("/programs/{}/dashboard", pid)).await;
+    assert_eq!(status, StatusCode::OK, "dashboard html not served");
+    assert!(html.contains("Operate + Observe"));
+    assert!(html.contains("id=\"operateActionsMount\""));
+    assert!(html.contains("id=\"operateRunSetupMount\""));
+}
