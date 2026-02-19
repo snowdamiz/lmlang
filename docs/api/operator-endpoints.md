@@ -304,13 +304,16 @@ Failure response shape (invalid planner JSON):
 }
 ```
 
-## Autonomous execution metadata (`AUT-06`)
+## Autonomous execution metadata (`AUT-06`, `AUT-07`, `AUT-08`)
 
 When autonomous runs complete or stop, agent and dashboard responses include machine-readable execution metadata:
 
 - `session.stop_reason`: terminal code/message for the last run
 - `session.execution`: compact summary of the latest attempt (`attempt`, `max_attempts`, action rows)
 - `chat.execution` and `dashboard/ai/chat.execution`: same compact attempt summary on chat surfaces
+- `execution.actions[].diagnostics`: compact diagnostics class/retryability/summary per failed action row
+- `execution.diagnostics`: latest attempt-level diagnostics summary for quick triage
+- `dashboard/ai/chat.diagnostics`: same diagnostics summary exposed at top level for UI convenience
 
 Representative shape:
 
@@ -331,19 +334,37 @@ Representative shape:
       "actions": [
         {
           "action_index": 0,
-          "kind": "simulate",
+          "kind": "compile",
           "status": "failed",
-          "summary": "simulate action failed",
-          "error_code": "not_found"
+          "summary": "compile action failed",
+          "error_code": "internal_error",
+          "diagnostics": {
+            "class": "compile_failure",
+            "retryable": true,
+            "summary": "compile action failed",
+            "key_diagnostics": ["internal error: entry function 'missing_entry' not found"]
+          }
         },
         {
           "action_index": 1,
           "kind": "verify_gate",
           "status": "failed",
           "summary": "post-execution verify failed with 1 diagnostic(s)",
-          "error_code": "validation_failed"
+          "error_code": "validation_failed",
+          "diagnostics": {
+            "class": "verify_failure",
+            "retryable": true,
+            "summary": "verify gate reported 1 diagnostic(s)",
+            "key_diagnostics": ["[TYPE_MISMATCH] ..."]
+          }
         }
       ],
+      "diagnostics": {
+        "class": "verify_failure",
+        "retryable": true,
+        "summary": "verify gate reported 1 diagnostic(s)",
+        "key_diagnostics": ["[TYPE_MISMATCH] ..."]
+      },
       "stop_reason": {
         "code": "retry_budget_exhausted",
         "message": "retry budget exhausted after verify gate failure (attempt 3/3)"
@@ -363,6 +384,13 @@ Retry budget defaults to `3` attempts and can be configured with:
 
 - `LMLANG_AUTONOMY_MAX_ATTEMPTS`
 
+### Diagnostics-driven repair flow (`AUT-07` / `AUT-08`)
+
+- Attempt `N=1`: planner prompt contains goal + transcript only (no diagnostics block).
+- Retry attempt `N+1`: planner prompt includes a `Latest execution diagnostics` JSON block derived from the latest failed attempt (`action_kind`, `error_class`, `retryable`, `key_diagnostics`, `attempt/max_attempts`).
+- Targeted repair retries remain bounded by `max_attempts`; exhausted retries terminate with `retry_budget_exhausted`.
+- Non-retryable planner rejections (for example `unsafe_plan`) terminate with `planner_rejected_non_retryable` and include machine-readable detail (`planner_code`, `attempt`, `max_attempts`, validation errors if present).
+
 ### Stop reason taxonomy
 
 Terminal `stop_reason.code` values:
@@ -380,9 +408,11 @@ Terminal `stop_reason.code` values:
 ### Troubleshooting quick map
 
 - `planner_rejected_non_retryable`: prompt/goal unsupported by planner contract; revise goal scope
+  - inspect `stop_reason.detail.planner_code` (for example `unsafe_plan`, `unsupported_goal`) before retrying
 - `planner_rejected_retry_budget_exhausted`: planner stayed retryable but never produced executable actions
 - `action_failed_non_retryable`: action payload invalid or structurally impossible without plan change
 - `retry_budget_exhausted`: repeated retryable planner/action/verify failures consumed budget
+  - inspect `execution.actions[].diagnostics` and `execution.diagnostics` to identify repeating failure class
 - `runner_internal_error`: server-side execution/setup issue (inspect logs + details payload)
 
 Autonomous run behavior:

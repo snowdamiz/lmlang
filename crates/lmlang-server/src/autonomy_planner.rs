@@ -183,6 +183,9 @@ fn build_planner_prompt(
         .and_then(|context| serde_json::to_string_pretty(context).ok())
         .map(|raw| format!("\n\nLatest execution diagnostics:\n{}", raw))
         .unwrap_or_default();
+    // Retry prompts embed this deterministic block when repair_context exists:
+    // Latest execution diagnostics:
+    // { "attempt": 2, "max_attempts": 3, "action_kind": "compile", ... }
 
     format!(
         "You are the lmlang autonomous planner.\n\
