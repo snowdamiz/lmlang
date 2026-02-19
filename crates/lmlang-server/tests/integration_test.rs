@@ -48,7 +48,8 @@ fn temp_db_path(prefix: &str) -> String {
 
 #[derive(Clone)]
 struct MockPlannerState {
-    response_content: String,
+    responses: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+    fallback_response: String,
     requests: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
 }
 
@@ -57,10 +58,16 @@ async fn mock_planner_chat(
     Json(request): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
     state.requests.lock().unwrap().push(request);
+    let response_content = state
+        .responses
+        .lock()
+        .unwrap()
+        .pop_front()
+        .unwrap_or_else(|| state.fallback_response.clone());
     Json(json!({
         "choices": [{
             "message": {
-                "content": state.response_content
+                "content": response_content
             }
         }]
     }))
@@ -73,9 +80,41 @@ async fn start_mock_planner_server(
     std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
     tokio::task::JoinHandle<()>,
 ) {
+    start_mock_planner_server_sequence(&[response_content]).await
+}
+
+async fn start_mock_planner_server_sequence(
+    response_contents: &[&str],
+) -> (
+    String,
+    std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
+    tokio::task::JoinHandle<()>,
+) {
     let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let fallback_response = response_contents
+        .last()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| {
+            r#"{
+                "version": "2026-02-19",
+                "goal": "planner response unavailable",
+                "actions": [],
+                "failure": {
+                    "code": "planner_unavailable",
+                    "message": "mock planner sequence exhausted",
+                    "retryable": false
+                }
+            }"#
+            .to_string()
+        });
     let state = MockPlannerState {
-        response_content: response_content.to_string(),
+        responses: std::sync::Arc::new(std::sync::Mutex::new(
+            response_contents
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<std::collections::VecDeque<_>>(),
+        )),
+        fallback_response,
         requests: requests.clone(),
     };
 
@@ -2701,6 +2740,15 @@ async fn wait_for_run_status(
     panic!("timed out waiting for run_status={}", status);
 }
 
+fn planner_prompt_content(request: &serde_json::Value) -> String {
+    request["messages"]
+        .as_array()
+        .and_then(|messages| messages.last())
+        .and_then(|message| message["content"].as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
 #[tokio::test]
 async fn phase15_autonomous_runner_executes_planner_actions_and_records_completed_stop_reason() {
     let planner_response = r#"{
@@ -2887,6 +2935,206 @@ async fn phase15_dashboard_chat_surfaces_execution_metadata_after_autonomous_sto
     );
     assert_eq!(chat["execution"]["max_attempts"], json!(3));
     assert_eq!(chat["planner"]["status"], json!("failed"));
+
+    server.abort();
+}
+
+// ===========================================================================
+// PHASE 16: Verify/compile repair loop
+// ===========================================================================
+
+#[tokio::test]
+async fn phase16_compile_failure_retries_include_diagnostics_context() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "compile missing entry repeatedly",
+        "actions": [
+            {
+                "type": "compile",
+                "request": {
+                    "entry_function": "missing_entry",
+                    "opt_level": "O0"
+                }
+            }
+        ]
+    }"#;
+    let (base_url, requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id =
+        register_mock_planner_agent(&app, &base_url, "phase16-compile-retry-agent").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "compile missing entry repeatedly" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+
+    let detail = wait_for_run_status(&app, pid, &agent_id, "stopped").await;
+    assert_eq!(
+        detail["session"]["stop_reason"]["code"],
+        json!("retry_budget_exhausted")
+    );
+    assert_eq!(
+        detail["session"]["execution"]["stop_reason"]["code"],
+        json!("retry_budget_exhausted")
+    );
+    assert_eq!(
+        detail["session"]["execution"]["actions"][0]["kind"],
+        json!("compile")
+    );
+    assert_eq!(
+        detail["session"]["execution"]["actions"][0]["diagnostics"]["class"],
+        json!("compile_failure")
+    );
+
+    let requests_guard = requests.lock().unwrap();
+    assert!(
+        requests_guard.len() >= 3,
+        "expected planner retries, got {} request(s)",
+        requests_guard.len()
+    );
+    let first_prompt = planner_prompt_content(&requests_guard[0]);
+    assert!(
+        !first_prompt.contains("Latest execution diagnostics"),
+        "first attempt should not include diagnostics context"
+    );
+    let second_prompt = planner_prompt_content(&requests_guard[1]);
+    assert!(second_prompt.contains("Latest execution diagnostics"));
+    assert!(second_prompt.contains("\"action_kind\": \"compile\""));
+    assert!(second_prompt.contains("\"error_class\": \"compile_failure\""));
+    assert!(second_prompt.contains("targeted repair actions before unrelated changes"));
+    drop(requests_guard);
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn phase16_successful_repair_keeps_attempt_history_and_completes() {
+    let first_response = r#"{
+        "version": "2026-02-19",
+        "goal": "compile missing entry first",
+        "actions": [
+            {
+                "type": "compile",
+                "request": {
+                    "entry_function": "missing_entry",
+                    "opt_level": "O0"
+                }
+            }
+        ]
+    }"#;
+    let second_response = r#"{
+        "version": "2026-02-19",
+        "goal": "repair by re-checking graph state",
+        "actions": [
+            {
+                "type": "inspect",
+                "request": { "query": "overview" }
+            }
+        ]
+    }"#;
+    let (base_url, requests, server) =
+        start_mock_planner_server_sequence(&[first_response, second_response]).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id =
+        register_mock_planner_agent(&app, &base_url, "phase16-repair-success-agent").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "repair compile failure and complete" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+
+    let detail = wait_for_run_status(&app, pid, &agent_id, "idle").await;
+    assert_eq!(detail["session"]["stop_reason"]["code"], json!("completed"));
+    assert_eq!(detail["session"]["execution"]["attempt"], json!(2));
+    assert_eq!(detail["session"]["execution"]["max_attempts"], json!(3));
+    assert_eq!(
+        detail["session"]["execution"]["stop_reason"]["code"],
+        json!("completed")
+    );
+    assert!(detail["transcript"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|row| row["content"]
+            == json!("Execution attempt 1/3 recorded (1 action(s), 0 succeeded).")));
+    assert!(detail["transcript"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|row| row["content"]
+            == json!("Execution attempt 2/3 recorded (2 action(s), 2 succeeded).")));
+
+    let requests_guard = requests.lock().unwrap();
+    assert!(
+        requests_guard.len() >= 2,
+        "expected at least 2 planner requests, got {}",
+        requests_guard.len()
+    );
+    let retry_prompt = planner_prompt_content(&requests_guard[1]);
+    assert!(retry_prompt.contains("Latest execution diagnostics"));
+    assert!(retry_prompt.contains("\"action_kind\": \"compile\""));
+    drop(requests_guard);
+
+    server.abort();
+}
+
+#[tokio::test]
+async fn phase16_non_retryable_planner_rejection_includes_terminal_detail() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "unsafe mutation objective",
+        "actions": [],
+        "failure": {
+            "code": "unsafe_plan",
+            "message": "Planner refuses unsafe mutation objective.",
+            "retryable": false
+        }
+    }"#;
+    let (base_url, _requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id =
+        register_mock_planner_agent(&app, &base_url, "phase16-unsafe-terminal-agent").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "unsafe planner goal" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+
+    let detail = wait_for_run_status(&app, pid, &agent_id, "stopped").await;
+    assert_eq!(
+        detail["session"]["stop_reason"]["code"],
+        json!("planner_rejected_non_retryable")
+    );
+    assert_eq!(
+        detail["session"]["stop_reason"]["detail"]["planner_code"],
+        json!("unsafe_plan")
+    );
+    assert_eq!(
+        detail["session"]["stop_reason"]["detail"]["attempt"],
+        json!(1)
+    );
+    assert_eq!(
+        detail["session"]["stop_reason"]["detail"]["max_attempts"],
+        json!(3)
+    );
 
     server.abort();
 }
