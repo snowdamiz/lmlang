@@ -3,11 +3,13 @@
 //! Each sub-module defines the request and response types for a specific
 //! API domain. Types use serde derives for JSON serialization/deserialization.
 
+pub mod agents;
 pub mod common;
 pub mod compile;
 pub mod contracts;
 pub mod diagnostics;
 pub mod history;
+pub mod locks;
 pub mod mutations;
 pub mod programs;
 pub mod queries;

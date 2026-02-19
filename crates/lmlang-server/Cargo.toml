@@ -8,6 +8,7 @@ lmlang-core = { path = "../lmlang-core" }
 lmlang-check = { path = "../lmlang-check" }
 lmlang-codegen = { path = "../lmlang-codegen" }
 lmlang-storage = { path = "../lmlang-storage" }
+dashmap = "6"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"

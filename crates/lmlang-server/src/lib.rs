@@ -4,6 +4,7 @@
 //! and undo changes to program graphs. This crate contains the server framework,
 //! API schema types, error handling, and route definitions.
 
+pub mod concurrency;
 pub mod error;
 pub mod handlers;
 pub mod router;
