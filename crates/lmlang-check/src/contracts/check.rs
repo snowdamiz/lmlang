@@ -11,7 +11,7 @@ use petgraph::Direction;
 use lmlang_core::edge::FlowEdge;
 use lmlang_core::graph::ProgramGraph;
 use lmlang_core::id::{FunctionId, NodeId};
-use lmlang_core::ops::ComputeOp;
+use lmlang_core::ops::{ComputeNodeOp, ComputeOp};
 
 use crate::contracts::{ContractKind, ContractViolation};
 use crate::interpreter::error::RuntimeError;
@@ -215,15 +215,15 @@ pub fn check_postconditions(
 
 /// Check invariants for a value crossing a module boundary.
 ///
-/// Finds all Invariant nodes with matching target_type and evaluates them.
+/// Finds all Invariant nodes with matching target_type and evaluates them
+/// using mini-subgraph evaluation (not pre-existing node_values).
 /// Note: module boundary detection requires checking FunctionDef.module;
 /// the caller is responsible for determining when this check is needed.
 pub fn check_invariants_for_value(
     graph: &ProgramGraph,
     type_id: lmlang_core::type_id::TypeId,
-    _value: &Value,
+    value: &Value,
     source_func: FunctionId,
-    node_values: &HashMap<NodeId, Value>,
 ) -> Result<Vec<ContractViolation>, RuntimeError> {
     // Find all Invariant nodes in the source function with matching target_type
     let contract_nodes: Vec<NodeId> = find_contract_nodes(graph, source_func, ContractKind::Invariant)
@@ -231,7 +231,7 @@ pub fn check_invariants_for_value(
         .filter(|node_id| {
             if let Some(node) = graph.get_compute_node(*node_id) {
                 match &node.op {
-                    lmlang_core::ops::ComputeNodeOp::Core(ComputeOp::Invariant { target_type, .. }) => {
+                    ComputeNodeOp::Core(ComputeOp::Invariant { target_type, .. }) => {
                         *target_type == type_id
                     }
                     _ => false,
@@ -245,26 +245,149 @@ pub fn check_invariants_for_value(
     let mut violations = Vec::new();
 
     for contract_node_id in contract_nodes {
-        match evaluate_contract_condition(graph, contract_node_id, node_values) {
+        match evaluate_invariant_for_value(graph, contract_node_id, value) {
             Ok(true) => {}
             Ok(false) => {
                 let message = get_contract_message(graph, contract_node_id);
-                let counterexample = collect_counterexample(graph, contract_node_id, node_values);
+                let counterexample = vec![(contract_node_id, value.clone())];
                 violations.push(ContractViolation {
                     kind: ContractKind::Invariant,
                     contract_node: contract_node_id,
                     function_id: source_func,
                     message,
-                    inputs: vec![],
+                    inputs: vec![value.clone()],
                     actual_return: None,
                     counterexample,
                 });
             }
-            Err(_) => {}
+            Err(_) => {
+                // Subgraph evaluation failed -- report as conservative violation.
+                let message = get_contract_message(graph, contract_node_id);
+                violations.push(ContractViolation {
+                    kind: ContractKind::Invariant,
+                    contract_node: contract_node_id,
+                    function_id: source_func,
+                    message,
+                    inputs: vec![value.clone()],
+                    actual_return: None,
+                    counterexample: vec![],
+                });
+            }
         }
     }
 
     Ok(violations)
+}
+
+/// Evaluate an invariant's condition subgraph on-the-fly for a concrete value.
+///
+/// Unlike `evaluate_contract_condition` (which reads pre-computed node_values),
+/// this function performs a mini-evaluation of the invariant's condition subgraph:
+/// - Parameter nodes are substituted with `arg_value`
+/// - Const nodes evaluate to their literal values
+/// - Compare/arithmetic nodes are computed from their inputs
+///
+/// This is necessary at module boundaries because the callee's frame hasn't been
+/// pushed yet, so normal worklist evaluation hasn't run for the callee's nodes.
+pub fn evaluate_invariant_for_value(
+    graph: &ProgramGraph,
+    contract_node_id: NodeId,
+    arg_value: &Value,
+) -> Result<bool, RuntimeError> {
+    // Mini-evaluate: walk the subgraph backward from the contract node,
+    // then evaluate forward. Use a local node_values map.
+    let mut local_values: HashMap<NodeId, Value> = HashMap::new();
+    evaluate_subgraph_node(graph, contract_node_id, arg_value, &mut local_values)?;
+
+    // Now check port 0 of the contract node (same logic as evaluate_contract_condition)
+    let node_idx: petgraph::graph::NodeIndex<u32> = contract_node_id.into();
+    for edge_ref in graph.compute().edges_directed(node_idx, Direction::Incoming) {
+        if let FlowEdge::Data { target_port: 0, .. } = edge_ref.weight() {
+            let source_id = NodeId::from(edge_ref.source());
+            if let Some(value) = local_values.get(&source_id) {
+                return match value {
+                    Value::Bool(b) => Ok(*b),
+                    _ => Err(RuntimeError::TypeMismatchAtRuntime {
+                        node: contract_node_id,
+                        expected: "Bool".into(),
+                        got: value.type_name().into(),
+                    }),
+                };
+            } else {
+                return Err(RuntimeError::MissingValue { node: source_id, port: 0 });
+            }
+        }
+    }
+    // No condition edge -- treat as passed
+    Ok(true)
+}
+
+/// Recursively evaluate a node in the invariant subgraph.
+///
+/// Walks backward through data edges to find dependencies, evaluates them first
+/// (post-order), then evaluates this node. Results are cached in `local_values`.
+fn evaluate_subgraph_node(
+    graph: &ProgramGraph,
+    node_id: NodeId,
+    arg_value: &Value,
+    local_values: &mut HashMap<NodeId, Value>,
+) -> Result<(), RuntimeError> {
+    // Already evaluated?
+    if local_values.contains_key(&node_id) {
+        return Ok(());
+    }
+
+    let node = graph.get_compute_node(node_id).ok_or_else(|| {
+        RuntimeError::InternalError {
+            message: format!("invariant subgraph node {} not found", node_id),
+        }
+    })?;
+    let op = node.op.clone();
+
+    match &op {
+        ComputeNodeOp::Core(ComputeOp::Parameter { .. }) => {
+            // Substitute with the argument value being checked
+            local_values.insert(node_id, arg_value.clone());
+        }
+        ComputeNodeOp::Core(ComputeOp::Const { value: const_val }) => {
+            local_values.insert(node_id, Value::from_const(const_val));
+        }
+        _ => {
+            // Recursively evaluate all data input dependencies first
+            let node_idx: petgraph::graph::NodeIndex<u32> = node_id.into();
+            let incoming: Vec<(u16, NodeId)> = graph
+                .compute()
+                .edges_directed(node_idx, Direction::Incoming)
+                .filter_map(|edge_ref| match edge_ref.weight() {
+                    FlowEdge::Data { target_port, .. } => {
+                        Some((*target_port, NodeId::from(edge_ref.source())))
+                    }
+                    _ => None,
+                })
+                .collect();
+
+            for &(_, source_id) in &incoming {
+                evaluate_subgraph_node(graph, source_id, arg_value, local_values)?;
+            }
+
+            // Gather inputs sorted by port
+            let mut inputs: Vec<(u16, Value)> = incoming
+                .iter()
+                .filter_map(|(port, source_id)| {
+                    local_values.get(source_id).map(|v| (*port, v.clone()))
+                })
+                .collect();
+            inputs.sort_by_key(|(port, _)| *port);
+
+            // Evaluate using the existing eval_op for arithmetic/comparison/etc.
+            use crate::interpreter::eval::eval_op;
+            match eval_op(&op, &inputs, node_id, graph)? {
+                Some(value) => { local_values.insert(node_id, value); }
+                None => {} // Ops like contract nodes produce no value
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -586,5 +709,94 @@ mod tests {
         )
         .unwrap();
         assert!(post_violations.is_empty());
+    }
+
+    /// Helper: build a function with an invariant `x >= 0` on TypeId::I32.
+    /// Returns (graph, func_id, invariant_node_id)
+    fn build_invariant_graph() -> (ProgramGraph, FunctionId, NodeId) {
+        let mut graph = ProgramGraph::new("test");
+        let root = graph.modules.root_id();
+
+        let func_id = graph
+            .add_function(
+                "inv_fn".into(),
+                root,
+                vec![("x".into(), TypeId::I32)],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        // Parameter node
+        let param_x = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, func_id)
+            .unwrap();
+
+        // Const 0
+        let const_zero = graph
+            .add_core_op(
+                ComputeOp::Const {
+                    value: lmlang_core::types::ConstValue::I32(0),
+                },
+                func_id,
+            )
+            .unwrap();
+
+        // Compare: x >= 0
+        let cmp_node = graph
+            .add_core_op(ComputeOp::Compare { op: CmpOp::Ge }, func_id)
+            .unwrap();
+        graph.add_data_edge(param_x, cmp_node, 0, 0, TypeId::I32).unwrap();
+        graph.add_data_edge(const_zero, cmp_node, 0, 1, TypeId::I32).unwrap();
+
+        // Invariant node targeting I32
+        let inv_node = graph
+            .add_core_op(
+                ComputeOp::Invariant {
+                    target_type: TypeId::I32,
+                    message: "x must be non-negative".into(),
+                },
+                func_id,
+            )
+            .unwrap();
+        graph.add_data_edge(cmp_node, inv_node, 0, 0, TypeId::BOOL).unwrap();
+
+        // Return node
+        let ret = graph.add_core_op(ComputeOp::Return, func_id).unwrap();
+        graph.add_data_edge(param_x, ret, 0, 0, TypeId::I32).unwrap();
+
+        (graph, func_id, inv_node)
+    }
+
+    #[test]
+    fn test_evaluate_invariant_for_value_passes() {
+        let (graph, _, inv_node) = build_invariant_graph();
+        // x = 5, condition x >= 0 should be true
+        let result = evaluate_invariant_for_value(&graph, inv_node, &Value::I32(5)).unwrap();
+        assert!(result, "Invariant should pass for x=5 (5 >= 0)");
+    }
+
+    #[test]
+    fn test_evaluate_invariant_for_value_fails() {
+        let (graph, _, inv_node) = build_invariant_graph();
+        // x = -1, condition x >= 0 should be false
+        let result = evaluate_invariant_for_value(&graph, inv_node, &Value::I32(-1)).unwrap();
+        assert!(!result, "Invariant should fail for x=-1 (-1 >= 0 is false)");
+    }
+
+    #[test]
+    fn test_check_invariants_for_value_with_mini_eval() {
+        let (graph, func_id, _) = build_invariant_graph();
+        // x = -1 should produce 1 violation
+        let violations = check_invariants_for_value(
+            &graph,
+            TypeId::I32,
+            &Value::I32(-1),
+            func_id,
+        )
+        .unwrap();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].kind, ContractKind::Invariant);
+        assert_eq!(violations[0].message, "x must be non-negative");
     }
 }

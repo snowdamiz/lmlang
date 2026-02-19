@@ -336,6 +336,45 @@ impl<'g> Interpreter<'g> {
                     return &self.state;
                 }
 
+                // --- Module-boundary invariant checking ---
+                // Check invariants for arguments crossing module boundaries.
+                // Must happen BEFORE pushing the callee frame because invariant
+                // subgraphs are evaluated on-the-fly (the callee frame doesn't
+                // exist yet).
+                if let Some(caller_func_id) = self.call_stack.last().map(|f| f.function_id) {
+                    if let (Some(caller_func), Some(target_func)) = (
+                        self.graph.get_function(caller_func_id),
+                        self.graph.get_function(target),
+                    ) {
+                        if caller_func.module != target_func.module {
+                            // Cross-module call: check invariants for each typed argument
+                            for (idx, arg_value) in args.iter().enumerate() {
+                                if let Some((_, type_id)) = target_func.params.get(idx) {
+                                    let violations = crate::contracts::check::check_invariants_for_value(
+                                        self.graph, *type_id, arg_value, target,
+                                    );
+                                    match violations {
+                                        Ok(v) => {
+                                            if let Some(violation) = v.into_iter().next() {
+                                                self.state = ExecutionState::ContractViolation { violation };
+                                                return &self.state;
+                                            }
+                                        }
+                                        Err(error) => {
+                                            self.state = ExecutionState::Error {
+                                                error,
+                                                partial_results: self.collect_partial_results(),
+                                            };
+                                            return &self.state;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // --- End module-boundary invariant checking ---
+
                 // Push new frame
                 let frame = self.create_call_frame(target, args, Some(return_target), captures);
                 self.call_stack.push(frame);
@@ -1644,5 +1683,134 @@ mod tests {
             Value::from_const(&ConstValue::Unit),
             Value::Unit
         ));
+    }
+
+    #[test]
+    fn test_cross_module_invariant_violation() {
+        use lmlang_core::ops::CmpOp;
+
+        let mut graph = ProgramGraph::new("test");
+        let root = graph.modules.root_id();
+
+        // Create module B (separate from root module A)
+        let mod_b = graph
+            .add_module("mod_b".into(), root, Visibility::Public)
+            .unwrap();
+
+        // Function "callee" in module B, takes one param (x: I32)
+        let callee_id = graph
+            .add_function(
+                "callee".into(),
+                mod_b,
+                vec![("x".into(), TypeId::I32)],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        // callee: Parameter(0) for x
+        let callee_param = graph
+            .add_core_op(ComputeOp::Parameter { index: 0 }, callee_id)
+            .unwrap();
+
+        // callee: Const(0) for the invariant condition
+        let callee_const_zero = graph
+            .add_core_op(
+                ComputeOp::Const {
+                    value: lmlang_core::ConstValue::I32(0),
+                },
+                callee_id,
+            )
+            .unwrap();
+
+        // callee: Compare x >= 0
+        let callee_cmp = graph
+            .add_core_op(ComputeOp::Compare { op: CmpOp::Ge }, callee_id)
+            .unwrap();
+        graph
+            .add_data_edge(callee_param, callee_cmp, 0, 0, TypeId::I32)
+            .unwrap();
+        graph
+            .add_data_edge(callee_const_zero, callee_cmp, 0, 1, TypeId::I32)
+            .unwrap();
+
+        // callee: Invariant node targeting I32
+        let callee_inv = graph
+            .add_core_op(
+                ComputeOp::Invariant {
+                    target_type: TypeId::I32,
+                    message: "x must be non-negative".into(),
+                },
+                callee_id,
+            )
+            .unwrap();
+        graph
+            .add_data_edge(callee_cmp, callee_inv, 0, 0, TypeId::BOOL)
+            .unwrap();
+
+        // callee: Return node returning x
+        let callee_ret = graph
+            .add_core_op(ComputeOp::Return, callee_id)
+            .unwrap();
+        graph
+            .add_data_edge(callee_param, callee_ret, 0, 0, TypeId::I32)
+            .unwrap();
+
+        // Function "caller" in root module (module A)
+        let caller_id = graph
+            .add_function(
+                "caller".into(),
+                root,
+                vec![],
+                TypeId::I32,
+                Visibility::Public,
+            )
+            .unwrap();
+
+        // caller: Const(-1) -- will violate the invariant
+        let caller_const = graph
+            .add_core_op(
+                ComputeOp::Const {
+                    value: lmlang_core::ConstValue::I32(-1),
+                },
+                caller_id,
+            )
+            .unwrap();
+
+        // caller: Call callee with -1
+        let caller_call = graph
+            .add_core_op(
+                ComputeOp::Call { target: callee_id },
+                caller_id,
+            )
+            .unwrap();
+        graph
+            .add_data_edge(caller_const, caller_call, 0, 0, TypeId::I32)
+            .unwrap();
+
+        // caller: Return the call result
+        let caller_ret = graph
+            .add_core_op(ComputeOp::Return, caller_id)
+            .unwrap();
+        graph
+            .add_data_edge(caller_call, caller_ret, 0, 0, TypeId::I32)
+            .unwrap();
+
+        // Run the interpreter starting at caller
+        let mut interp = Interpreter::new(&graph, InterpreterConfig::default());
+        interp.start(caller_id, vec![]);
+        interp.run();
+
+        // Should halt with ContractViolation (invariant)
+        match interp.state() {
+            ExecutionState::ContractViolation { violation } => {
+                assert_eq!(violation.kind, crate::contracts::ContractKind::Invariant);
+                assert_eq!(violation.message, "x must be non-negative");
+            }
+            other => panic!(
+                "Expected ContractViolation for cross-module invariant, got {:?}",
+                other
+            ),
+        }
     }
 }
