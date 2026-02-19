@@ -172,6 +172,10 @@ Dashboard modules:
 - `Operate`: endpoint-first controls for agents, locks, mutations, verify, simulate, compile, and history.
 - `Observe`: reuses the existing observability UI route inside the dashboard context.
 
+Operator walkthrough:
+- `docs/dashboard-operator-guide.md`
+- `docs/api/operator-endpoints.md`
+
 Run setup in `Operate` includes:
 - target program (current id),
 - workflow template selector,
@@ -275,4 +279,5 @@ open http://localhost:3000/programs/1/dashboard
 - Type checker/interpreter/contracts: `crates/lmlang-check/src/`
 - Storage/migrations: `crates/lmlang-storage/src/`
 - Server routes/schemas: `crates/lmlang-server/src/router.rs`, `crates/lmlang-server/src/schema/`
+- Dashboard operator docs: `docs/dashboard-operator-guide.md`, `docs/api/operator-endpoints.md`
 - LLVM pipeline: `crates/lmlang-codegen/src/compiler.rs`, `crates/lmlang-codegen/src/codegen.rs`
