@@ -12,7 +12,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 Phase: 16 - Verify/Compile Repair Loop
 Plan: 00/00 planned
 Status: Phase 15 completed (3/3 plans executed); ready to plan Phase 16
-Last activity: 2026-02-19 - Executed Phase 15 plans 01-03 and completed phase
+Last activity: 2026-02-19 - Completed quick task 2: fix all issues and warnings, run all tests, run cargo fmt then commit
 
 Progress: [#####-----] 50%
 
@@ -47,12 +47,16 @@ Progress: [#####-----] 50%
 
 - Plan Phase 16 (verify/compile diagnostics capture and targeted repair loop)
 - Design phase16 integration tests for verify+compile feedback chaining
-- Resolve pre-existing dashboard shell assertion drift in phase10 integration tests
 
 ### Blockers/Concerns
 
 - Main risk: verify/compile diagnostics may need richer planner feedback shaping in phase16
-- Pre-existing unrelated test failures remain in `phase10_dashboard_routes_serve_shell_and_assets` and `phase10_dashboard_and_observe_routes_coexist_with_reuse_contract`
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 2 | fix all issues and warnings, run all tests, run cargo fmt then commit | 2026-02-19 | af8136c | [2-fix-all-issues-and-warnings-run-all-test](./quick/2-fix-all-issues-and-warnings-run-all-test/) |
 
 ## Session Continuity
 
