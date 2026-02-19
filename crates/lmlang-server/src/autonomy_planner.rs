@@ -45,6 +45,21 @@ pub struct PlannerActionSummary {
     pub summary: String,
 }
 
+/// Structured retry context used for targeted repair planning.
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct PlannerRepairContext {
+    pub attempt: u32,
+    pub max_attempts: u32,
+    pub action_kind: String,
+    pub error_class: String,
+    pub retryable: bool,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub key_diagnostics: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_reason_code: Option<String>,
+}
+
 impl PlannerOutcome {
     pub fn status(&self) -> &'static str {
         match self {
@@ -62,6 +77,7 @@ pub async fn plan_for_prompt(
     llm: &AgentLlmConfig,
     prompt: &str,
     transcript: &[String],
+    repair_context: Option<&PlannerRepairContext>,
 ) -> PlannerOutcome {
     if !llm.is_configured() {
         return planner_rejected(
@@ -73,7 +89,7 @@ pub async fn plan_for_prompt(
         );
     }
 
-    let planner_prompt = build_planner_prompt(prompt, transcript);
+    let planner_prompt = build_planner_prompt(prompt, transcript, repair_context);
     let raw = match run_external_chat_json(llm, &planner_prompt).await {
         Ok(raw) => raw,
         Err(err) => {
@@ -148,12 +164,25 @@ pub fn evaluate_planner_value(value: serde_json::Value) -> PlannerOutcome {
     })
 }
 
-fn build_planner_prompt(goal: &str, transcript: &[String]) -> String {
+fn build_planner_prompt(
+    goal: &str,
+    transcript: &[String],
+    repair_context: Option<&PlannerRepairContext>,
+) -> String {
     let transcript_block = if transcript.is_empty() {
         "No recent transcript.".to_string()
     } else {
         transcript.join("\n")
     };
+    let repair_rule = if repair_context.is_some() {
+        "- Use latest execution diagnostics to prioritize targeted repair actions before unrelated changes.\n"
+    } else {
+        ""
+    };
+    let repair_block = repair_context
+        .and_then(|context| serde_json::to_string_pretty(context).ok())
+        .map(|raw| format!("\n\nLatest execution diagnostics:\n{}", raw))
+        .unwrap_or_default();
 
     format!(
         "You are the lmlang autonomous planner.\n\
@@ -164,11 +193,12 @@ Rules:\n\
 - Use an ordered actions array for executable plans.\n\
 - If no safe plan exists, return a structured failure object and empty actions.\n\
 - Keep payloads minimal and deterministic.\n\
+{}\
 \n\
 Goal:\n{}\n\
 \n\
-Recent transcript:\n{}",
-        AUTONOMY_PLAN_CONTRACT_V1, goal, transcript_block
+Recent transcript:\n{}{}",
+        AUTONOMY_PLAN_CONTRACT_V1, repair_rule, goal, transcript_block, repair_block
     )
 }
 
@@ -384,5 +414,38 @@ mod tests {
             }
             PlannerOutcome::Accepted(_) => panic!("expected semantic rejection"),
         }
+    }
+
+    #[test]
+    fn build_planner_prompt_omits_diagnostics_for_first_attempt() {
+        let prompt = build_planner_prompt(
+            "build calculator",
+            &[String::from("user: create calculator")],
+            None,
+        );
+        assert!(!prompt.contains("Latest execution diagnostics"));
+        assert!(!prompt.contains("targeted repair actions before unrelated changes"));
+    }
+
+    #[test]
+    fn build_planner_prompt_includes_diagnostics_for_retries() {
+        let repair_context = PlannerRepairContext {
+            attempt: 2,
+            max_attempts: 3,
+            action_kind: "compile".to_string(),
+            error_class: "compile_failure".to_string(),
+            retryable: true,
+            summary: "compile action failed".to_string(),
+            key_diagnostics: vec!["bad request: invalid opt level O9".to_string()],
+            stop_reason_code: Some("action_failed_retryable".to_string()),
+        };
+        let prompt = build_planner_prompt(
+            "build calculator",
+            &[String::from("system: attempt 1 failed")],
+            Some(&repair_context),
+        );
+        assert!(prompt.contains("Latest execution diagnostics"));
+        assert!(prompt.contains("\"action_kind\": \"compile\""));
+        assert!(prompt.contains("targeted repair actions before unrelated changes"));
     }
 }

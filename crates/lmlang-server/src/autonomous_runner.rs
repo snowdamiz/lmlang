@@ -5,10 +5,11 @@ use std::time::Duration;
 
 use dashmap::DashMap;
 use lmlang_storage::ProgramId;
+use serde::Serialize;
 use tokio::task::JoinHandle;
 
 use crate::autonomy_executor::execute_plan;
-use crate::autonomy_planner::{plan_for_prompt, PlannerOutcome};
+use crate::autonomy_planner::{plan_for_prompt, PlannerOutcome, PlannerRepairContext};
 use crate::concurrency::AgentId;
 use crate::handlers::agent_control::maybe_execute_agent_chat_command;
 use crate::project_agent::ProjectAgentSession;
@@ -290,17 +291,28 @@ impl AutonomousRunner {
                         )),
                         transition: AttemptTransition::Continue,
                     },
-                    TransitionDecision::Terminal { code, status } => AttemptResolution {
-                        attempt: attempt_summary,
-                        version: rejected.version.clone(),
-                        note: None,
-                        transition: AttemptTransition::Terminal {
-                            status,
-                            stop_reason: StopReason::new(code, rejected.message),
-                            run_status_note: "Autonomous planner rejected current goal."
-                                .to_string(),
-                        },
-                    },
+                    TransitionDecision::Terminal { code, status } => {
+                        let stop_reason = StopReason::new(code, rejected.message.clone())
+                            .with_detail(serde_json::json!({
+                                "planner_code": rejected.code,
+                                "retryable": rejected.retryable,
+                                "version": rejected.version,
+                                "attempt": attempt,
+                                "max_attempts": max_attempts,
+                                "validation_errors": rejected.validation_errors,
+                            }));
+                        AttemptResolution {
+                            attempt: attempt_summary,
+                            version: rejected.version.clone(),
+                            note: None,
+                            transition: AttemptTransition::Terminal {
+                                status,
+                                stop_reason,
+                                run_status_note: "Autonomous planner rejected current goal."
+                                    .to_string(),
+                            },
+                        }
+                    }
                 }
             }
             PlannerOutcome::Accepted(accepted) => {
@@ -367,13 +379,12 @@ impl AutonomousRunner {
                         TransitionDecision::Continue => {
                             attempt_summary.stop_reason =
                                 Some(execution_outcome.stop_reason.clone());
+                            let note =
+                                targeted_repair_retry_note(&attempt_summary, attempt, max_attempts);
                             AttemptResolution {
                                 attempt: attempt_summary,
                                 version: Some(accepted.version),
-                                note: Some(format!(
-                                    "Attempt {}/{} action failure is retryable; replanning.",
-                                    attempt, max_attempts
-                                )),
+                                note: Some(note),
                                 transition: AttemptTransition::Continue,
                             }
                         }
@@ -392,7 +403,12 @@ impl AutonomousRunner {
                                     "max_attempts": max_attempts,
                                 }))
                             } else {
-                                execution_outcome.stop_reason.clone()
+                                with_attempt_stop_reason_detail(
+                                    execution_outcome.stop_reason.clone(),
+                                    &attempt_summary,
+                                    attempt,
+                                    max_attempts,
+                                )
                             };
                             attempt_summary.stop_reason = Some(terminal_reason.clone());
                             AttemptResolution {
@@ -509,13 +525,15 @@ impl AutonomousRunner {
                             match decision {
                                 TransitionDecision::Continue => {
                                     attempt_summary.stop_reason = Some(reason);
+                                    let note = targeted_repair_retry_note(
+                                        &attempt_summary,
+                                        attempt,
+                                        max_attempts,
+                                    );
                                     AttemptResolution {
                                         attempt: attempt_summary,
                                         version: Some(accepted.version),
-                                        note: Some(format!(
-                                            "Attempt {}/{} verify gate failed; replanning.",
-                                            attempt, max_attempts
-                                        )),
+                                        note: Some(note),
                                         transition: AttemptTransition::Continue,
                                     }
                                 }
@@ -526,7 +544,13 @@ impl AutonomousRunner {
                                             "retry budget exhausted after verify gate failure (attempt {}/{})",
                                             attempt, max_attempts
                                         ),
-                                    );
+                                    )
+                                    .with_detail(serde_json::json!({
+                                        "attempt": attempt,
+                                        "max_attempts": max_attempts,
+                                        "verify_error_count": verify.errors.len(),
+                                        "verify_warning_count": verify.warnings.len(),
+                                    }));
                                     attempt_summary.stop_reason = Some(stop_reason.clone());
                                     AttemptResolution {
                                         attempt: attempt_summary,
@@ -644,8 +668,11 @@ impl AutonomousRunner {
             .rev()
             .map(|m| format!("{}: {}", m.role, m.content))
             .collect::<Vec<_>>();
+        let repair_context = planner_repair_context(session);
 
-        StepDecision::Planner(plan_for_prompt(&agent.llm, goal, &transcript).await)
+        StepDecision::Planner(
+            plan_for_prompt(&agent.llm, goal, &transcript, repair_context.as_ref()).await,
+        )
     }
 }
 
@@ -761,6 +788,178 @@ fn stop_reason_from_api_error(
     StopReason::new(code, format!("{}: {}", context, err))
 }
 
+fn planner_repair_context(session: &ProjectAgentSession) -> Option<PlannerRepairContext> {
+    let latest = session.latest_execution_diagnostics()?;
+    let attempt = session.execution_attempts.iter().find(|attempt| {
+        attempt.attempt == latest.attempt && attempt.max_attempts == latest.max_attempts
+    })?;
+
+    let mut key_diagnostics = latest
+        .action
+        .diagnostics
+        .as_ref()
+        .map(|diagnostics| diagnostics.messages.clone())
+        .or_else(|| {
+            latest.action.error.as_ref().and_then(|error| {
+                error
+                    .diagnostics
+                    .as_ref()
+                    .map(|value| value.messages.clone())
+            })
+        })
+        .unwrap_or_default();
+    if key_diagnostics.is_empty() {
+        if let Some(error) = latest.action.error.as_ref() {
+            key_diagnostics.push(error.message.clone());
+        }
+    }
+    let retryable = latest
+        .action
+        .error
+        .as_ref()
+        .map(|error| error.retryable)
+        .or_else(|| {
+            latest
+                .action
+                .error
+                .as_ref()
+                .and_then(|error| error.diagnostics.as_ref().map(|value| value.retryable))
+        })
+        .or_else(|| {
+            latest
+                .action
+                .diagnostics
+                .as_ref()
+                .map(|diagnostics| diagnostics.retryable)
+        })
+        .unwrap_or(false);
+    let error_class = latest
+        .action
+        .diagnostics
+        .as_ref()
+        .map(|diagnostics| enum_to_string(&diagnostics.class))
+        .or_else(|| {
+            latest.action.error.as_ref().and_then(|error| {
+                error
+                    .diagnostics
+                    .as_ref()
+                    .map(|value| enum_to_string(&value.class))
+            })
+        })
+        .or_else(|| {
+            latest
+                .action
+                .error
+                .as_ref()
+                .map(|error| enum_to_string(&error.code))
+        })
+        .unwrap_or_else(|| "unknown_failure".to_string());
+
+    Some(PlannerRepairContext {
+        attempt: latest.attempt,
+        max_attempts: latest.max_attempts,
+        action_kind: latest.action.kind.clone(),
+        error_class,
+        retryable,
+        summary: latest.action.summary.clone(),
+        key_diagnostics,
+        stop_reason_code: attempt
+            .stop_reason
+            .as_ref()
+            .map(|reason| enum_to_string(&reason.code)),
+    })
+}
+
+fn targeted_repair_retry_note(
+    attempt_summary: &AutonomyExecutionAttemptSummary,
+    attempt: u32,
+    max_attempts: u32,
+) -> String {
+    if let Some(action) = latest_failed_action(attempt_summary) {
+        let class = action
+            .diagnostics
+            .as_ref()
+            .map(|diagnostics| enum_to_string(&diagnostics.class))
+            .or_else(|| {
+                action.error.as_ref().and_then(|error| {
+                    error
+                        .diagnostics
+                        .as_ref()
+                        .map(|value| enum_to_string(&value.class))
+                })
+            })
+            .or_else(|| {
+                action
+                    .error
+                    .as_ref()
+                    .map(|error| enum_to_string(&error.code))
+            })
+            .unwrap_or_else(|| "unknown_failure".to_string());
+        let retryable = action
+            .error
+            .as_ref()
+            .map(|error| error.retryable)
+            .or_else(|| {
+                action
+                    .diagnostics
+                    .as_ref()
+                    .map(|diagnostics| diagnostics.retryable)
+            })
+            .unwrap_or(false);
+
+        format!(
+            "Attempt {}/{} failed at `{}` (class={}, retryable={}); replanning with targeted diagnostics context.",
+            attempt, max_attempts, action.kind, class, retryable
+        )
+    } else {
+        format!(
+            "Attempt {}/{} failed and is retryable; replanning.",
+            attempt, max_attempts
+        )
+    }
+}
+
+fn with_attempt_stop_reason_detail(
+    reason: StopReason,
+    attempt_summary: &AutonomyExecutionAttemptSummary,
+    attempt: u32,
+    max_attempts: u32,
+) -> StopReason {
+    let previous_detail = reason.detail.clone();
+    let failed_action = latest_failed_action(attempt_summary).map(|action| {
+        serde_json::json!({
+            "kind": action.kind,
+            "summary": action.summary,
+            "error_code": action.error.as_ref().map(|error| enum_to_string(&error.code)),
+            "diagnostics_class": action
+                .diagnostics
+                .as_ref()
+                .map(|diagnostics| enum_to_string(&diagnostics.class)),
+        })
+    });
+    reason.with_detail(serde_json::json!({
+        "attempt": attempt,
+        "max_attempts": max_attempts,
+        "failed_action": failed_action,
+        "previous_detail": previous_detail,
+    }))
+}
+
+fn latest_failed_action(
+    attempt_summary: &AutonomyExecutionAttemptSummary,
+) -> Option<&AutonomyActionExecutionResult> {
+    attempt_summary.action_results.iter().rev().find(|action| {
+        action.status == crate::schema::autonomy_execution::AutonomyActionStatus::Failed
+    })
+}
+
+fn enum_to_string<T: Serialize>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|raw| raw.as_str().map(ToString::to_string))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 fn deterministic_hello_world_step(
     goal: &str,
     session: &ProjectAgentSession,
@@ -804,6 +1003,14 @@ fn deterministic_hello_world_step(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
+
+    use crate::concurrency::AgentId;
+    use crate::project_agent::ProjectAgentSession;
+    use crate::schema::autonomy_execution::{
+        AutonomyActionExecutionResult, AutonomyDiagnostics, AutonomyDiagnosticsClass,
+        AutonomyExecutionAttemptSummary, AutonomyExecutionError, AutonomyExecutionErrorCode,
+    };
 
     #[test]
     fn transition_success_terminates_with_completed_code() {
@@ -870,5 +1077,168 @@ mod tests {
                 status: AutonomyExecutionStatus::Failed,
             }
         );
+    }
+
+    #[test]
+    fn planner_repair_context_uses_latest_failed_attempt_diagnostics() {
+        let compile_error = AutonomyExecutionError::new(
+            AutonomyExecutionErrorCode::BadRequest,
+            "compile failed",
+            false,
+        )
+        .with_diagnostics(AutonomyDiagnostics::new(
+            AutonomyDiagnosticsClass::CompileFailure,
+            false,
+            "compile action failed",
+        ));
+        let verify_error = AutonomyExecutionError::new(
+            AutonomyExecutionErrorCode::ValidationFailed,
+            "verify failed",
+            true,
+        )
+        .with_diagnostics(
+            AutonomyDiagnostics::new(
+                AutonomyDiagnosticsClass::VerifyFailure,
+                true,
+                "verify gate reported 1 diagnostic(s)",
+            )
+            .with_messages(vec!["[TYPE_MISMATCH] mismatch".to_string()]),
+        );
+
+        let session = ProjectAgentSession {
+            program_id: 1,
+            agent_id: AgentId(Uuid::new_v4()),
+            name: Some("runner".to_string()),
+            run_status: "running".to_string(),
+            active_goal: Some("build calculator".to_string()),
+            assigned_at: "0".to_string(),
+            started_at: Some("0".to_string()),
+            stopped_at: None,
+            updated_at: "0".to_string(),
+            transcript: Vec::new(),
+            stop_reason: None,
+            execution: None,
+            execution_attempts: vec![
+                AutonomyExecutionAttemptSummary {
+                    attempt: 1,
+                    max_attempts: 3,
+                    planner_status: "accepted".to_string(),
+                    action_count: 1,
+                    succeeded_actions: 0,
+                    action_results: vec![AutonomyActionExecutionResult::failed(
+                        0,
+                        "compile",
+                        "compile action failed",
+                        compile_error,
+                    )],
+                    stop_reason: Some(StopReason::new(
+                        StopReasonCode::ActionFailedNonRetryable,
+                        "compile action failed",
+                    )),
+                },
+                AutonomyExecutionAttemptSummary {
+                    attempt: 2,
+                    max_attempts: 3,
+                    planner_status: "accepted".to_string(),
+                    action_count: 1,
+                    succeeded_actions: 0,
+                    action_results: vec![AutonomyActionExecutionResult::failed(
+                        1,
+                        "verify_gate",
+                        "post-execution verify failed with 1 diagnostic(s)",
+                        verify_error,
+                    )],
+                    stop_reason: Some(StopReason::new(
+                        StopReasonCode::VerifyFailed,
+                        "post-execution verify gate failed",
+                    )),
+                },
+            ],
+        };
+
+        let context = planner_repair_context(&session).expect("repair context available");
+        assert_eq!(context.attempt, 2);
+        assert_eq!(context.action_kind, "verify_gate");
+        assert_eq!(context.error_class, "verify_failure");
+        assert!(context.retryable);
+        assert_eq!(context.key_diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn targeted_repair_note_mentions_failure_class() {
+        let attempt = AutonomyExecutionAttemptSummary {
+            attempt: 2,
+            max_attempts: 3,
+            planner_status: "accepted".to_string(),
+            action_count: 1,
+            succeeded_actions: 0,
+            action_results: vec![AutonomyActionExecutionResult::failed(
+                0,
+                "compile",
+                "compile action failed",
+                AutonomyExecutionError::new(
+                    AutonomyExecutionErrorCode::BadRequest,
+                    "invalid opt level",
+                    false,
+                ),
+            )
+            .with_diagnostics(AutonomyDiagnostics::new(
+                AutonomyDiagnosticsClass::CompileFailure,
+                false,
+                "compile action failed",
+            ))],
+            stop_reason: Some(StopReason::new(
+                StopReasonCode::ActionFailedNonRetryable,
+                "compile action failed",
+            )),
+        };
+
+        let note = targeted_repair_retry_note(&attempt, 2, 3);
+        assert!(note.contains("`compile`"));
+        assert!(note.contains("class=compile_failure"));
+        assert!(note.contains("targeted diagnostics context"));
+    }
+
+    #[test]
+    fn attempt_stop_reason_detail_adds_attempt_context() {
+        let attempt = AutonomyExecutionAttemptSummary {
+            attempt: 1,
+            max_attempts: 3,
+            planner_status: "accepted".to_string(),
+            action_count: 1,
+            succeeded_actions: 0,
+            action_results: vec![AutonomyActionExecutionResult::failed(
+                0,
+                "verify_gate",
+                "verify failed",
+                AutonomyExecutionError::new(
+                    AutonomyExecutionErrorCode::ValidationFailed,
+                    "type mismatch",
+                    true,
+                ),
+            )
+            .with_diagnostics(AutonomyDiagnostics::new(
+                AutonomyDiagnosticsClass::VerifyFailure,
+                true,
+                "verify gate reported 1 diagnostic(s)",
+            ))],
+            stop_reason: None,
+        };
+        let reason = StopReason::new(StopReasonCode::RetryBudgetExhausted, "exhausted")
+            .with_detail(serde_json::json!({
+                "existing": "detail"
+            }));
+        let enriched = with_attempt_stop_reason_detail(reason, &attempt, 3, 3);
+        let detail = enriched.detail.expect("detail exists");
+        assert_eq!(
+            detail.get("attempt").and_then(|value| value.as_u64()),
+            Some(3)
+        );
+        assert_eq!(
+            detail.get("max_attempts").and_then(|value| value.as_u64()),
+            Some(3)
+        );
+        assert!(detail.get("failed_action").is_some());
+        assert!(detail.get("previous_detail").is_some());
     }
 }

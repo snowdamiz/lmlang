@@ -6,8 +6,8 @@ use tokio::sync::Mutex;
 
 use crate::concurrency::AgentId;
 use crate::schema::autonomy_execution::{
-    AutonomyExecutionAttemptSummary, AutonomyExecutionOutcome, AutonomyExecutionStatus, StopReason,
-    StopReasonCode,
+    AutonomyActionExecutionResult, AutonomyActionStatus, AutonomyExecutionAttemptSummary,
+    AutonomyExecutionOutcome, AutonomyExecutionStatus, StopReason, StopReasonCode,
 };
 
 /// Chat entry in a project-agent transcript.
@@ -34,6 +34,35 @@ pub struct ProjectAgentSession {
     pub stop_reason: Option<StopReason>,
     pub execution: Option<AutonomyExecutionOutcome>,
     pub execution_attempts: Vec<AutonomyExecutionAttemptSummary>,
+}
+
+/// Compact helper context for targeted planner repair retries.
+#[derive(Debug, Clone)]
+pub struct LatestExecutionDiagnosticsContext {
+    pub attempt: u32,
+    pub max_attempts: u32,
+    pub action: AutonomyActionExecutionResult,
+}
+
+impl ProjectAgentSession {
+    pub fn latest_execution_diagnostics(&self) -> Option<LatestExecutionDiagnosticsContext> {
+        self.execution_attempts.iter().rev().find_map(|attempt| {
+            attempt
+                .action_results
+                .iter()
+                .rev()
+                .find(|action| {
+                    action.status == AutonomyActionStatus::Failed
+                        && (action.diagnostics.is_some() || action.error.is_some())
+                })
+                .cloned()
+                .map(|action| LatestExecutionDiagnosticsContext {
+                    attempt: attempt.attempt,
+                    max_attempts: attempt.max_attempts,
+                    action,
+                })
+        })
+    }
 }
 
 type ProgramAgentKey = (i64, AgentId);
@@ -534,8 +563,13 @@ mod tests {
             .diagnostics
             .as_ref()
             .expect("verify diagnostics persisted");
+        let latest = session
+            .latest_execution_diagnostics()
+            .expect("latest diagnostics context available");
         assert_eq!(persisted.class, AutonomyDiagnosticsClass::VerifyFailure);
         assert!(persisted.retryable);
+        assert_eq!(latest.attempt, 1);
+        assert_eq!(latest.action.kind, "verify_gate");
     }
 
     #[tokio::test]
@@ -602,7 +636,12 @@ mod tests {
             .diagnostics
             .as_ref()
             .expect("compile diagnostics persisted");
+        let latest = session
+            .latest_execution_diagnostics()
+            .expect("latest diagnostics context available");
         assert_eq!(persisted.class, AutonomyDiagnosticsClass::CompileFailure);
         assert!(!persisted.retryable);
+        assert_eq!(latest.attempt, 1);
+        assert_eq!(latest.action.kind, "compile");
     }
 }
