@@ -18,7 +18,9 @@ use crate::schema::dashboard::{
 };
 use crate::state::AppState;
 
-use super::agent_control::{execute_program_agent_chat, to_latest_execution_view};
+use super::agent_control::{
+    execute_program_agent_chat, to_execution_attempt_views, to_latest_execution_view,
+};
 
 /// Serves the top-level unified dashboard shell.
 ///
@@ -108,6 +110,7 @@ pub async fn ai_chat(
     let mut transcript = None;
     let mut planner = None;
     let mut execution: Option<ExecutionSummaryView> = None;
+    let mut execution_attempts = Vec::new();
     let mut diagnostics: Option<ExecutionDiagnosticsView> = None;
 
     let reply = if lower.contains("create project") || lower.contains("new project") {
@@ -179,6 +182,7 @@ pub async fn ai_chat(
             .await
             .map_err(ApiError::BadRequest)?;
         execution = to_latest_execution_view(&session);
+        execution_attempts = to_execution_attempt_views(&session);
         diagnostics = execution
             .as_ref()
             .and_then(|value| value.diagnostics.clone());
@@ -204,6 +208,7 @@ pub async fn ai_chat(
             .await
             .map_err(ApiError::BadRequest)?;
         execution = to_latest_execution_view(&session);
+        execution_attempts = to_execution_attempt_views(&session);
         diagnostics = execution
             .as_ref()
             .and_then(|value| value.diagnostics.clone());
@@ -241,6 +246,7 @@ pub async fn ai_chat(
         transcript = Some(to_transcript_view(&session.transcript));
         planner = planner_outcome;
         execution = to_latest_execution_view(&session);
+        execution_attempts = to_execution_attempt_views(&session);
         diagnostics = execution
             .as_ref()
             .and_then(|value| value.diagnostics.clone());
@@ -261,6 +267,7 @@ pub async fn ai_chat(
         transcript,
         planner,
         execution,
+        execution_attempts,
         diagnostics,
     }))
 }

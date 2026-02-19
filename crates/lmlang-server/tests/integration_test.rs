@@ -3138,3 +3138,75 @@ async fn phase16_non_retryable_planner_rejection_includes_terminal_detail() {
 
     server.abort();
 }
+
+// ===========================================================================
+// PHASE 17: Acceptance benchmarks and attempt visibility
+// ===========================================================================
+
+#[tokio::test]
+async fn phase17_attempt_timeline_contract_is_exposed_in_agent_and_dashboard_responses() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "build calculator timeline probe",
+        "actions": [
+            {
+                "type": "inspect",
+                "request": { "query": "overview" }
+            }
+        ]
+    }"#;
+    let (base_url, _requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id =
+        register_mock_planner_agent(&app, &base_url, "phase17-timeline-contract-agent").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, start) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/start", pid, agent_id),
+        json!({ "goal": "Create a simple calculator" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
+
+    let detail = wait_for_run_status(&app, pid, &agent_id, "idle").await;
+    let attempts = detail["session"]["execution_attempts"]
+        .as_array()
+        .expect("agent detail should include execution_attempts");
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0]["attempt"], json!(1));
+    assert_eq!(attempts[0]["max_attempts"], json!(3));
+    assert_eq!(attempts[0]["stop_reason"]["code"], json!("completed"));
+    assert!(attempts[0]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|row| row["kind"] == json!("inspect")));
+
+    let (status, chat) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "show latest autonomous timeline",
+            "selected_program_id": pid,
+            "selected_agent_id": agent_id,
+            "selected_project_agent_id": agent_id
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "dashboard chat failed: {:?}", chat);
+    assert_eq!(chat["execution"]["attempt"], json!(1));
+    let dashboard_attempts = chat["execution_attempts"]
+        .as_array()
+        .expect("dashboard chat should include execution_attempts");
+    assert_eq!(dashboard_attempts.len(), 1);
+    assert_eq!(dashboard_attempts[0]["attempt"], json!(1));
+    assert_eq!(
+        dashboard_attempts[0]["stop_reason"]["code"],
+        json!("completed")
+    );
+
+    server.abort();
+}

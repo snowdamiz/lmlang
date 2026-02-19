@@ -37,6 +37,9 @@ pub struct DashboardAiChatResponse {
     /// Latest autonomous execution metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution: Option<ExecutionSummaryView>,
+    /// Ordered bounded autonomous attempt history for timeline rendering.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub execution_attempts: Vec<ExecutionSummaryView>,
     /// Compact diagnostics summary for the latest autonomous attempt failure.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diagnostics: Option<ExecutionDiagnosticsView>,
