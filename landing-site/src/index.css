@@ -1,0 +1,240 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 41 44% 94%;
+    --foreground: 186 37% 13%;
+    --muted: 38 31% 86%;
+    --muted-foreground: 189 11% 36%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 186 37% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 186 37% 13%;
+    --border: 36 24% 74%;
+    --input: 36 24% 74%;
+    --primary: 172 73% 27%;
+    --primary-foreground: 42 45% 95%;
+    --secondary: 27 77% 80%;
+    --secondary-foreground: 172 73% 18%;
+    --ring: 172 73% 27%;
+    --radius: 1rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-background text-foreground antialiased;
+    font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: "Sora", "IBM Plex Sans", sans-serif;
+    letter-spacing: -0.024em;
+  }
+}
+
+@layer components {
+  .grid-overlay {
+    background-image:
+      linear-gradient(to right, hsl(var(--primary) / 0.1) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--primary) / 0.1) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(circle at center, black 36%, transparent 88%);
+    opacity: 0.44;
+  }
+
+  .orb {
+    @apply absolute rounded-full blur-3xl;
+    animation: drift 20s ease-in-out infinite;
+  }
+
+  .orb-one {
+    height: 24rem;
+    width: 24rem;
+    left: -10rem;
+    top: -8rem;
+    background: radial-gradient(circle, hsl(20 86% 53% / 0.3) 0%, transparent 72%);
+  }
+
+  .orb-two {
+    height: 18rem;
+    width: 18rem;
+    right: -7rem;
+    top: 32rem;
+    background: radial-gradient(circle, hsl(166 76% 34% / 0.26) 0%, transparent 74%);
+    animation-duration: 24s;
+    animation-delay: -4s;
+  }
+
+  .brand-logo {
+    height: 2.15rem;
+    width: auto;
+    max-width: min(45vw, 170px);
+  }
+
+  .section-kicker {
+    @apply inline-flex items-center rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary;
+  }
+
+  .mesh-surface {
+    background:
+      radial-gradient(circle at 12% 14%, hsl(170 72% 34% / 0.18), transparent 30%),
+      radial-gradient(circle at 82% 10%, hsl(21 90% 56% / 0.2), transparent 32%),
+      linear-gradient(165deg, hsl(45 44% 98% / 0.95), hsl(36 38% 91% / 0.74));
+  }
+
+  .layer-block {
+    @apply rounded-2xl border px-4 py-3;
+  }
+
+  .semantic-layer {
+    @apply border-orange-500/35 bg-orange-100/60;
+  }
+
+  .compute-layer {
+    @apply border-emerald-500/35 bg-emerald-100/65;
+  }
+
+  .layer-label {
+    @apply mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground;
+  }
+
+  .node-row {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .node-chip {
+    @apply inline-flex items-center rounded-full border border-foreground/15 bg-background/80 px-3 py-1 text-xs font-semibold;
+  }
+
+  .pulse-rail {
+    @apply relative h-[2px] w-full rounded-full bg-primary/25;
+    overflow: hidden;
+  }
+
+  .pulse-rail::after {
+    content: "";
+    @apply absolute left-0 top-0 h-full w-1/4 rounded-full bg-primary;
+    animation: scan 2.8s ease-in-out infinite;
+  }
+
+  .architecture-head {
+    @apply max-w-3xl;
+  }
+
+  .architecture-timeline {
+    @apply mt-10 border-y border-border/65;
+  }
+
+  .architecture-timeline-item {
+    @apply grid gap-x-4 gap-y-3 border-b border-border/65 py-7 sm:grid-cols-[110px_1fr] sm:gap-x-6 sm:py-9;
+  }
+
+  .architecture-timeline-item:last-child {
+    border-bottom: none;
+  }
+
+  .architecture-timeline-marker {
+    @apply flex items-center gap-2 sm:flex-col sm:items-start sm:gap-2;
+  }
+
+  .architecture-node-index {
+    @apply inline-flex min-w-10 items-center justify-center rounded-full border border-primary/35 bg-primary/10 px-3 py-1 font-mono text-[11px] font-semibold text-primary;
+  }
+
+  .architecture-node-icon {
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-transparent text-primary;
+  }
+
+  .architecture-node-body {
+    @apply sm:pt-1;
+  }
+
+  .workflow-shell {
+    @apply rounded-[2rem] border border-border/70 bg-card/35 px-6 py-7 sm:px-8 sm:py-9 lg:px-10 lg:py-10;
+  }
+
+  .workflow-head {
+    @apply mb-8;
+  }
+
+  .workflow-list {
+    @apply grid gap-7 md:grid-cols-2 md:gap-x-10 md:gap-y-9;
+  }
+
+  .workflow-item {
+    @apply relative border-l border-primary/25 pl-5;
+  }
+
+  .workflow-item::before {
+    content: "";
+    @apply absolute -left-[4px] top-1 h-2 w-2 rounded-full bg-primary;
+  }
+
+  .workflow-item-index {
+    @apply inline-flex min-w-10 items-center justify-center rounded-full border border-primary/35 bg-primary/10 px-3 py-1 font-mono text-[11px] font-semibold text-primary;
+  }
+
+  .console-head {
+    @apply mb-8 max-w-3xl border-t border-border/65 pt-8 sm:mb-10;
+  }
+
+  .telemetry-row {
+    @apply flex items-start gap-3 rounded-2xl border border-border bg-background/85 p-4;
+  }
+
+  .cta-panel {
+    background:
+      linear-gradient(130deg, hsl(171 76% 24%) 0%, hsl(173 71% 29%) 42%, hsl(21 90% 53%) 120%);
+  }
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, 2rem, 0) scale(1.08);
+  }
+}
+
+@keyframes scan {
+  0% {
+    transform: translateX(-110%);
+  }
+  55% {
+    transform: translateX(430%);
+  }
+  100% {
+    transform: translateX(430%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

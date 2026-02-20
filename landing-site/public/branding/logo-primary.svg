@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 96" fill="none">
+  <title>lmlang primary logo</title>
+  <desc>lmlang lockup with bracket-node mark and custom monoline wordmark.</desc>
+  <rect x="4" y="4" width="88" height="88" rx="22" fill="#0F3B37" />
+  <path
+    d="M38 25L22 48L38 71"
+    stroke="#F3F7F5"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M58 25L74 48L58 71"
+    stroke="#F3F7F5"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="48" cy="48" r="6.5" fill="#F3F7F5" />
+
+  <path
+    d="M116 26V70H136M150 70V26L164 48L178 26V70M192 26V70H212M224 70L238 26L252 70M230 54H246M266 70V26L292 70V26M306 40H326V70H306V26H334"
+    stroke="#0F3B37"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
