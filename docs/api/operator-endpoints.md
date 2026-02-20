@@ -37,7 +37,7 @@ Request:
 
 ```json
 {
-  "message": "create project hello-world",
+  "message": "create project calculator-demo",
   "selected_program_id": null,
   "selected_agent_id": null,
   "selected_project_agent_id": null
@@ -66,7 +66,7 @@ Response:
 }
 ```
 
-`planner` is omitted for explicit command-style prompts and included for non-command planner-routed prompts.
+`planner` reports planner-routing status (`accepted` or `failed`) for build prompts handled through the planner contract.
 
 Supported orchestration prompts include:
 - `create project <name>`
@@ -74,9 +74,7 @@ Supported orchestration prompts include:
 - `assign agent`
 - `start build <goal>`
 - `stop build`
-- `create hello world program`
-- `compile program`
-- `run program`
+- `build <goal details>`
 
 ## Planner contract (`AUT-02` / `AUT-03`)
 
@@ -255,20 +253,15 @@ Request:
 
 ```json
 {
-  "message": "create hello world program"
+  "message": "build parser workflow with validation"
 }
 ```
 
-Command-style prompts:
-- `create hello world program`: creates/loads `hello_world`, inserts missing `Return`, verifies full graph.
-- `compile program`: compiles with `entry_function = "hello_world"`.
-- `run program`: compiles (if needed) and executes produced binary.
-
-Non-command prompts:
+Planner-routed prompts:
 - Route through planner contract path (`AUT-01`) and return structured planner metadata in response payloads.
 - Planner success includes normalized action summaries (`planner.status = accepted`, `planner.actions[]`).
 - Planner failure includes explicit reason code/message (`planner.status = failed`, `planner.failure.code`, `planner.failure.message`).
-- No plain external-chat fallback is used for non-command execution intent.
+- No plain external-chat fallback is used for build execution intent.
 
 Success response shape (non-command prompt):
 
@@ -485,8 +478,8 @@ Terminal `stop_reason.code` values:
 
 Autonomous run behavior:
 - Starting a build run (`POST /programs/{id}/agents/{agent_id}/start`) spawns a background loop.
-- The loop can execute known build commands (`create hello world program`, `compile program`, `run program`) without waiting for a chat turn.
-- For non-hello-world goals, the loop executes validated planner actions via the generic executor and records typed per-attempt evidence.
+- The loop requests planner envelopes for the active goal and executes validated actions in sequence.
+- Execution records typed per-attempt evidence for planner, action, verify, and stop-reason outcomes.
 
 ## Observe integration
 

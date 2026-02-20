@@ -211,6 +211,7 @@ pub enum ComputeOp {
     // -- I/O (console) --
     /// Output a value to stdout.
     /// Lowers to: `call @printf(...)` or runtime print function.
+    #[serde(alias = "Println", alias = "PrintLn", alias = "println")]
     Print,
     /// Read a line from stdin.
     /// Lowers to: `call @readline(...)` or runtime readline function.
@@ -711,5 +712,11 @@ mod tests {
         assert!(ComputeNodeOp::Core(ComputeOp::Print).is_io());
         assert!(!ComputeNodeOp::Core(ComputeOp::Alloc).is_io());
         assert!(!ComputeNodeOp::Structured(StructuredOp::ArrayGet).is_io());
+    }
+
+    #[test]
+    fn serde_accepts_println_alias() {
+        let op: ComputeOp = serde_json::from_str(r#""PrintLn""#).unwrap();
+        assert!(matches!(op, ComputeOp::Print));
     }
 }

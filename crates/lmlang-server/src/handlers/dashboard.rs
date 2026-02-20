@@ -86,6 +86,36 @@ pub async fn ui_styles_css(Path(_program_id): Path<i64>) -> impl IntoResponse {
     )
 }
 
+/// Serves the shared branding square mark SVG.
+///
+/// `GET /branding/logo-mark.svg`
+pub async fn ui_branding_logo_mark_svg() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+        include_str!("../../static/branding/logo-mark.svg"),
+    )
+}
+
+/// Serves the shared branding primary lockup SVG.
+///
+/// `GET /branding/logo-primary.svg`
+pub async fn ui_branding_logo_primary_svg() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+        include_str!("../../static/branding/logo-primary.svg"),
+    )
+}
+
+/// Serves the shared branding favicon SVG.
+///
+/// `GET /branding/favicon.svg`
+pub async fn ui_branding_favicon_svg() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+        include_str!("../../static/branding/favicon.svg"),
+    )
+}
+
 /// Chat-first orchestration endpoint for the unified dashboard.
 ///
 /// `POST /dashboard/ai/chat`
@@ -223,30 +253,53 @@ pub async fn ai_chat(
         let program_id = ensure_program_selected(&state, &mut ctx, &mut actions).await?;
         let agent_id = ensure_agent_selected(&state, &mut ctx, &mut actions).await?;
         ensure_assignment(&state, &mut ctx, &mut actions, program_id, agent_id).await?;
+        let auto_build_intent = should_auto_build_from_chat_prompt(&lower);
+        let chat_goal = message.clone();
 
-        if lower.contains("create hello world")
-            || lower.contains("compile")
-            || lower.contains("run")
-            || lower.contains("execute")
-        {
-            ensure_running(
+        let (session, initial_reply, planner_outcome) =
+            execute_program_agent_chat(&state, program_id, agent_id, message).await?;
+        let mut reply = initial_reply;
+        planner = planner_outcome;
+        let planner_accepted = planner
+            .as_ref()
+            .map(|outcome| outcome.status == "accepted")
+            .unwrap_or(false);
+        let planner_retryable_failure = planner
+            .as_ref()
+            .and_then(|outcome| {
+                outcome
+                    .failure
+                    .as_ref()
+                    .map(|failure| outcome.status == "failed" && failure.retryable)
+            })
+            .unwrap_or(false);
+
+        if auto_build_intent && (planner_accepted || planner_retryable_failure) {
+            apply_chat_goal_to_autonomous_runner(
                 &state,
                 &mut ctx,
                 &mut actions,
                 program_id,
                 agent_id,
-                "AI orchestration run",
+                &chat_goal,
             )
             .await?;
+            if planner_retryable_failure {
+                reply.push_str(
+                    "\n\nAutonomous run started from chat; planner retries are running in the background.",
+                );
+            }
         }
 
-        let (session, reply, planner_outcome) =
-            execute_program_agent_chat(&state, program_id, agent_id, message).await?;
-        ctx.selected_project_agent_id = Some(session.agent_id);
-        transcript = Some(to_transcript_view(&session.transcript));
-        planner = planner_outcome;
-        execution = to_latest_execution_view(&session);
-        execution_attempts = to_execution_attempt_views(&session);
+        let latest_session = state
+            .project_agent_manager
+            .get(program_id, agent_id)
+            .await
+            .unwrap_or(session);
+        ctx.selected_project_agent_id = Some(latest_session.agent_id);
+        transcript = Some(to_transcript_view(&latest_session.transcript));
+        execution = to_latest_execution_view(&latest_session);
+        execution_attempts = to_execution_attempt_views(&latest_session);
         diagnostics = execution
             .as_ref()
             .and_then(|value| value.diagnostics.clone());
@@ -579,39 +632,73 @@ async fn ensure_assignment(
     Ok(())
 }
 
-async fn ensure_running(
+async fn apply_chat_goal_to_autonomous_runner(
     state: &AppState,
     ctx: &mut DashboardContext,
     actions: &mut Vec<String>,
     program_id: i64,
     agent_id: AgentId,
-    default_goal: &str,
+    goal: &str,
 ) -> Result<(), ApiError> {
-    if let Some(session) = state.project_agent_manager.get(program_id, agent_id).await {
-        if session.run_status == "running" {
-            return Ok(());
-        }
-    }
-
-    {
-        let mut service = state.service.lock().await;
-        service.load_program(ProgramId(program_id))?;
-    }
-
-    state
+    let session = state
         .project_agent_manager
-        .start(program_id, agent_id, default_goal.to_string())
+        .get(program_id, agent_id)
         .await
-        .map_err(ApiError::BadRequest)?;
+        .ok_or_else(|| ApiError::BadRequest("agent is not assigned to this project".to_string()))?;
+
+    if session.run_status == "running" {
+        state
+            .project_agent_manager
+            .set_active_goal(program_id, agent_id, goal.to_string())
+            .await
+            .map_err(ApiError::BadRequest)?;
+        actions.push(format!(
+            "Updated active build goal from chat for agent {}.",
+            agent_id.0
+        ));
+    } else {
+        {
+            let mut service = state.service.lock().await;
+            service.load_program(ProgramId(program_id))?;
+        }
+        state
+            .project_agent_manager
+            .start(program_id, agent_id, goal.to_string())
+            .await
+            .map_err(ApiError::BadRequest)?;
+        actions.push(format!(
+            "Started autonomous build run from chat for agent {} on project {}.",
+            agent_id.0, program_id
+        ));
+    }
+
     state
         .autonomous_runner
         .start(state.clone(), program_id, agent_id);
     ctx.selected_project_agent_id = Some(agent_id);
-    actions.push(format!(
-        "Auto-started build run for agent {} on project {}.",
-        agent_id.0, program_id
-    ));
     Ok(())
+}
+
+fn should_auto_build_from_chat_prompt(lower: &str) -> bool {
+    const BUILD_INTENT_TOKENS: &[&str] = &[
+        "build",
+        "create",
+        "make",
+        "implement",
+        "add",
+        "change",
+        "modify",
+        "update",
+        "fix",
+        "debug",
+        "refactor",
+        "compile",
+        "run",
+        "execute",
+    ];
+    BUILD_INTENT_TOKENS
+        .iter()
+        .any(|token| lower.contains(token))
 }
 
 fn parse_project_name(message: &str, lower: &str) -> Option<String> {

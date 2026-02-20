@@ -16,8 +16,10 @@ use super::diagnostics::{DiagnosticError, DiagnosticWarning, PropagationConflict
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub enum VerifyScope {
     /// Check affected subgraph and immediate dependents only.
+    #[serde(alias = "local")]
     Local,
     /// Re-verify the entire program.
+    #[serde(alias = "full")]
     Full,
 }
 

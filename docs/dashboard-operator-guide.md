@@ -65,10 +65,10 @@ Provider config uses:
 Primary control loop:
 - Send orchestration prompts (project, agent, assignment, start/stop) through chat.
 - Send build prompts through chat:
-  - `create hello world program`
-  - `compile program`
-  - `run program`
-- For non-command prompts, configured provider/model/API key is used.
+  - `build calculator workflow`
+  - `add parser entrypoint and verify`
+  - `compile and run main entry function`
+- Build prompts are planner-routed; configured provider/model/API key is required.
 
 These actions use:
 - `POST /programs/{id}/agents/{agent_id}/start`
@@ -77,14 +77,14 @@ These actions use:
 
 ## End-to-end workflow
 
-1. In chat, send: `create project hello-world`.
+1. In chat, send: `create project calculator-demo`.
 2. In chat, send: `register agent builder provider openrouter model openai/gpt-4o-mini api key <your-key>`.
 3. In chat, send: `assign agent`.
-4. In chat, send: `start build hello world bootstrap`.
-5. In chat, send: `create hello world program`.
-6. In chat, send: `compile program`.
-7. In chat, send: `run program`.
-8. Open Observe and run query: `hello world`.
+4. In chat, send: `start build calculator workflow`.
+5. In chat, send: `build calculator workflow with verify and compile`.
+6. In chat, send: `compile active entry function`.
+7. In chat, send: `run active entry function`.
+8. Open Observe and run query: `calculator`.
 9. In chat, send: `stop build` when done.
 
 ## Status badges
@@ -145,22 +145,22 @@ Likely cause:
 Action:
 - select a project first; link updates automatically.
 
-## Hello world scaffold fails
+## Planner build flow fails
 
 Likely causes:
 - project not selected,
 - project not loaded,
-- temporary verification/query failure.
+- planner output rejected by contract or temporary verification/query failure.
 
 Actions:
 - reselect project,
-- resend chat command `create hello world program`,
+- resend a clear build prompt with goal and constraints,
 - refresh and open Observe to confirm graph state.
 
 ## API note
 
 - Build runs now include an autonomous background loop after `start build`.
-- The loop progresses command execution without requiring an additional chat turn.
+- The loop progresses planner actions without requiring an additional chat turn.
 - If provider output asks a blocking clarification question, the loop logs it and applies a default assumption so execution continues.
 - Agent API keys are persisted in SQLite and survive server restarts.
 

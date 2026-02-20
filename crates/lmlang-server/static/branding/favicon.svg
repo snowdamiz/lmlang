@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>lmlang favicon</title>
+  <desc>Favicon with bracket-inspired mark and central node.</desc>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#0F3B37" />
+  <path
+    d="M26 17L15 32L26 47"
+    stroke="#F3F7F5"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M38 17L49 32L38 47"
+    stroke="#F3F7F5"
+    stroke-width="5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="32" cy="32" r="4" fill="#F3F7F5" />
+</svg>

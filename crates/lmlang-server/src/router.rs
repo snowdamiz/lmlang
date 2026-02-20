@@ -44,6 +44,18 @@ pub fn build_router(state: AppState) -> Router {
             "/dashboard/styles.css",
             get(handlers::dashboard::ui_root_styles_css),
         )
+        .route(
+            "/branding/logo-mark.svg",
+            get(handlers::dashboard::ui_branding_logo_mark_svg),
+        )
+        .route(
+            "/branding/logo-primary.svg",
+            get(handlers::dashboard::ui_branding_logo_primary_svg),
+        )
+        .route(
+            "/branding/favicon.svg",
+            get(handlers::dashboard::ui_branding_favicon_svg),
+        )
         // Program management
         .route(
             "/programs",

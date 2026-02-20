@@ -11,7 +11,6 @@ use tokio::task::JoinHandle;
 use crate::autonomy_executor::execute_plan;
 use crate::autonomy_planner::{plan_for_prompt, PlannerOutcome, PlannerRepairContext};
 use crate::concurrency::AgentId;
-use crate::handlers::agent_control::maybe_execute_agent_chat_command;
 use crate::project_agent::ProjectAgentSession;
 use crate::schema::autonomy_execution::{
     AutonomyActionExecutionResult, AutonomyDiagnostics, AutonomyDiagnosticsClass,
@@ -60,7 +59,6 @@ impl AutonomousRunner {
         let max_attempts = configured_max_attempts();
         let mut attempts = Vec::new();
         let mut last_version: Option<String> = None;
-        let mut command_failures = 0u32;
 
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -78,86 +76,6 @@ impl AutonomousRunner {
                 .await;
 
             match decision {
-                StepDecision::Command(command) => {
-                    match maybe_execute_agent_chat_command(&state, program_id, &command).await {
-                        Ok(Some(summary)) => {
-                            command_failures = 0;
-                            let _ = state
-                                .project_agent_manager
-                                .append_message(
-                                    program_id,
-                                    agent_id,
-                                    "assistant",
-                                    format!("Autonomous step `{}` complete. {}", command, summary),
-                                )
-                                .await;
-                        }
-                        Ok(None) => {
-                            let _ = state
-                                .project_agent_manager
-                                .append_message(
-                                    program_id,
-                                    agent_id,
-                                    "system",
-                                    format!(
-                                        "Autonomous step skipped: command `{}` did not map to an action.",
-                                        command
-                                    ),
-                                )
-                                .await;
-                        }
-                        Err(err) => {
-                            command_failures = command_failures.saturating_add(1);
-                            let _ = state
-                                .project_agent_manager
-                                .append_message(
-                                    program_id,
-                                    agent_id,
-                                    "system",
-                                    format!("Autonomous step `{}` failed: {}", command, err),
-                                )
-                                .await;
-
-                            if command_failures >= max_attempts {
-                                let stop_reason = StopReason::new(
-                                    StopReasonCode::RetryBudgetExhausted,
-                                    format!(
-                                        "deterministic command path exhausted {} retries",
-                                        max_attempts
-                                    ),
-                                )
-                                .with_detail(serde_json::json!({
-                                    "command": command,
-                                    "max_attempts": max_attempts,
-                                }));
-                                attempts.push(AutonomyExecutionAttemptSummary {
-                                    attempt: command_failures,
-                                    max_attempts,
-                                    planner_status: "deterministic_command".to_string(),
-                                    action_count: 0,
-                                    succeeded_actions: 0,
-                                    action_results: Vec::new(),
-                                    stop_reason: Some(stop_reason.clone()),
-                                });
-
-                                self.finish_with_outcome(
-                                    &state,
-                                    program_id,
-                                    agent_id,
-                                    &goal,
-                                    "deterministic-command".to_string(),
-                                    attempts.clone(),
-                                    AutonomyExecutionStatus::Failed,
-                                    stop_reason,
-                                    "Autonomous deterministic command path exhausted retries."
-                                        .to_string(),
-                                )
-                                .await;
-                                break;
-                            }
-                        }
-                    }
-                }
                 StepDecision::Planner(outcome) => {
                     let attempt_number = attempts.len() as u32 + 1;
                     let resolution = self
@@ -212,26 +130,28 @@ impl AutonomousRunner {
                         }
                     }
                 }
-                StepDecision::Done => {
+                StepDecision::Noop => {
                     let stop_reason = StopReason::new(
-                        StopReasonCode::Completed,
-                        "Autonomous run reached deterministic done state.",
+                        StopReasonCode::RunnerInternalError,
+                        "Autonomous loop could not resolve an execution step.",
                     );
                     self.finish_with_outcome(
                         &state,
                         program_id,
                         agent_id,
                         &goal,
-                        "deterministic-command".to_string(),
+                        last_version
+                            .clone()
+                            .unwrap_or_else(|| "2026-02-19".to_string()),
                         attempts.clone(),
-                        AutonomyExecutionStatus::Succeeded,
+                        AutonomyExecutionStatus::Failed,
                         stop_reason,
-                        "Autonomous run reached done state.".to_string(),
+                        "Autonomous run stopped because no executable step was available."
+                            .to_string(),
                     )
                     .await;
                     break;
                 }
-                StepDecision::Noop => {}
             }
         }
     }
@@ -649,16 +569,9 @@ impl AutonomousRunner {
         session: &ProjectAgentSession,
         goal: &str,
     ) -> StepDecision {
-        if let Some(command) = deterministic_hello_world_step(goal, session) {
-            return command;
-        }
-
         let Some(agent) = state.agent_registry.get(&agent_id) else {
             return StepDecision::Noop;
         };
-        if !agent.llm.is_configured() {
-            return StepDecision::Noop;
-        }
 
         let transcript = session
             .transcript
@@ -684,9 +597,7 @@ impl Default for AutonomousRunner {
 
 #[allow(clippy::large_enum_variant)]
 enum StepDecision {
-    Command(String),
     Planner(PlannerOutcome),
-    Done,
     Noop,
 }
 
@@ -958,46 +869,6 @@ fn enum_to_string<T: Serialize>(value: &T) -> String {
         .ok()
         .and_then(|raw| raw.as_str().map(ToString::to_string))
         .unwrap_or_else(|| "unknown".to_string())
-}
-
-fn deterministic_hello_world_step(
-    goal: &str,
-    session: &ProjectAgentSession,
-) -> Option<StepDecision> {
-    let goal_lower = goal.to_ascii_lowercase();
-    if !goal_lower.contains("hello world") {
-        return None;
-    }
-
-    let transcript_text = session
-        .transcript
-        .iter()
-        .map(|m| m.content.to_ascii_lowercase())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let has_scaffold = transcript_text.contains("hello world scaffold ready");
-    let has_compile = transcript_text.contains("compiled hello_world");
-    let has_run = transcript_text.contains("program executed");
-
-    let wants_run = goal_lower.contains("run")
-        || goal_lower.contains("execute")
-        || goal_lower.contains("bootstrap");
-    let wants_compile = wants_run || goal_lower.contains("compile");
-
-    if !has_scaffold {
-        return Some(StepDecision::Command(
-            "create hello world program".to_string(),
-        ));
-    }
-    if wants_compile && !has_compile {
-        return Some(StepDecision::Command("compile program".to_string()));
-    }
-    if wants_run && !has_run {
-        return Some(StepDecision::Command("run program".to_string()));
-    }
-
-    Some(StepDecision::Done)
 }
 
 #[cfg(test)]

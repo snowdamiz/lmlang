@@ -1,13 +1,7 @@
 //! Project-scoped agent assignment, start/stop, and chat handlers.
 
-use std::process::Command;
-
 use axum::extract::{Path, State};
 use axum::Json;
-use lmlang_core::id::{FunctionId, ModuleId};
-use lmlang_core::ops::{ComputeNodeOp, ComputeOp};
-use lmlang_core::type_id::TypeId;
-use lmlang_core::types::Visibility;
 use uuid::Uuid;
 
 use crate::autonomy_planner::{plan_for_prompt, PlannerOutcome};
@@ -22,9 +16,6 @@ use crate::schema::agent_control::{
     ProgramAgentSessionView, StartProgramAgentRequest, StopProgramAgentRequest,
 };
 use crate::schema::autonomy_execution::{bounded_attempt_history, AutonomyExecutionAttemptSummary};
-use crate::schema::compile::CompileRequest;
-use crate::schema::mutations::{CreatedEntity, Mutation, ProposeEditRequest};
-use crate::schema::verify::VerifyScope;
 use crate::state::AppState;
 
 const MAX_EXECUTION_TIMELINE_ATTEMPTS: usize = 8;
@@ -192,26 +183,13 @@ pub(crate) async fn execute_program_agent_chat(
         ));
     }
 
-    let action_note = maybe_execute_agent_chat_command(state, program_id, message.as_str()).await?;
-    let mut planner = None;
-    let assistant_override = if action_note.is_none() {
-        let (reply, planner_outcome) =
-            plan_non_command_prompt(state, program_id, agent_id, message.as_str()).await?;
-        planner = Some(planner_outcome);
-        Some(reply)
-    } else {
-        None
-    };
+    let (reply, planner_outcome) =
+        plan_non_command_prompt(state, program_id, agent_id, message.as_str()).await?;
+    let planner = Some(planner_outcome);
 
     let (session, reply) = state
         .project_agent_manager
-        .chat(
-            program_id,
-            agent_id,
-            message,
-            action_note,
-            assistant_override,
-        )
+        .chat(program_id, agent_id, message, None, Some(reply))
         .await
         .map_err(ApiError::BadRequest)?;
 
@@ -288,221 +266,6 @@ fn to_transcript_view(messages: &[ProjectAgentMessage]) -> Vec<AgentChatMessageV
             timestamp: msg.timestamp.clone(),
         })
         .collect()
-}
-
-pub(crate) async fn maybe_execute_agent_chat_command(
-    state: &AppState,
-    program_id: i64,
-    message: &str,
-) -> Result<Option<String>, ApiError> {
-    let lower = message.to_lowercase();
-
-    if lower.contains("hello world")
-        && (lower.contains("create") || lower.contains("build") || lower.contains("scaffold"))
-    {
-        let summary = scaffold_hello_world_program(state, program_id).await?;
-        return Ok(Some(summary));
-    }
-
-    if lower.contains("run") || lower.contains("execute") {
-        let summary = compile_and_run_hello_world(state, program_id).await?;
-        return Ok(Some(summary));
-    }
-
-    if lower.contains("compile") {
-        let summary = compile_hello_world(state, program_id).await?;
-        return Ok(Some(summary));
-    }
-
-    Ok(None)
-}
-
-async fn scaffold_hello_world_program(
-    state: &AppState,
-    program_id: i64,
-) -> Result<String, ApiError> {
-    let mut service = state.service.lock().await;
-    service.load_program(lmlang_storage::ProgramId(program_id))?;
-
-    let existing_function_id = service
-        .graph()
-        .functions()
-        .iter()
-        .find(|(_, def)| def.name == "hello_world")
-        .map(|(id, _)| *id);
-
-    let function_id = match existing_function_id {
-        Some(id) => id,
-        None => {
-            let create_response = service.propose_edit(ProposeEditRequest {
-                mutations: vec![Mutation::AddFunction {
-                    name: "hello_world".to_string(),
-                    module: ModuleId(0),
-                    params: Vec::new(),
-                    return_type: TypeId::UNIT,
-                    visibility: Visibility::Public,
-                }],
-                dry_run: false,
-                expected_hashes: None,
-            })?;
-
-            if !create_response.valid || !create_response.committed {
-                return Err(ApiError::BadRequest(
-                    "failed to create hello_world function".to_string(),
-                ));
-            }
-
-            create_response
-                .created
-                .iter()
-                .find_map(|entity| match entity {
-                    CreatedEntity::Function { id } => Some(*id),
-                    _ => None,
-                })
-                .ok_or_else(|| {
-                    ApiError::InternalError(
-                        "hello_world creation succeeded but function id was missing".to_string(),
-                    )
-                })?
-        }
-    };
-
-    let has_return = service.graph().compute().node_weights().any(|node| {
-        node.owner == function_id && matches!(&node.op, ComputeNodeOp::Core(ComputeOp::Return))
-    });
-
-    if !has_return {
-        let node_response = service.propose_edit(ProposeEditRequest {
-            mutations: vec![Mutation::InsertNode {
-                op: ComputeNodeOp::Core(ComputeOp::Return),
-                owner: function_id,
-            }],
-            dry_run: false,
-            expected_hashes: None,
-        })?;
-
-        if !node_response.valid || !node_response.committed {
-            return Err(ApiError::BadRequest(
-                "failed to add return node to hello_world".to_string(),
-            ));
-        }
-    }
-
-    let verify = service.verify(VerifyScope::Full, None)?;
-    if !verify.valid {
-        return Err(ApiError::BadRequest(
-            "hello_world scaffold failed verification".to_string(),
-        ));
-    }
-
-    Ok(format!(
-        "Hello world scaffold ready in program {} (function id {}).",
-        program_id, function_id.0
-    ))
-}
-
-async fn compile_hello_world(state: &AppState, program_id: i64) -> Result<String, ApiError> {
-    let mut service = state.service.lock().await;
-    service.load_program(lmlang_storage::ProgramId(program_id))?;
-
-    ensure_function_exists(service.graph().functions(), "hello_world")?;
-
-    let response = service.compile(&CompileRequest {
-        opt_level: "O0".to_string(),
-        target_triple: None,
-        debug_symbols: false,
-        entry_function: Some("hello_world".to_string()),
-        output_dir: None,
-    })?;
-
-    Ok(format!(
-        "Compiled hello_world to {} ({} bytes, {} ms).",
-        response.binary_path, response.binary_size, response.compilation_time_ms
-    ))
-}
-
-async fn compile_and_run_hello_world(
-    state: &AppState,
-    program_id: i64,
-) -> Result<String, ApiError> {
-    let binary_path = {
-        let mut service = state.service.lock().await;
-        service.load_program(lmlang_storage::ProgramId(program_id))?;
-
-        ensure_function_exists(service.graph().functions(), "hello_world")?;
-
-        let response = service.compile(&CompileRequest {
-            opt_level: "O0".to_string(),
-            target_triple: None,
-            debug_symbols: false,
-            entry_function: Some("hello_world".to_string()),
-            output_dir: None,
-        })?;
-        response.binary_path
-    };
-
-    let resolved_binary_path = resolve_binary_path(&binary_path)?;
-
-    let output = Command::new(&resolved_binary_path)
-        .output()
-        .map_err(|err| ApiError::InternalError(format!("failed to run binary: {}", err)))?;
-
-    let code = output.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-
-    if output.status.success() {
-        Ok(format!(
-            "Program executed (exit code {}). stdout='{}' stderr='{}'.",
-            code, stdout, stderr
-        ))
-    } else {
-        Err(ApiError::InternalError(format!(
-            "program run failed (exit code {}). stderr='{}'",
-            code, stderr
-        )))
-    }
-}
-
-fn resolve_binary_path(binary_path: &str) -> Result<std::path::PathBuf, ApiError> {
-    let direct = std::path::PathBuf::from(binary_path);
-    if direct.exists() {
-        return Ok(direct);
-    }
-
-    let cwd = std::env::current_dir()
-        .map_err(|err| ApiError::InternalError(format!("failed to read current dir: {}", err)))?;
-    let cwd_candidate = cwd.join(binary_path);
-    if cwd_candidate.exists() {
-        return Ok(cwd_candidate);
-    }
-
-    let manifest_candidate = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(binary_path);
-    if manifest_candidate.exists() {
-        return Ok(manifest_candidate);
-    }
-
-    Err(ApiError::InternalError(format!(
-        "compiled binary not found at '{}' (checked '{}', '{}', '{}')",
-        binary_path,
-        direct.display(),
-        cwd_candidate.display(),
-        manifest_candidate.display()
-    )))
-}
-
-fn ensure_function_exists(
-    functions: &std::collections::HashMap<FunctionId, lmlang_core::function::FunctionDef>,
-    name: &str,
-) -> Result<(), ApiError> {
-    if functions.values().any(|def| def.name == name) {
-        Ok(())
-    } else {
-        Err(ApiError::BadRequest(format!(
-            "function '{}' does not exist; ask the agent to create hello world first",
-            name
-        )))
-    }
 }
 
 async fn plan_non_command_prompt(

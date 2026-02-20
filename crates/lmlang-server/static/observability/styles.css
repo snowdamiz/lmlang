@@ -56,6 +56,19 @@ body {
   box-shadow: 0 5px 20px var(--shadow);
 }
 
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-logo-mark {
+  display: block;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+
 .topbar h1 {
   margin: 0;
   font-size: 1.45rem;

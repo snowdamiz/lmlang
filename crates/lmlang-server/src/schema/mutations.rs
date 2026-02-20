@@ -40,6 +40,7 @@ pub struct ProposeEditRequest {
 #[serde(tag = "type")]
 pub enum Mutation {
     /// Insert a new compute node.
+    #[serde(alias = "insert_node", alias = "insertNode")]
     InsertNode {
         /// The operation this node performs.
         op: ComputeNodeOp,
@@ -47,11 +48,13 @@ pub enum Mutation {
         owner: FunctionId,
     },
     /// Remove a compute node and all its edges.
+    #[serde(alias = "remove_node", alias = "removeNode")]
     RemoveNode {
         /// The node to remove.
         node_id: NodeId,
     },
     /// Change the operation of an existing node.
+    #[serde(alias = "modify_node", alias = "modifyNode")]
     ModifyNode {
         /// The node to modify.
         node_id: NodeId,
@@ -59,6 +62,7 @@ pub enum Mutation {
         new_op: ComputeNodeOp,
     },
     /// Add a data flow edge between two nodes.
+    #[serde(alias = "add_edge", alias = "addEdge")]
     AddEdge {
         /// Source node.
         from: NodeId,
@@ -72,6 +76,7 @@ pub enum Mutation {
         value_type: TypeId,
     },
     /// Add a control flow edge between two nodes.
+    #[serde(alias = "add_control_edge", alias = "addControlEdge")]
     AddControlEdge {
         /// Source node (e.g., Branch).
         from: NodeId,
@@ -81,11 +86,13 @@ pub enum Mutation {
         branch_index: Option<u16>,
     },
     /// Remove an edge.
+    #[serde(alias = "remove_edge", alias = "removeEdge")]
     RemoveEdge {
         /// The edge to remove.
         edge_id: EdgeId,
     },
     /// Add a new function definition.
+    #[serde(alias = "add_function", alias = "addFunction")]
     AddFunction {
         /// Function name.
         name: String,
@@ -99,6 +106,7 @@ pub enum Mutation {
         visibility: Visibility,
     },
     /// Add a new module definition.
+    #[serde(alias = "add_module", alias = "addModule")]
     AddModule {
         /// Module name.
         name: String,

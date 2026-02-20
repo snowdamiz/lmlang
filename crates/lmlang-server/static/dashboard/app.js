@@ -15,6 +15,7 @@
     selectedAgentId: null,
     selectedProjectAgentId: null,
     transcript: [],
+    pendingChat: null,
     executionAttempts: [],
     openRouterStatus: {
       connected: false,
@@ -33,7 +34,6 @@
     projectNameInput: document.getElementById("projectNameInput"),
     createProjectBtn: document.getElementById("createProjectBtn"),
     refreshProjectsBtn: document.getElementById("refreshProjectsBtn"),
-    createHelloWorldBtn: document.getElementById("createHelloWorldBtn"),
     projectList: document.getElementById("projectList"),
     observeLink: document.getElementById("observeLink"),
 
@@ -58,9 +58,6 @@
     setupCompleteBtn: document.getElementById("setupCompleteBtn"),
     setupSkipBtn: document.getElementById("setupSkipBtn"),
 
-    goalInput: document.getElementById("goalInput"),
-    startBuildBtn: document.getElementById("startBuildBtn"),
-    stopBuildBtn: document.getElementById("stopBuildBtn"),
     chatLog: document.getElementById("chatLog"),
     executionTimeline: document.getElementById("executionTimeline"),
     timelineStatus: document.getElementById("timelineStatus"),
@@ -93,6 +90,10 @@
   function setStatus(message, tone = "idle") {
     el.statusBar.textContent = message;
     el.statusBar.dataset.state = tone;
+  }
+
+  function unixSecondsNow() {
+    return Math.floor(Date.now() / 1000).toString();
   }
 
   function safeStorageGet(key) {
@@ -514,17 +515,26 @@
   // ── Render: Chat ──
 
   function renderChatLog() {
-    if (!state.transcript.length) {
-      el.chatLog.innerHTML = '<div class="chat-msg system"><p class="chat-role">system</p><p class="chat-content">No messages yet. Start a build or send a message to begin.</p></div>';
+    const pendingEntries = state.pendingChat
+      ? [state.pendingChat.user, state.pendingChat.assistant]
+      : [];
+    const entries = [...state.transcript, ...pendingEntries];
+    if (!entries.length) {
+      el.chatLog.innerHTML = '<div class="chat-msg system"><p class="chat-role">system</p><p class="chat-content">No messages yet. Send your first message to set the build goal.</p></div>';
       return;
     }
 
-    el.chatLog.innerHTML = state.transcript
+    el.chatLog.innerHTML = entries
       .map((entry) => {
+        const pendingClass = entry.pending ? " pending" : "";
+        const roleLabel = entry.pending ? `${entry.role} \u00b7 thinking` : `${entry.role} \u00b7 ${entry.timestamp}`;
+        const contentHtml = entry.pending
+          ? '<span class="typing-indicator" aria-label="Assistant is thinking"><span></span><span></span><span></span></span>'
+          : entry.content;
         return `
-          <div class="chat-msg ${entry.role}">
-            <p class="chat-role">${entry.role} \u00b7 ${entry.timestamp}</p>
-            <p class="chat-content">${entry.content}</p>
+          <div class="chat-msg ${entry.role}${pendingClass}">
+            <p class="chat-role">${roleLabel}</p>
+            <p class="chat-content">${contentHtml}</p>
           </div>
         `;
       })
@@ -882,91 +892,30 @@
     setStatus("Setup skipped. Configure provider settings in the sidebar.", "idle");
   }
 
-  async function onCreateHelloWorldScaffold() {
-    if (!state.selectedProgramId) {
-      setStatus("Select a project first.", "error");
-      return;
+  function hasUserMessages() {
+    if (state.pendingChat?.user) {
+      return true;
     }
-
-    try {
-      setStatus("Creating hello world scaffold...", "running");
-
-      await api("POST", `/programs/${state.selectedProgramId}/load`, {});
-
-      const createFunctionResponse = await api(
-        "POST",
-        `/programs/${state.selectedProgramId}/mutations`,
-        {
-          mutations: [
-            {
-              type: "AddFunction",
-              name: "hello_world",
-              module: 0,
-              params: [],
-              return_type: 7,
-              visibility: "Public",
-            },
-          ],
-          dry_run: false,
-        }
-      );
-
-      let helloWorldFunctionId = null;
-      if (Array.isArray(createFunctionResponse.created)) {
-        const createdFunction = createFunctionResponse.created.find(
-          (entry) => entry.type === "Function"
-        );
-        if (createdFunction && Number.isInteger(createdFunction.id)) {
-          helloWorldFunctionId = createdFunction.id;
-        }
-      }
-
-      if (helloWorldFunctionId !== null) {
-        await api("POST", `/programs/${state.selectedProgramId}/mutations`, {
-          mutations: [
-            {
-              type: "InsertNode",
-              op: { Core: "Return" },
-              owner: helloWorldFunctionId,
-            },
-          ],
-          dry_run: false,
-        });
-      }
-
-      await api("POST", `/programs/${state.selectedProgramId}/verify`, {
-        scope: "full",
-        affected_nodes: [],
-      });
-
-      const queryPreview = await api(
-        "POST",
-        `/programs/${state.selectedProgramId}/observability/query`,
-        {
-          query: "hello world",
-          max_results: 5,
-        }
-      );
-      const results = Array.isArray(queryPreview.results) ? queryPreview.results.length : 0;
-
-      setStatus(
-        `Hello world scaffold created (${results} preview results).`,
-        "idle"
-      );
-    } catch (error) {
-      setStatus(`Hello world scaffold failed: ${error.message}`, "error");
-    }
+    return state.transcript.some((entry) => entry.role === "user");
   }
 
-  async function onStartBuild() {
+  function shouldTreatNextMessageAsGoal() {
+    return !hasUserMessages() && state.executionAttempts.length === 0;
+  }
+
+  async function onStartBuild(goalInput) {
     if (!state.selectedProgramId || !state.selectedProjectAgentId) {
       setStatus("Select a project and an assigned agent first.", "error");
       return;
     }
+    if (state.pendingChat) {
+      setStatus("Wait for the current chat response to finish before starting a build.", "running");
+      return;
+    }
 
-    const goal = el.goalInput.value.trim();
+    const goal = (goalInput ?? el.chatInput.value).trim();
     if (!goal) {
-      setStatus("Build goal is required.", "error");
+      setStatus("Build goal is required in the chat composer.", "error");
       return;
     }
 
@@ -978,6 +927,8 @@
       );
       await refreshProjectAgents();
       await refreshProjectAgentDetail();
+      el.chatInput.value = "";
+      el.chatInput.focus();
       setStatus("Build started.", "running");
     } catch (error) {
       setStatus(`Start build failed: ${error.message}`, "error");
@@ -1004,12 +955,27 @@
     }
   }
 
-  async function onSendChat() {
-    const message = el.chatInput.value.trim();
+  async function onSendChat(messageInput) {
+    const message = (messageInput ?? el.chatInput.value).trim();
     if (!message) {
       setStatus("Chat message is required.", "error");
       return;
     }
+    if (state.pendingChat) {
+      setStatus("A response is already in progress.", "running");
+      return;
+    }
+
+    const pendingTs = unixSecondsNow();
+    state.pendingChat = {
+      user: { role: "user", content: message, timestamp: pendingTs },
+      assistant: { role: "assistant", content: "...", timestamp: pendingTs, pending: true },
+    };
+    renderChatLog();
+    setStatus("AI is thinking...", "running");
+    el.chatInput.value = "";
+    el.chatInput.disabled = true;
+    el.sendChatBtn.disabled = true;
 
     try {
       const response = await api(
@@ -1023,7 +989,7 @@
         }
       );
 
-      el.chatInput.value = "";
+      state.pendingChat = null;
       state.selectedProgramId = Number.isInteger(response.selected_program_id)
         ? response.selected_program_id
         : null;
@@ -1051,8 +1017,44 @@
       updateObserveLink();
       setStatus(response.reply || "AI action completed.", "idle");
     } catch (error) {
+      state.pendingChat = null;
+      state.transcript = [
+        ...state.transcript,
+        { role: "user", content: message, timestamp: pendingTs },
+        {
+          role: "assistant",
+          content: `Chat request failed: ${error.message}`,
+          timestamp: unixSecondsNow(),
+        },
+      ];
+      renderChatLog();
       setStatus(`Chat failed: ${error.message}`, "error");
+    } finally {
+      el.chatInput.disabled = false;
+      el.sendChatBtn.disabled = false;
+      el.chatInput.focus();
     }
+  }
+
+  async function onComposerSubmit() {
+    const message = el.chatInput.value.trim();
+    if (!message) {
+      setStatus("Message is required.", "error");
+      return;
+    }
+
+    if (message.toLowerCase() === "/stop") {
+      el.chatInput.value = "";
+      await onStopBuild();
+      return;
+    }
+
+    if (shouldTreatNextMessageAsGoal()) {
+      await onStartBuild(message);
+      return;
+    }
+
+    await onSendChat(message);
   }
 
   // ── Event binding ──
@@ -1062,7 +1064,6 @@
     el.sidebarOpenBtn.addEventListener("click", toggleSidebar);
 
     el.createProjectBtn.addEventListener("click", onCreateProject);
-    el.createHelloWorldBtn.addEventListener("click", onCreateHelloWorldScaffold);
     el.refreshProjectsBtn.addEventListener("click", async () => {
       try {
         await refreshPrograms();
@@ -1083,21 +1084,12 @@
       }
     });
 
-    el.startBuildBtn.addEventListener("click", onStartBuild);
-    el.stopBuildBtn.addEventListener("click", onStopBuild);
-    el.sendChatBtn.addEventListener("click", onSendChat);
+    el.sendChatBtn.addEventListener("click", onComposerSubmit);
 
     el.chatInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        onSendChat();
-      }
-    });
-
-    el.goalInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        onStartBuild();
+        onComposerSubmit();
       }
     });
 

@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>lmlang Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/branding/favicon.svg" />
     <link rel="stylesheet" href="/dashboard/styles.css" />
   </head>
   <body data-initial-program-id="__INITIAL_PROGRAM_ID__">
@@ -11,10 +12,7 @@
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
           <div class="logo">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="24" height="24" rx="6" fill="currentColor" fill-opacity="0.15"/>
-              <path d="M7 8h10M7 12h6M7 16h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
+            <img class="logo-mark" src="/branding/logo-mark.svg" alt="" width="24" height="24" />
             <span class="logo-text">lmlang</span>
           </div>
           <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar">
@@ -39,7 +37,6 @@
             <details class="collapsible">
               <summary>Project tools</summary>
               <div class="collapsible-body">
-                <button id="createHelloWorldBtn" type="button" class="btn btn-block btn-ghost-sidebar">Scaffold Hello World</button>
                 <a id="observeLink" class="btn-link" href="#" target="_blank" rel="noopener noreferrer">Open in Observe</a>
               </div>
             </details>
@@ -111,18 +108,6 @@
         </header>
 
         <div class="chat-container">
-          <div class="chat-toolbar">
-            <input id="goalInput" class="goal-input" placeholder="Build goal (e.g. add login and tests)..." />
-            <button id="startBuildBtn" type="button" class="btn btn-primary">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 1.5l9 5.5-9 5.5V1.5z" fill="currentColor"/></svg>
-              Build
-            </button>
-            <button id="stopBuildBtn" type="button" class="btn btn-danger">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" fill="currentColor"/></svg>
-              Stop
-            </button>
-          </div>
-
           <div class="chat-log" id="chatLog"></div>
 
           <section class="timeline-panel" aria-live="polite">
@@ -134,8 +119,8 @@
           </section>
 
           <div class="chat-input-area">
-            <input id="chatInput" class="chat-input" placeholder="Message the agent..." />
-            <button id="sendChatBtn" type="button" class="btn btn-primary btn-send">
+            <input id="chatInput" class="chat-input" placeholder="Set goal with your first message, then continue chatting..." />
+            <button id="sendChatBtn" type="button" class="btn btn-primary btn-send" aria-label="Send message">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2l12 6-12 6V9l8-1-8-1V2z" fill="currentColor"/></svg>
             </button>
           </div>

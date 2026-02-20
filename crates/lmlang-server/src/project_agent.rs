@@ -160,6 +160,29 @@ impl ProjectAgentManager {
         Ok(session.clone())
     }
 
+    pub async fn set_active_goal(
+        &self,
+        program_id: i64,
+        agent_id: AgentId,
+        goal: String,
+    ) -> Result<ProjectAgentSession, String> {
+        let mut guard = self.sessions.lock().await;
+        let key = (program_id, agent_id);
+        let session = guard
+            .get_mut(&key)
+            .ok_or_else(|| "agent is not assigned to this project".to_string())?;
+
+        let now = now_string();
+        session.active_goal = Some(goal.clone());
+        session.updated_at = now.clone();
+        session.transcript.push(ProjectAgentMessage {
+            role: "system".to_string(),
+            content: format!("Build goal updated: {}", goal),
+            timestamp: now,
+        });
+        Ok(session.clone())
+    }
+
     pub async fn stop(
         &self,
         program_id: i64,
@@ -513,6 +536,30 @@ mod tests {
             .transcript
             .iter()
             .any(|msg| { msg.role == "assistant" && msg.content == "continuing autonomous loop" }));
+    }
+
+    #[tokio::test]
+    async fn active_goal_can_be_updated_without_restarting_session() {
+        let manager = ProjectAgentManager::new();
+        let program_id = 99;
+        let agent_id = AgentId(Uuid::new_v4());
+        manager.assign(program_id, agent_id, None).await;
+        manager
+            .start(program_id, agent_id, "build calculator".to_string())
+            .await
+            .expect("start");
+
+        let session = manager
+            .set_active_goal(program_id, agent_id, "build hello world".to_string())
+            .await
+            .expect("set_active_goal");
+
+        assert_eq!(session.run_status, "running");
+        assert_eq!(session.active_goal.as_deref(), Some("build hello world"));
+        assert!(session
+            .transcript
+            .iter()
+            .any(|msg| msg.content == "Build goal updated: build hello world"));
     }
 
     #[tokio::test]

@@ -92,7 +92,9 @@ pub struct EnumVariant {
 /// Visibility of a type or function across module boundaries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Visibility {
+    #[serde(alias = "public")]
     Public,
+    #[serde(alias = "private")]
     Private,
 }
 

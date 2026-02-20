@@ -5,6 +5,9 @@
 //! and failures into typed execution evidence for transcript/API projection.
 #![allow(clippy::result_large_err)]
 
+use std::process::Command;
+
+use lmlang_core::id::{FunctionId, NodeId};
 use serde::Serialize;
 
 use crate::error::ApiError;
@@ -17,7 +20,8 @@ use crate::schema::autonomy_execution::{
 use crate::schema::autonomy_plan::{
     AutonomyPlanAction, AutonomyPlanCompileRequest, AutonomyPlanEnvelope,
     AutonomyPlanHistoryOperation, AutonomyPlanHistoryRequest, AutonomyPlanInspectRequest,
-    AutonomyPlanMutationRequest, AutonomyPlanSimulateRequest, AutonomyPlanVerifyRequest,
+    AutonomyPlanMutationRequest, AutonomyPlanRunRequest, AutonomyPlanSimulateRequest,
+    AutonomyPlanVerifyRequest,
 };
 use crate::schema::compile::CompileRequest;
 use crate::schema::mutations::Mutation;
@@ -121,6 +125,7 @@ fn execute_action(
         AutonomyPlanAction::Compile { request, .. } => {
             execute_compile(service, action_index, request)
         }
+        AutonomyPlanAction::Run { request, .. } => execute_run(service, action_index, request),
         AutonomyPlanAction::Simulate { request, .. } => {
             execute_simulate(service, action_index, request)
         }
@@ -263,6 +268,124 @@ fn execute_compile(
     .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)))
 }
 
+fn execute_run(
+    service: &mut ProgramService,
+    action_index: usize,
+    request: &AutonomyPlanRunRequest,
+) -> Result<AutonomyActionExecutionResult, AutonomyActionExecutionResult> {
+    let Some(entry_function) = request.entry_function.clone() else {
+        return Err(invalid_payload_result(
+            action_index,
+            "run",
+            "run request requires `entry_function`",
+        ));
+    };
+    if entry_function.trim().is_empty() {
+        return Err(invalid_payload_result(
+            action_index,
+            "run",
+            "run request `entry_function` must not be empty",
+        ));
+    }
+
+    let compile = service
+        .compile(&CompileRequest {
+            opt_level: request.opt_level.clone(),
+            target_triple: request.target_triple.clone(),
+            debug_symbols: request.debug_symbols,
+            entry_function: Some(entry_function.clone()),
+            output_dir: request.output_dir.clone(),
+        })
+        .map_err(|err| api_error_result(action_index, "run", "run action compile failed", err))?;
+
+    let binary_path = resolve_binary_path(&compile.binary_path).map_err(|err| {
+        let error = AutonomyExecutionError::new(
+            AutonomyExecutionErrorCode::InternalError,
+            format!("run action failed to resolve binary path: {}", err),
+            true,
+        );
+        let diagnostics = diagnostics_from_error("run", "run action resolve failed", &error);
+        AutonomyActionExecutionResult::failed(
+            action_index,
+            "run",
+            "run action failed to resolve compiled binary",
+            error.with_diagnostics(diagnostics.clone()),
+        )
+        .with_detail(serde_json::json!({
+            "binary_path": compile.binary_path,
+        }))
+        .with_diagnostics(diagnostics)
+    })?;
+
+    let output = Command::new(&binary_path)
+        .args(&request.args)
+        .output()
+        .map_err(|err| {
+            let error = AutonomyExecutionError::new(
+                AutonomyExecutionErrorCode::InternalError,
+                format!("run action failed to execute binary: {}", err),
+                true,
+            );
+            let diagnostics = diagnostics_from_error("run", "run action execute failed", &error);
+            AutonomyActionExecutionResult::failed(
+                action_index,
+                "run",
+                "run action failed to execute compiled binary",
+                error.with_diagnostics(diagnostics.clone()),
+            )
+            .with_detail(serde_json::json!({
+                "binary_path": binary_path,
+                "args": request.args,
+            }))
+            .with_diagnostics(diagnostics)
+        })?;
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let stdout = truncate_for_detail(String::from_utf8_lossy(&output.stdout).trim(), 4096);
+    let stderr = truncate_for_detail(String::from_utf8_lossy(&output.stderr).trim(), 4096);
+    let detail = serde_json::json!({
+        "entry_function": entry_function,
+        "args": request.args,
+        "binary_path": binary_path,
+        "compilation": compile,
+        "run": {
+            "exit_code": exit_code,
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+    });
+
+    if output.status.success() {
+        Ok(AutonomyActionExecutionResult::succeeded(
+            action_index,
+            "run",
+            format!("executed `{}` (exit code {})", entry_function, exit_code),
+        )
+        .with_detail(detail))
+    } else {
+        let error = AutonomyExecutionError::new(
+            AutonomyExecutionErrorCode::ValidationFailed,
+            format!(
+                "program execution failed (exit code {}): {}",
+                exit_code, stderr
+            ),
+            true,
+        );
+        let diagnostics = diagnostics_from_error("run", "program execution failed", &error);
+        Err(AutonomyActionExecutionResult::failed(
+            action_index,
+            "run",
+            format!(
+                "execution failed for `{}` (exit code {})",
+                entry_function, exit_code
+            ),
+            error.with_diagnostics(diagnostics.clone()),
+        )
+        .with_detail(detail)
+        .with_diagnostics(diagnostics))
+    }
+}
+
 fn execute_simulate(
     service: &mut ProgramService,
     action_index: usize,
@@ -348,7 +471,7 @@ fn execute_inspect(
             )
             .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)))
         }
-        Some(query) if query.starts_with("semantic") => {
+        Some(query) if query.to_ascii_lowercase().starts_with("semantic") => {
             let include_embeddings = query.contains("with_embeddings");
             let response = service.semantic_query(include_embeddings).map_err(|err| {
                 api_error_result(action_index, "inspect", "semantic query failed", err)
@@ -359,6 +482,103 @@ fn execute_inspect(
                 format!(
                     "semantic query returned {} node(s) and {} edge(s)",
                     response.node_count, response.edge_count
+                ),
+            )
+            .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)))
+        }
+        Some(query) if query.to_ascii_lowercase().starts_with("function:") => {
+            let raw = query
+                .split_once(':')
+                .map(|(_, value)| value.trim())
+                .unwrap_or("");
+            let function_id = raw.parse::<u32>().map(FunctionId).map_err(|_| {
+                invalid_payload_result(
+                    action_index,
+                    "inspect",
+                    "inspect `function:<id>` requires numeric function id",
+                )
+            })?;
+            let response = service
+                .get_function_context(function_id, DetailLevel::Full)
+                .map_err(|err| {
+                    api_error_result(
+                        action_index,
+                        "inspect",
+                        "function context query failed",
+                        err,
+                    )
+                })?;
+            Ok(AutonomyActionExecutionResult::succeeded(
+                action_index,
+                "inspect",
+                format!(
+                    "function {}: {} node(s), {} edge(s)",
+                    function_id.0,
+                    response.nodes.len(),
+                    response.edges.len()
+                ),
+            )
+            .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)))
+        }
+        Some(query) if query.to_ascii_lowercase().starts_with("node:") => {
+            let raw = query
+                .split_once(':')
+                .map(|(_, value)| value.trim())
+                .unwrap_or("");
+            let node_id = raw.parse::<u32>().map(NodeId).map_err(|_| {
+                invalid_payload_result(
+                    action_index,
+                    "inspect",
+                    "inspect `node:<id>` requires numeric node id",
+                )
+            })?;
+            let response = service
+                .get_node(node_id, DetailLevel::Full)
+                .map_err(|err| {
+                    api_error_result(action_index, "inspect", "node query failed", err)
+                })?;
+            Ok(AutonomyActionExecutionResult::succeeded(
+                action_index,
+                "inspect",
+                format!("node {} retrieved", node_id.0),
+            )
+            .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)))
+        }
+        Some(query) if query.to_ascii_lowercase().starts_with("neighborhood:") => {
+            let raw = query
+                .split_once(':')
+                .map(|(_, value)| value.trim())
+                .unwrap_or("");
+            let mut parts = raw.split(':').map(str::trim);
+            let node_id = parts
+                .next()
+                .and_then(|value| value.parse::<u32>().ok())
+                .map(NodeId)
+                .ok_or_else(|| {
+                    invalid_payload_result(
+                        action_index,
+                        "inspect",
+                        "inspect `neighborhood:<node_id>:<hops>` requires numeric node id",
+                    )
+                })?;
+            let max_hops = parts
+                .next()
+                .and_then(|value| value.parse::<u32>().ok())
+                .unwrap_or(1);
+            let response = service
+                .get_neighborhood(node_id, max_hops, DetailLevel::Full)
+                .map_err(|err| {
+                    api_error_result(action_index, "inspect", "neighborhood query failed", err)
+                })?;
+            Ok(AutonomyActionExecutionResult::succeeded(
+                action_index,
+                "inspect",
+                format!(
+                    "neighborhood for node {}: {} node(s), {} edge(s), hops={}",
+                    node_id.0,
+                    response.nodes.len(),
+                    response.edges.len(),
+                    response.hops_used
                 ),
             )
             .with_detail(serde_json::to_value(&response).unwrap_or(serde_json::Value::Null)))
@@ -731,20 +951,56 @@ fn diagnostics_class_for_action(kind: &str) -> AutonomyDiagnosticsClass {
     }
 }
 
+fn resolve_binary_path(binary_path: &str) -> Result<std::path::PathBuf, String> {
+    let direct = std::path::PathBuf::from(binary_path);
+    if direct.exists() {
+        return Ok(direct);
+    }
+
+    let cwd = std::env::current_dir().map_err(|err| err.to_string())?;
+    let cwd_candidate = cwd.join(binary_path);
+    if cwd_candidate.exists() {
+        return Ok(cwd_candidate);
+    }
+
+    let manifest_candidate = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(binary_path);
+    if manifest_candidate.exists() {
+        return Ok(manifest_candidate);
+    }
+
+    Err(format!(
+        "compiled binary not found at '{}' (checked '{}', '{}', '{}')",
+        binary_path,
+        direct.display(),
+        cwd_candidate.display(),
+        manifest_candidate.display()
+    ))
+}
+
+fn truncate_for_detail(text: &str, limit: usize) -> String {
+    if text.len() <= limit {
+        return text.to_string();
+    }
+    let mut truncated = text.chars().take(limit).collect::<String>();
+    truncated.push_str("...[truncated]");
+    truncated
+}
+
 #[cfg(test)]
 mod tests {
     use lmlang_core::id::ModuleId;
+    use lmlang_core::ops::{ComputeNodeOp, ComputeOp};
     use lmlang_core::type_id::TypeId;
     use lmlang_core::types::Visibility;
 
     use super::*;
     use crate::schema::autonomy_plan::{
         AutonomyPlanCompileRequest, AutonomyPlanHistoryRequest, AutonomyPlanInspectRequest,
-        AutonomyPlanMetadata, AutonomyPlanMutationRequest, AutonomyPlanSimulateRequest,
-        AutonomyPlanVerifyRequest,
+        AutonomyPlanMetadata, AutonomyPlanMutationRequest, AutonomyPlanRunRequest,
+        AutonomyPlanSimulateRequest, AutonomyPlanVerifyRequest,
     };
     use crate::schema::diagnostics::DiagnosticError;
-    use crate::schema::mutations::Mutation;
+    use crate::schema::mutations::{CreatedEntity, Mutation, ProposeEditRequest};
     use crate::schema::verify::VerifyScope;
 
     fn envelope_with_actions(actions: Vec<AutonomyPlanAction>) -> AutonomyPlanEnvelope {
@@ -960,6 +1216,98 @@ mod tests {
     }
 
     #[test]
+    fn run_without_entry_function_is_invalid_payload() {
+        let mut service = ProgramService::in_memory().expect("in-memory service");
+        let envelope = envelope_with_actions(vec![AutonomyPlanAction::Run {
+            request: AutonomyPlanRunRequest {
+                opt_level: "O0".to_string(),
+                target_triple: None,
+                debug_symbols: false,
+                entry_function: None,
+                output_dir: None,
+                args: Vec::new(),
+            },
+            rationale: None,
+        }]);
+
+        let outcome = execute_plan(&mut service, &envelope);
+        let action = &outcome.attempts[0].action_results[0];
+        assert_eq!(action.status, AutonomyActionStatus::Failed);
+        assert_eq!(
+            action.error.as_ref().map(|err| err.code),
+            Some(AutonomyExecutionErrorCode::InvalidActionPayload)
+        );
+    }
+
+    #[test]
+    fn run_action_executes_compiled_binary() {
+        let mut service = ProgramService::in_memory().expect("in-memory service");
+
+        let create = service
+            .propose_edit(ProposeEditRequest {
+                mutations: vec![Mutation::AddFunction {
+                    name: "run_target".to_string(),
+                    module: ModuleId(0),
+                    params: Vec::new(),
+                    return_type: TypeId::UNIT,
+                    visibility: Visibility::Public,
+                }],
+                dry_run: false,
+                expected_hashes: None,
+            })
+            .expect("create function mutation");
+        assert!(
+            create.valid && create.committed,
+            "create mutation must commit"
+        );
+        let function_id = create
+            .created
+            .iter()
+            .find_map(|entity| match entity {
+                CreatedEntity::Function { id } => Some(*id),
+                _ => None,
+            })
+            .expect("function id should be returned");
+
+        let with_return = service
+            .propose_edit(ProposeEditRequest {
+                mutations: vec![Mutation::InsertNode {
+                    op: ComputeNodeOp::Core(ComputeOp::Return),
+                    owner: function_id,
+                }],
+                dry_run: false,
+                expected_hashes: None,
+            })
+            .expect("insert return node");
+        assert!(
+            with_return.valid && with_return.committed,
+            "return mutation must commit"
+        );
+
+        let envelope = envelope_with_actions(vec![AutonomyPlanAction::Run {
+            request: AutonomyPlanRunRequest {
+                opt_level: "O0".to_string(),
+                target_triple: None,
+                debug_symbols: false,
+                entry_function: Some("run_target".to_string()),
+                output_dir: None,
+                args: Vec::new(),
+            },
+            rationale: None,
+        }]);
+
+        let outcome = execute_plan(&mut service, &envelope);
+        let action = &outcome.attempts[0].action_results[0];
+        assert_eq!(outcome.status, AutonomyExecutionStatus::Succeeded);
+        assert_eq!(outcome.stop_reason.code, StopReasonCode::Completed);
+        assert_eq!(action.status, AutonomyActionStatus::Succeeded);
+        assert_eq!(action.kind, "run");
+        assert!(action.summary.contains("executed `run_target`"));
+        let detail = action.detail.as_ref().expect("run action detail payload");
+        assert_eq!(detail["run"]["exit_code"], serde_json::json!(0));
+    }
+
+    #[test]
     fn verify_failure_result_emits_deterministic_diagnostics() {
         let response = VerifyResponse {
             valid: false,
@@ -1052,6 +1400,55 @@ mod tests {
             action.error.as_ref().map(|err| err.code),
             Some(AutonomyExecutionErrorCode::InvalidActionPayload)
         );
+    }
+
+    #[test]
+    fn inspect_function_query_returns_full_function_context() {
+        let mut service = ProgramService::in_memory().expect("in-memory service");
+        let created = service
+            .propose_edit(ProposeEditRequest {
+                mutations: vec![Mutation::AddFunction {
+                    name: "inspect_fn".to_string(),
+                    module: ModuleId(0),
+                    params: vec![("x".to_string(), TypeId::I32)],
+                    return_type: TypeId::I32,
+                    visibility: Visibility::Public,
+                }],
+                dry_run: false,
+                expected_hashes: None,
+            })
+            .expect("create inspect function");
+        assert!(created.valid && created.committed);
+        let function_id = created
+            .created
+            .iter()
+            .find_map(|entity| match entity {
+                CreatedEntity::Function { id } => Some(*id),
+                _ => None,
+            })
+            .expect("created function id");
+
+        let envelope = envelope_with_actions(vec![AutonomyPlanAction::Inspect {
+            request: AutonomyPlanInspectRequest {
+                query: Some(format!("function:{}", function_id.0)),
+                max_results: None,
+            },
+            rationale: None,
+        }]);
+
+        let outcome = execute_plan(&mut service, &envelope);
+        let action = &outcome.attempts[0].action_results[0];
+        assert_eq!(outcome.status, AutonomyExecutionStatus::Succeeded);
+        assert_eq!(action.status, AutonomyActionStatus::Succeeded);
+        assert_eq!(action.kind, "inspect");
+        assert!(
+            action.summary.contains("function"),
+            "unexpected inspect summary: {}",
+            action.summary
+        );
+        let detail = action.detail.as_ref().expect("inspect detail");
+        assert_eq!(detail["function"]["id"], serde_json::json!(function_id.0));
+        assert_eq!(detail["function"]["name"], serde_json::json!("inspect_fn"));
     }
 
     #[test]

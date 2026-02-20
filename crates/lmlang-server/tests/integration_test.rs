@@ -1857,7 +1857,6 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
     assert!(root_html.contains("lmlang Dashboard"));
     assert!(root_html.contains("id=\"projectList\""));
     assert!(root_html.contains("id=\"createProjectBtn\""));
-    assert!(root_html.contains("id=\"createHelloWorldBtn\""));
     assert!(root_html.contains("id=\"saveAgentConfigBtn\""));
     assert!(root_html.contains("id=\"projectAgentList\""));
     assert!(root_html.contains("id=\"setupWizard\""));
@@ -1879,12 +1878,8 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
     let (status, js) = get_text(&app, "/dashboard/app.js").await;
     assert_eq!(status, StatusCode::OK, "dashboard app.js not served");
     assert!(js.contains("/programs"));
-    assert!(js.contains("/mutations"));
-    assert!(js.contains("/verify"));
-    assert!(js.contains("/observability/query"));
     assert!(js.contains("/dashboard/ai/chat"));
     assert!(js.contains("lmlang.dashboard.first_time_setup.v1"));
-    assert!(js.contains("hello_world"));
     assert!(js.contains("/agents/register"));
     assert!(js.contains("/agents/${agentId}/config"));
     assert!(js.contains("/agents/${state.selectedProjectAgentId}/start"));
@@ -1893,6 +1888,8 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
     assert!(js.contains("/observability"));
     assert!(js.contains("Create project failed"));
     assert!(js.contains("Start build failed"));
+    assert!(js.contains("AI is thinking..."));
+    assert!(js.contains("typing-indicator"));
     assert!(js.contains("renderExecutionTimeline"));
     assert!(js.contains("execution_attempts"));
 
@@ -1902,6 +1899,7 @@ async fn phase10_dashboard_routes_serve_shell_and_assets() {
     assert!(css.contains(".content"));
     assert!(css.contains(".chat-container"));
     assert!(css.contains(".chat-log"));
+    assert!(css.contains(".typing-indicator"));
     assert!(css.contains(".timeline-panel"));
     assert!(css.contains(".timeline-attempt"));
 }
@@ -1943,72 +1941,23 @@ async fn phase10_dashboard_project_agent_lifecycle_endpoints_work() {
     assert_eq!(start["session"]["run_status"], json!("running"));
     assert_eq!(start["session"]["active_goal"], json!("build parser"));
 
-    let (status, chat_create) = post_json(
+    let (status, chat) = post_json(
         &app,
         &format!("/programs/{}/agents/{}/chat", pid, agent_id),
-        json!({ "message": "create hello world program" }),
+        json!({ "message": "build parser and validate graph" }),
     )
     .await;
+    assert_eq!(status, StatusCode::OK, "chat failed: {:?}", chat);
+    assert_eq!(chat["success"], json!(true));
+    assert_eq!(chat["planner"]["status"], json!("failed"));
     assert_eq!(
-        status,
-        StatusCode::OK,
-        "chat create hello world failed: {:?}",
-        chat_create
+        chat["planner"]["failure"]["code"],
+        json!("planner_unconfigured")
     );
-    assert_eq!(chat_create["success"], json!(true));
-    assert!(chat_create["reply"]
+    assert!(chat["reply"]
         .as_str()
         .unwrap_or_default()
-        .contains("Action result:"));
-    assert!(chat_create["reply"]
-        .as_str()
-        .unwrap_or_default()
-        .contains("Hello world scaffold ready"));
-    let create_transcript = chat_create["transcript"].as_array().unwrap();
-    assert!(create_transcript.len() >= 3);
-    assert!(create_transcript.iter().any(|entry| {
-        entry["content"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("Action result:")
-    }));
-
-    let (status, chat_compile) = post_json(
-        &app,
-        &format!("/programs/{}/agents/{}/chat", pid, agent_id),
-        json!({ "message": "compile program" }),
-    )
-    .await;
-    assert_eq!(
-        status,
-        StatusCode::OK,
-        "chat compile failed: {:?}",
-        chat_compile
-    );
-    assert!(chat_compile["reply"]
-        .as_str()
-        .unwrap_or_default()
-        .contains("Action result:"));
-    assert!(chat_compile["reply"]
-        .as_str()
-        .unwrap_or_default()
-        .contains("Compiled hello_world"));
-
-    let (status, chat_run) = post_json(
-        &app,
-        &format!("/programs/{}/agents/{}/chat", pid, agent_id),
-        json!({ "message": "run program" }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "chat run failed: {:?}", chat_run);
-    assert!(chat_run["reply"]
-        .as_str()
-        .unwrap_or_default()
-        .contains("Action result:"));
-    assert!(chat_run["reply"]
-        .as_str()
-        .unwrap_or_default()
-        .contains("Program executed"));
+        .contains("planner_unconfigured"));
 
     let (status, stop) = post_json(
         &app,
@@ -2022,7 +1971,7 @@ async fn phase10_dashboard_project_agent_lifecycle_endpoints_work() {
     let (status, detail) = get_json(&app, &format!("/programs/{}/agents/{}", pid, agent_id)).await;
     assert_eq!(status, StatusCode::OK, "detail failed: {:?}", detail);
     assert_eq!(detail["session"]["run_status"], json!("stopped"));
-    assert!(detail["transcript"].as_array().unwrap().len() >= 8);
+    assert!(detail["transcript"].as_array().unwrap().len() >= 4);
 
     let (status, listing) = get_json(&app, &format!("/programs/{}/agents", pid)).await;
     assert_eq!(
@@ -2038,7 +1987,7 @@ async fn phase10_dashboard_project_agent_lifecycle_endpoints_work() {
         &app,
         &format!("/programs/{}/observability/query", pid),
         json!({
-            "query": "hello world",
+            "query": "project",
             "max_results": 5
         }),
     )
@@ -2165,12 +2114,34 @@ async fn phase10_agent_llm_config_persists_across_restart() {
 }
 
 #[tokio::test]
-async fn phase10_start_build_runs_autonomous_hello_world_scaffold() {
+async fn phase10_start_build_runs_autonomous_planner_loop() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "bootstrap project graph",
+        "actions": [
+            {
+                "type": "inspect",
+                "request": { "query": "overview" }
+            }
+        ]
+    }"#;
+    let (base_url, requests, server) = start_mock_planner_server(planner_response).await;
+
     let app = test_app();
     let pid = setup_program(&app).await;
 
-    let (status, register) =
-        post_json(&app, "/agents/register", json!({ "name": "auto-builder" })).await;
+    let (status, register) = post_json(
+        &app,
+        "/agents/register",
+        json!({
+            "name": "auto-builder",
+            "provider": "openai_compatible",
+            "model": "planner-test",
+            "api_base_url": base_url,
+            "api_key": "test-key"
+        }),
+    )
+    .await;
     assert_eq!(
         status,
         StatusCode::OK,
@@ -2190,63 +2161,71 @@ async fn phase10_start_build_runs_autonomous_hello_world_scaffold() {
     let (status, start) = post_json(
         &app,
         &format!("/programs/{}/agents/{}/start", pid, agent_id),
-        json!({ "goal": "hello world scaffold" }),
+        json!({ "goal": "bootstrap project graph" }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "start failed: {:?}", start);
 
-    let mut autonomous_hit = false;
-    for _ in 0..30 {
-        let (status, detail) =
-            get_json(&app, &format!("/programs/{}/agents/{}", pid, agent_id)).await;
-        assert_eq!(status, StatusCode::OK, "detail failed: {:?}", detail);
-
-        if detail["transcript"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|entry| {
-                entry["content"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .contains("Autonomous step `create hello world program` complete")
-            })
-        {
-            autonomous_hit = true;
-            break;
-        }
-
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-    }
-    assert!(
-        autonomous_hit,
-        "expected autonomous loop to scaffold hello world without chat turn"
-    );
-
     let mut reached_idle = false;
-    for _ in 0..12 {
+    for _ in 0..20 {
         let (_, detail) = get_json(&app, &format!("/programs/{}/agents/{}", pid, agent_id)).await;
         if detail["session"]["run_status"] == json!("idle") {
             reached_idle = true;
+            assert_eq!(detail["session"]["stop_reason"]["code"], json!("completed"));
+            assert_eq!(detail["session"]["execution"]["attempt"], json!(1));
+            assert!(detail["transcript"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["content"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("Execution attempt 1/3 recorded")));
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
     assert!(
         reached_idle,
-        "autonomous run should settle to idle once hello world scaffold goal is satisfied"
+        "autonomous run should settle to idle after successful planner attempt"
     );
+
+    let requests_guard = requests.lock().unwrap();
+    assert!(
+        !requests_guard.is_empty(),
+        "planner should be invoked by autonomous loop"
+    );
+    drop(requests_guard);
+    server.abort();
 }
 
 #[tokio::test]
 async fn phase10_dashboard_ai_chat_orchestrates_end_to_end() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "build calculator workflow",
+        "actions": [
+            {
+                "type": "inspect",
+                "request": {
+                    "query": "overview"
+                }
+            },
+            {
+                "type": "verify",
+                "request": { "scope": "Full" }
+            }
+        ]
+    }"#;
+    let (base_url, _requests, server) = start_mock_planner_server(planner_response).await;
+
     let app = test_app();
 
     let (status, create_project) = post_json(
         &app,
         "/dashboard/ai/chat",
         json!({
-            "message": "create project hello-world"
+            "message": "create project calculator-demo"
         }),
     )
     .await;
@@ -2262,7 +2241,7 @@ async fn phase10_dashboard_ai_chat_orchestrates_end_to_end() {
         &app,
         "/dashboard/ai/chat",
         json!({
-            "message": "register agent builder provider openrouter model openai/gpt-4o-mini api key test-key",
+            "message": format!("register agent builder provider openai_compatible model planner-test base url {} api key test-key", base_url),
             "selected_program_id": program_id
         }),
     )
@@ -2303,7 +2282,7 @@ async fn phase10_dashboard_ai_chat_orchestrates_end_to_end() {
         &app,
         "/dashboard/ai/chat",
         json!({
-            "message": "start build hello world bootstrap",
+            "message": "start build calculator workflow",
             "selected_program_id": program_id,
             "selected_agent_id": agent_id,
             "selected_project_agent_id": agent_id
@@ -2317,11 +2296,11 @@ async fn phase10_dashboard_ai_chat_orchestrates_end_to_end() {
         start
     );
 
-    let (status, create_hw) = post_json(
+    let (status, chat) = post_json(
         &app,
         "/dashboard/ai/chat",
         json!({
-            "message": "create hello world program",
+            "message": "build calculator workflow from this prompt",
             "selected_program_id": program_id,
             "selected_agent_id": agent_id,
             "selected_project_agent_id": agent_id
@@ -2331,59 +2310,17 @@ async fn phase10_dashboard_ai_chat_orchestrates_end_to_end() {
     assert_eq!(
         status,
         StatusCode::OK,
-        "create hello world via ai chat failed: {:?}",
-        create_hw
+        "planner chat via ai endpoint failed: {:?}",
+        chat
     );
-    assert!(create_hw["reply"]
-        .as_str()
-        .unwrap_or_default()
-        .contains("Hello world scaffold ready"));
-
-    let (status, compile) = post_json(
-        &app,
-        "/dashboard/ai/chat",
-        json!({
-            "message": "compile program",
-            "selected_program_id": program_id,
-            "selected_agent_id": agent_id,
-            "selected_project_agent_id": agent_id
-        }),
-    )
-    .await;
-    assert_eq!(
-        status,
-        StatusCode::OK,
-        "compile via ai chat failed: {:?}",
-        compile
-    );
-    assert!(compile["reply"]
-        .as_str()
-        .unwrap_or_default()
-        .contains("Compiled hello_world"));
-
-    let (status, run) = post_json(
-        &app,
-        "/dashboard/ai/chat",
-        json!({
-            "message": "run program",
-            "selected_program_id": program_id,
-            "selected_agent_id": agent_id,
-            "selected_project_agent_id": agent_id
-        }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "run via ai chat failed: {:?}", run);
-    assert!(run["reply"]
-        .as_str()
-        .unwrap_or_default()
-        .contains("Program executed"));
-    assert!(run["transcript"].is_array());
+    assert_eq!(chat["planner"]["status"], json!("accepted"));
+    assert!(chat["transcript"].is_array());
 
     let (status, query) = post_json(
         &app,
         &format!("/programs/{}/observability/query", program_id),
         json!({
-            "query": "hello world",
+            "query": "calculator",
             "max_results": 5
         }),
     )
@@ -2395,6 +2332,7 @@ async fn phase10_dashboard_ai_chat_orchestrates_end_to_end() {
         query
     );
     assert!(query["results"].is_array());
+    server.abort();
 }
 
 #[tokio::test]
@@ -2562,6 +2500,69 @@ async fn phase14_program_agent_chat_returns_structured_failure_for_invalid_plann
 }
 
 #[tokio::test]
+async fn phase14_program_agent_chat_accepts_legacy_println_alias() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "print hello world",
+        "actions": [
+            {
+                "type": "mutate_batch",
+                "request": {
+                    "mutations": [
+                        {
+                            "type": "InsertNode",
+                            "op": {"Core": "PrintLn"},
+                            "owner": 1
+                        }
+                    ],
+                    "dry_run": false
+                }
+            }
+        ]
+    }"#;
+    let (base_url, _requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+
+    let (status, register) = post_json(
+        &app,
+        "/agents/register",
+        json!({
+            "name": "planner-agent",
+            "provider": "openai_compatible",
+            "model": "planner-test",
+            "api_base_url": base_url,
+            "api_key": "test-key"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "register failed: {:?}", register);
+    let agent_id = register["agent_id"].as_str().unwrap();
+
+    let (status, assign) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/assign", pid, agent_id),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "assign failed: {:?}", assign);
+
+    let (status, chat) = post_json(
+        &app,
+        &format!("/programs/{}/agents/{}/chat", pid, agent_id),
+        json!({
+            "message": "create a hello world program"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "chat failed: {:?}", chat);
+    assert_eq!(chat["planner"]["status"], json!("accepted"));
+
+    server.abort();
+}
+
+#[tokio::test]
 async fn phase14_dashboard_ai_chat_surfaces_planner_payload() {
     let planner_response = r#"{
         "version": "2026-02-19",
@@ -2658,7 +2659,7 @@ async fn phase14_dashboard_ai_chat_surfaces_planner_payload() {
 }
 
 #[tokio::test]
-async fn phase14_explicit_command_prompt_keeps_deterministic_hello_world_path() {
+async fn phase14_explicit_build_prompt_routes_to_planner_when_unconfigured() {
     let app = test_app();
     let pid = setup_program(&app).await;
 
@@ -2679,20 +2680,20 @@ async fn phase14_explicit_command_prompt_keeps_deterministic_hello_world_path() 
         &app,
         &format!("/programs/{}/agents/{}/chat", pid, agent_id),
         json!({
-            "message": "create hello world program"
+            "message": "create starter calculator program"
         }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "chat failed: {:?}", chat);
+    assert_eq!(chat["planner"]["status"], json!("failed"));
+    assert_eq!(
+        chat["planner"]["failure"]["code"],
+        json!("planner_unconfigured")
+    );
     assert!(chat["reply"]
         .as_str()
         .unwrap_or_default()
-        .contains("Hello world scaffold ready"));
-    assert!(
-        chat["planner"].is_null(),
-        "command-path response should not include planner payload: {:?}",
-        chat
-    );
+        .contains("planner_unconfigured"));
 }
 
 // ===========================================================================
@@ -2753,6 +2754,111 @@ fn planner_prompt_content(request: &serde_json::Value) -> String {
         .and_then(|message| message["content"].as_str())
         .unwrap_or_default()
         .to_string()
+}
+
+#[tokio::test]
+async fn phase15_dashboard_chat_build_intent_auto_starts_autonomous_run() {
+    let planner_response = r#"{
+        "version": "2026-02-19",
+        "goal": "build hello world app",
+        "actions": [
+            {
+                "type": "inspect",
+                "request": { "query": "overview" }
+            },
+            {
+                "type": "verify",
+                "request": { "scope": "Full" }
+            }
+        ]
+    }"#;
+    let (base_url, requests, server) = start_mock_planner_server(planner_response).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id =
+        register_mock_planner_agent(&app, &base_url, "phase15-dashboard-auto-start").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, chat) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "build a hello world app",
+            "selected_program_id": pid,
+            "selected_agent_id": agent_id,
+            "selected_project_agent_id": agent_id
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "dashboard chat failed: {:?}", chat);
+    assert_eq!(chat["planner"]["status"], json!("accepted"));
+
+    let detail = wait_for_run_status(&app, pid, &agent_id, "idle").await;
+    assert_eq!(detail["session"]["stop_reason"]["code"], json!("completed"));
+
+    let requests_guard = requests.lock().unwrap();
+    assert!(
+        requests_guard.len() >= 2,
+        "expected planner requests for chat preview + autonomous run"
+    );
+    drop(requests_guard);
+    server.abort();
+}
+
+#[tokio::test]
+async fn phase15_dashboard_chat_retryable_planner_failure_still_starts_autonomous_run() {
+    let first_response = "not-json-at-all";
+    let second_response = r#"{
+        "version": "2026-02-19",
+        "goal": "create hello world",
+        "actions": [
+            {
+                "type": "inspect",
+                "request": { "query": "overview" }
+            },
+            {
+                "type": "verify",
+                "request": { "scope": "Full" }
+            }
+        ]
+    }"#;
+    let (base_url, requests, server) =
+        start_mock_planner_server_sequence(&[first_response, second_response]).await;
+
+    let app = test_app();
+    let pid = setup_program(&app).await;
+    let agent_id =
+        register_mock_planner_agent(&app, &base_url, "phase15-dashboard-retryable-chat").await;
+    assign_agent_to_program(&app, pid, &agent_id).await;
+
+    let (status, chat) = post_json(
+        &app,
+        "/dashboard/ai/chat",
+        json!({
+            "message": "create a hello world program",
+            "selected_program_id": pid,
+            "selected_agent_id": agent_id,
+            "selected_project_agent_id": agent_id
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "dashboard chat failed: {:?}", chat);
+    assert!(chat["reply"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Autonomous run started from chat"));
+
+    let detail = wait_for_run_status(&app, pid, &agent_id, "idle").await;
+    assert_eq!(detail["session"]["stop_reason"]["code"], json!("completed"));
+
+    let requests_guard = requests.lock().unwrap();
+    assert!(
+        requests_guard.len() >= 2,
+        "expected planner requests for chat + background retry path"
+    );
+    drop(requests_guard);
+    server.abort();
 }
 
 #[tokio::test]
@@ -2829,7 +2935,7 @@ async fn phase15_autonomous_runner_executes_planner_actions_and_records_complete
     let (status, chat) = post_json(
         &app,
         &format!("/programs/{}/agents/{}/chat", pid, agent_id),
-        json!({ "message": "create hello world program" }),
+        json!({ "message": "build a follow-up calculator increment flow" }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "chat failed: {:?}", chat);

@@ -187,22 +187,94 @@ fn build_planner_prompt(
     // Latest execution diagnostics:
     // { "attempt": 2, "max_attempts": 3, "action_kind": "compile", ... }
 
+    let programming_guide = planner_programming_guide();
+
     format!(
         "You are the lmlang autonomous planner.\n\
 Return only JSON with no markdown and no surrounding text.\n\
 Use planner contract version '{}'.\n\
-Allowed action types: mutate_batch, verify, compile, simulate, inspect, history.\n\
+Allowed action types: mutate_batch, verify, compile, run, simulate, inspect, history.\n\
 Rules:\n\
 - Use an ordered actions array for executable plans.\n\
 - If no safe plan exists, return a structured failure object and empty actions.\n\
 - Keep payloads minimal and deterministic.\n\
 {}\
 \n\
+{}\n\
+\n\
 Goal:\n{}\n\
 \n\
 Recent transcript:\n{}{}",
-        AUTONOMY_PLAN_CONTRACT_V1, repair_rule, goal, transcript_block, repair_block
+        AUTONOMY_PLAN_CONTRACT_V1,
+        repair_rule,
+        programming_guide,
+        goal,
+        transcript_block,
+        repair_block
     )
+}
+
+fn planner_programming_guide() -> &'static str {
+    r#"Program-authoring guide (lmlang graph edits):
+- To write or change program logic, emit `mutate_batch` actions with concrete `request.mutations`.
+- Mutation `type` values must match exactly one of:
+  AddFunction, AddModule, InsertNode, ModifyNode, AddEdge, AddControlEdge, RemoveNode, RemoveEdge.
+- Built-in TypeId map: Bool=0, I8=1, I16=2, I32=3, I64=4, F32=5, F64=6, Unit=7, Never=8.
+- For new functions, default `module` is 0 and `visibility` is `Public` or `Private`.
+- Prefer this safe pipeline for build goals:
+  1) mutate_batch
+  2) verify (`scope`: `Full` or `Local`)
+  3) optional compile (`entry_function`, `opt_level`: O0/O1/O2/O3)
+  4) optional run (`entry_function`) to execute compiled program and capture stdout/stderr
+  5) optional simulate/inspect/history for debugging
+- Inspect query shortcuts for graph/db context:
+  `overview`, `semantic`, `search:<term>`, `function:<id>`, `node:<id>`, `neighborhood:<node_id>:<hops>`
+
+Mutation examples:
+1) Create function:
+{
+  "type": "mutate_batch",
+  "request": {
+    "mutations": [{
+      "type": "AddFunction",
+      "name": "calculator_add",
+      "module": 0,
+      "params": [["lhs", 3], ["rhs", 3]],
+      "return_type": 3,
+      "visibility": "Public"
+    }],
+    "dry_run": false
+  }
+}
+
+2) Add return node:
+{
+  "type": "mutate_batch",
+  "request": {
+    "mutations": [{
+      "type": "InsertNode",
+      "op": {"Core": "Return"},
+      "owner": 1
+    }],
+    "dry_run": false
+  }
+}
+
+3) Add typed data edge:
+{
+  "type": "mutate_batch",
+  "request": {
+    "mutations": [{
+      "type": "AddEdge",
+      "from": 10,
+      "to": 11,
+      "source_port": 0,
+      "target_port": 0,
+      "value_type": 3
+    }],
+    "dry_run": false
+  }
+}"#
 }
 
 fn summarize_actions(actions: &[AutonomyPlanAction]) -> Vec<PlannerActionSummary> {
@@ -226,6 +298,15 @@ fn summarize_actions(actions: &[AutonomyPlanAction]) -> Vec<PlannerActionSummary
                 summary: format!(
                     "entry_function={}, opt_level={}",
                     request.entry_function.as_deref().unwrap_or("<none>"),
+                    request.opt_level
+                ),
+            },
+            AutonomyPlanAction::Run { request, .. } => PlannerActionSummary {
+                kind: "run".to_string(),
+                summary: format!(
+                    "entry_function={}, args={}, opt_level={}",
+                    request.entry_function.as_deref().unwrap_or("<none>"),
+                    request.args.len(),
                     request.opt_level
                 ),
             },
@@ -331,6 +412,14 @@ mod tests {
                             "entry_function": "calc",
                             "opt_level": "O1"
                         }
+                    },
+                    {
+                        "type": "run",
+                        "request": {
+                            "entry_function": "calc",
+                            "opt_level": "O0",
+                            "args": []
+                        }
                     }
                 ]
             }"#,
@@ -339,7 +428,7 @@ mod tests {
         match outcome {
             PlannerOutcome::Accepted(accepted) => {
                 assert_eq!(accepted.version, AUTONOMY_PLAN_CONTRACT_V1);
-                assert_eq!(accepted.action_count, 3);
+                assert_eq!(accepted.action_count, 4);
                 assert_eq!(accepted.actions[0].kind, "mutate_batch");
             }
             PlannerOutcome::Rejected(rejected) => {
@@ -428,6 +517,9 @@ mod tests {
         );
         assert!(!prompt.contains("Latest execution diagnostics"));
         assert!(!prompt.contains("targeted repair actions before unrelated changes"));
+        assert!(prompt.contains("Program-authoring guide"));
+        assert!(prompt.contains("AddFunction"));
+        assert!(prompt.contains("TypeId map"));
     }
 
     #[test]

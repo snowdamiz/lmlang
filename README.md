@@ -34,14 +34,14 @@ Open dashboard:
 open http://localhost:3000/dashboard
 ```
 
-### 2. Run hello-world flow in dashboard chat
+### 2. Run build flow in dashboard chat
 
-1. `create project hello-world`
+1. `create project calculator-demo`
 2. `register agent builder provider openrouter model openai/gpt-4o-mini api key <your-key>`
 3. `assign agent`
-4. `start build hello world bootstrap`
+4. `start build calculator workflow`
 
-The autonomous run loop can scaffold/compile/run based on goal intent.
+The autonomous run loop executes planner actions based on the active goal.
 
 ## Project layout
 

@@ -89,36 +89,49 @@ pub enum AutonomyPlanFailureCode {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AutonomyPlanAction {
     /// Apply graph mutations using existing mutation semantics.
+    #[serde(alias = "mutateBatch", alias = "mutate")]
     MutateBatch {
         request: AutonomyPlanMutationRequest,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rationale: Option<String>,
     },
     /// Run verify using existing verify scope semantics.
+    #[serde(alias = "verifyGraph")]
     Verify {
         request: AutonomyPlanVerifyRequest,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rationale: Option<String>,
     },
     /// Compile current program.
+    #[serde(alias = "build", alias = "compileProgram")]
     Compile {
         request: AutonomyPlanCompileRequest,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rationale: Option<String>,
     },
+    /// Compile and execute program binary for one entry function.
+    #[serde(alias = "runProgram", alias = "executeProgram")]
+    Run {
+        request: AutonomyPlanRunRequest,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rationale: Option<String>,
+    },
     /// Simulate one function execution.
+    #[serde(alias = "runSimulation", alias = "simulateFunction")]
     Simulate {
         request: AutonomyPlanSimulateRequest,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rationale: Option<String>,
     },
     /// Perform inspect/query operation against program context.
+    #[serde(alias = "query", alias = "inspectProgram")]
     Inspect {
         request: AutonomyPlanInspectRequest,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rationale: Option<String>,
     },
     /// Perform history/checkpoint inspection operations.
+    #[serde(alias = "historyOperation")]
     History {
         request: AutonomyPlanHistoryRequest,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -178,6 +191,24 @@ pub struct AutonomyPlanCompileRequest {
 
 fn default_compile_opt_level() -> String {
     "O0".to_string()
+}
+
+/// Run (compile + execute) action payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AutonomyPlanRunRequest {
+    #[serde(default = "default_compile_opt_level")]
+    pub opt_level: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_triple: Option<String>,
+    #[serde(default)]
+    pub debug_symbols: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_function: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
 }
 
 /// Simulate action payload.
@@ -424,6 +455,29 @@ fn validate_action(
                     errors,
                     AutonomyPlanValidationCode::MissingRequiredField,
                     "compile action requires request.entry_function".to_string(),
+                    Some(action_index),
+                    Some("request.entry_function".to_string()),
+                );
+            }
+        }
+        AutonomyPlanAction::Run { request, .. } => {
+            if !matches!(request.opt_level.as_str(), "O0" | "O1" | "O2" | "O3") {
+                push_validation_error(
+                    errors,
+                    AutonomyPlanValidationCode::InvalidFieldValue,
+                    format!(
+                        "run opt_level '{}' is invalid (expected O0/O1/O2/O3)",
+                        request.opt_level
+                    ),
+                    Some(action_index),
+                    Some("request.opt_level".to_string()),
+                );
+            }
+            if !option_is_present(&request.entry_function) {
+                push_validation_error(
+                    errors,
+                    AutonomyPlanValidationCode::MissingRequiredField,
+                    "run action requires request.entry_function".to_string(),
                     Some(action_index),
                     Some("request.entry_function".to_string()),
                 );
@@ -739,7 +793,7 @@ mod tests {
     #[test]
     fn autonomy_plan_uses_predictable_defaults() {
         let decoded: AutonomyPlanEnvelope = serde_json::from_value(serde_json::json!({
-            "goal": "bootstrap hello world"
+            "goal": "bootstrap project graph"
         }))
         .expect("plan should deserialize with defaults");
 
@@ -747,6 +801,74 @@ mod tests {
         assert!(decoded.actions.is_empty());
         assert!(decoded.failure.is_none());
         assert!(decoded.metadata.planner.is_none());
+    }
+
+    #[test]
+    fn autonomy_plan_accepts_common_llm_aliases_and_case_variants() {
+        let decoded: AutonomyPlanEnvelope = serde_json::from_value(serde_json::json!({
+            "version": AUTONOMY_PLAN_CONTRACT_V1,
+            "goal": "build calculator",
+            "actions": [
+                {
+                    "type": "mutateBatch",
+                    "request": {
+                        "mutations": [{
+                            "type": "add_function",
+                            "name": "calc_alias",
+                            "module": 0,
+                            "params": [["lhs", 3], ["rhs", 3]],
+                            "return_type": 3,
+                            "visibility": "public"
+                        }],
+                        "dry_run": false
+                    }
+                },
+                {
+                    "type": "verify",
+                    "request": {
+                        "scope": "full"
+                    }
+                },
+                {
+                    "type": "runProgram",
+                    "request": {
+                        "entry_function": "calc_alias",
+                        "opt_level": "O0",
+                        "args": []
+                    }
+                }
+            ]
+        }))
+        .expect("aliases should deserialize");
+
+        assert_eq!(decoded.actions.len(), 3);
+
+        match &decoded.actions[0] {
+            AutonomyPlanAction::MutateBatch { request, .. } => {
+                assert_eq!(request.mutations.len(), 1);
+                match &request.mutations[0] {
+                    Mutation::AddFunction { visibility, .. } => {
+                        assert_eq!(*visibility, Visibility::Public)
+                    }
+                    other => panic!("expected AddFunction mutation, got {other:?}"),
+                }
+            }
+            other => panic!("expected MutateBatch action, got {other:?}"),
+        }
+
+        match &decoded.actions[1] {
+            AutonomyPlanAction::Verify { request, .. } => {
+                assert!(matches!(request.scope, Some(VerifyScope::Full)));
+            }
+            other => panic!("expected Verify action, got {other:?}"),
+        }
+
+        match &decoded.actions[2] {
+            AutonomyPlanAction::Run { request, .. } => {
+                assert_eq!(request.entry_function.as_deref(), Some("calc_alias"));
+            }
+            other => panic!("expected Run action, got {other:?}"),
+        }
     }
 
     #[test]
@@ -846,6 +968,17 @@ mod tests {
             },
             rationale: None,
         };
+        plan.actions[3] = AutonomyPlanAction::Run {
+            request: AutonomyPlanRunRequest {
+                opt_level: "O0".to_string(),
+                target_triple: None,
+                debug_symbols: false,
+                entry_function: None,
+                output_dir: None,
+                args: Vec::new(),
+            },
+            rationale: None,
+        };
 
         let result = plan.validate();
         assert!(!result.valid);
@@ -856,6 +989,11 @@ mod tests {
         assert!(result.errors.iter().any(|e| {
             e.code == AutonomyPlanValidationCode::MissingRequiredField
                 && e.field.as_deref() == Some("request.entry_function")
+        }));
+        assert!(result.errors.iter().any(|e| {
+            e.code == AutonomyPlanValidationCode::MissingRequiredField
+                && e.field.as_deref() == Some("request.entry_function")
+                && e.action_index == Some(3)
         }));
     }
 
